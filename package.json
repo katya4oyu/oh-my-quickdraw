@@ -9,5 +9,8 @@
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@quickdrawjs/core": "file:vendor/quickdraw/packages/core"
   }
 }
