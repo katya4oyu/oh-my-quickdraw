@@ -8,6 +8,11 @@
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
+    .export {
+      position: fixed; top: 10px; right: 10px; z-index: 50;
+      font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
     .cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 100; font: 600 11px system-ui; }
     .cursor svg { display: block; }
     .cursor span { position: absolute; left: 14px; top: 16px; padding: 1px 6px; border-radius: 6px; color: #fff; white-space: nowrap; }
@@ -18,15 +23,23 @@
 </head>
 <body>
   <div id="board"></div>
+  <button class="export" id="export">Export JSON</button>
   <script type="module">
     import * as Y from 'yjs'
     import { createQuickdraw } from '../../vendor/quickdraw/packages/core/src/index.js'
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
+    import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
 
     bindYjs(board.editor.store, ydoc)
+
+    // the selection when there is one, otherwise the whole board
+    document.getElementById('export').onclick = () => {
+      const { selection } = board.editor
+      downloadJSON(board.editor, { ids: selection.size ? selection : null })
+    }
 
     // transport: the example server's relay, which also persists the board;
     // swap in any Yjs provider. Messages are one type byte + payload:
