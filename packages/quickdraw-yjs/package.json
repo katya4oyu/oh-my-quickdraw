@@ -1,0 +1,25 @@
+{
+  "name": "quickdraw-yjs",
+  "version": "0.1.0",
+  "description": "Optional Yjs document synchronization for Quickdraw.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "yjs": "^13.6.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "vitest": "^3.2.7",
+    "yjs": "^13.6.33"
+  }
+}

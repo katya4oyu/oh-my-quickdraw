@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — Yjs example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    .cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 100; font: 600 11px system-ui; }
+    .cursor svg { display: block; }
+    .cursor span { position: absolute; left: 14px; top: 16px; padding: 1px 6px; border-radius: 6px; color: #fff; white-space: nowrap; }
+  </style>
+  <script type="importmap">
+    { "imports": { "yjs": "https://esm.sh/yjs@13.6.33" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    import * as Y from 'yjs'
+    import { createQuickdraw } from '../../vendor/quickdraw/packages/core/src/index.js'
+    import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+    const ydoc = new Y.Doc()
+
+    bindYjs(board.editor.store, ydoc)
+
+    // transport: the example server's relay, which also persists the board;
+    // swap in any Yjs provider. Messages are one type byte + payload:
+    // 0 = update, 1 = state vector (asking the server for what we are missing),
+    // 2 = presence (JSON; the server adds the sender's id).
+    const UPDATE = 0, SV = 1, PRESENCE = 2
+    const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
+    let ws = null
+    ydoc.on('update', (update, origin) => {
+      if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
+    })
+    function connect() {
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
+      ws.binaryType = 'arraybuffer'
+      ws.onopen = () => {
+        // push everything we have (edits made while offline), then ask for the rest
+        ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
+        ws.send(pack(SV, Y.encodeStateVector(ydoc)))
+        sendCursor()
+      }
+      ws.onmessage = ({ data }) => {
+        const m = new Uint8Array(data)
+        if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
+        else if (m[0] === PRESENCE) showCursor(JSON.parse(new TextDecoder().decode(m.subarray(1))))
+      }
+      ws.onclose = () => {
+        for (const id of cursors.keys()) showCursor({ id, gone: true })
+        setTimeout(connect, 1000)
+      }
+    }
+
+    // live cursors: ours goes out in page coordinates, theirs are drawn over
+    // the board and follow the camera
+    const editor = board.editor
+    const ua = navigator.userAgent
+    const me = {
+      name: /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : 'Guest',
+      color: ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0c8599'][Math.floor(Math.random() * 6)],
+      x: null, y: null,
+    }
+    let queued = false
+    function sendCursor() {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify(me))))
+    }
+    function moveCursor(p) {
+      Object.assign(me, p)
+      if (queued) return
+      queued = true
+      requestAnimationFrame(() => { queued = false; sendCursor() })
+    }
+    addEventListener('pointermove', (e) => {
+      const r = editor.container.getBoundingClientRect()
+      moveCursor(editor.screenToPage(e.clientX - r.left, e.clientY - r.top))
+    }, { capture: true })
+    document.documentElement.addEventListener('pointerleave', () => moveCursor({ x: null, y: null }))
+
+    const cursors = new Map() // id -> { el, x, y }
+    function place(c) {
+      const r = editor.container.getBoundingClientRect()
+      const s = editor.pageToScreen(c.x, c.y)
+      c.el.style.transform = `translate(${r.left + s.x}px, ${r.top + s.y}px)`
+      c.el.hidden = c.x == null
+    }
+    function showCursor({ id, gone, name, color, x, y }) {
+      let c = cursors.get(id)
+      if (gone) { c?.el.remove(); cursors.delete(id); return }
+      if (!c) {
+        const el = document.createElement('div')
+        el.className = 'cursor'
+        el.innerHTML = `<svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1l13 10.5-6 .7L4.7 19z" stroke="#fff" stroke-width="1.5"/></svg><span></span>`
+        document.body.append(el)
+        cursors.set(id, c = { el })
+      }
+      c.el.querySelector('path').setAttribute('fill', color)
+      const label = c.el.querySelector('span')
+      label.textContent = name
+      label.style.background = color
+      Object.assign(c, { x, y })
+      place(c)
+    }
+    editor.on('camera', () => cursors.forEach(place))
+    addEventListener('resize', () => cursors.forEach(place))
+
+    connect()
+
+    window.board = board
+    window.ydoc = ydoc
+  </script>
+</body>
+</html>
