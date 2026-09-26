@@ -8,7 +8,8 @@
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
-    .actions { position: fixed; top: 10px; right: 10px; z-index: 50; display: flex; gap: 6px; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button { pointer-events: auto; }
     .actions button {
       font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
       border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
@@ -29,6 +30,8 @@
 <body>
   <div id="board"></div>
   <div class="actions">
+    <button id="frame">Add frame</button>
+    <button id="frame-export">Export frame</button>
     <button id="import">Import JSON</button>
     <button id="export">Export JSON</button>
   </div>
@@ -38,16 +41,38 @@
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
     import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
     import { openJSON } from '../../packages/quickdraw-import/src/index.js'
+    import { bindFrames, createFrame, frameShapeIds, isFrame } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
 
     bindYjs(board.editor.store, ydoc)
+    bindFrames(board.editor.store)
 
     // the selection when there is one, otherwise the whole board
     document.getElementById('export').onclick = () => {
       const { selection } = board.editor
       downloadJSON(board.editor, { ids: selection.size ? selection : null })
+    }
+    document.getElementById('frame').onclick = () => {
+      const v = board.editor.viewportPageBounds()
+      const w = Math.min(480, v.w * 0.8), h = Math.min(320, v.h * 0.6)
+      const id = createFrame(board.editor.store, { x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2, w, h })
+      board.editor.setTool('select')
+      board.editor.setSelection([id])
+    }
+    // the selected frame, or the frame of the selected shape, as a PNG
+    document.getElementById('frame-export').onclick = async () => {
+      const { store, selection } = board.editor
+      const s = store.get([...selection][0])
+      const frameId = isFrame(s) ? s.id : s?.frameId
+      if (!frameId) return alert('Select a frame first')
+      const blob = await board.editor.exportImage({ ids: frameShapeIds(store, frameId) })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = (store.get(frameId + '-title')?.props.text || 'frame') + '.png'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     }
     document.getElementById('import').onclick = () => {
       openJSON(board.editor).catch((e) => alert(`Import failed: ${e.message}`))
