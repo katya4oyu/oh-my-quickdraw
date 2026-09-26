@@ -1,23 +1,98 @@
-// Static file server for the example: serves the workspace root so the page
-// can import the vendored core and the package source without a build step.
+// Example server: serves the workspace root (so the page can import the
+// vendored core and the package source without a build step) and relays
+// WebSocket messages at /ws to every other client. The relay is stateless and
+// dependency-free: a minimal RFC 6455 server for unfragmented messages.
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '../..')
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
-const port = Number(process.env.PORT || 8080)
+const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
-createServer(async (req, res) => {
-  const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
-  const file = join(root, path.endsWith('/') ? path + 'index.html' : path)
-  if (!file.startsWith(root)) return res.writeHead(403).end()
-  try {
-    const body = await readFile(file)
-    res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' }).end(body)
-  } catch {
-    res.writeHead(404).end()
+function frame(opcode, payload) {
+  const n = payload.length
+  const head = n < 126 ? Buffer.from([0x80 | opcode, n])
+    : n < 65536 ? Buffer.from([0x80 | opcode, 126, n >> 8, n & 255])
+    : Buffer.concat([Buffer.from([0x80 | opcode, 127]), (() => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b })()])
+  return Buffer.concat([head, payload])
+}
+
+// pulls complete frames off the front of buf; returns [frames, rest]
+function parse(buf) {
+  const frames = []
+  for (;;) {
+    if (buf.length < 2) break
+    const opcode = buf[0] & 15
+    let len = buf[1] & 127
+    let off = 2
+    if (len === 126) { if (buf.length < 4) break; len = buf.readUInt16BE(2); off = 4 }
+    else if (len === 127) { if (buf.length < 10) break; len = Number(buf.readBigUInt64BE(2)); off = 10 }
+    const masked = buf[1] & 128
+    const mask = masked ? buf.subarray(off, off + 4) : null
+    if (masked) off += 4
+    if (buf.length < off + len) break
+    const payload = Buffer.from(buf.subarray(off, off + len))
+    if (mask) for (let i = 0; i < len; i++) payload[i] ^= mask[i & 3]
+    frames.push({ opcode, payload })
+    buf = buf.subarray(off + len)
   }
-}).listen(port, '127.0.0.1', () => {
-  console.log(`Quickdraw Yjs example: http://localhost:${port}/examples/quickdraw-yjs/ (open in two tabs)`)
-})
+  return [frames, buf]
+}
+
+export function createExampleServer() {
+  const clients = new Set()
+
+  const server = createServer(async (req, res) => {
+    const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
+    const file = join(root, path.endsWith('/') ? path + 'index.html' : path)
+    if (!file.startsWith(root)) return res.writeHead(403).end()
+    try {
+      const body = await readFile(file)
+      res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' }).end(body)
+    } catch {
+      res.writeHead(404).end()
+    }
+  })
+
+  server.on('upgrade', (req, socket) => {
+    const key = req.headers['sec-websocket-key']
+    if (new URL(req.url, 'http://x').pathname !== '/ws' || !key) return socket.destroy()
+    const accept = createHash('sha1').update(key + GUID).digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    clients.add(socket)
+    let buf = Buffer.alloc(0)
+    socket.on('data', (chunk) => {
+      let frames
+      ;[frames, buf] = parse(Buffer.concat([buf, chunk]))
+      for (const { opcode, payload } of frames) {
+        if (opcode === 8) { socket.end(frame(8, Buffer.alloc(0))); clients.delete(socket); return }
+        if (opcode === 9) { socket.write(frame(10, payload)); continue }
+        if (opcode !== 1 && opcode !== 2) continue
+        const out = frame(opcode, payload)
+        for (const peer of clients) if (peer !== socket && peer.writable) peer.write(out)
+      }
+    })
+    const drop = () => clients.delete(socket)
+    socket.on('close', drop)
+    socket.on('error', drop)
+  })
+
+  return {
+    server,
+    listen(port = 8080, host = '127.0.0.1') {
+      return new Promise((ok) => server.listen(port, host, () => ok(server.address())))
+    },
+    close() {
+      for (const s of clients) s.destroy()
+      return new Promise((ok) => server.close(ok))
+    },
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  const { port } = await createExampleServer().listen(Number(process.env.PORT || 8080))
+  console.log(`Quickdraw Yjs example: http://localhost:${port}/examples/quickdraw-yjs/ (open in two tabs or devices)`)
+}

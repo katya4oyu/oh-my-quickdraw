@@ -23,19 +23,33 @@
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
 
-    // transport: same-origin tabs over BroadcastChannel; swap in any Yjs provider
-    const channel = new BroadcastChannel('quickdraw-yjs')
-    ydoc.on('update', (update, origin) => {
-      if (origin !== channel) channel.postMessage({ update })
-    })
-    channel.onmessage = ({ data }) => {
-      if (data.update) Y.applyUpdate(ydoc, data.update, channel)
-      // a new tab asks for state: reply with everything it is missing
-      if (data.sv) channel.postMessage({ update: Y.encodeStateAsUpdate(ydoc, data.sv) })
-    }
-
     bindYjs(board.editor.store, ydoc)
-    channel.postMessage({ sv: Y.encodeStateVector(ydoc) })
+
+    // transport: the example server's stateless relay; swap in any Yjs provider.
+    // Messages are one type byte + payload: 0 = update, 1 = state vector
+    // (a peer asking for what it is missing).
+    const UPDATE = 0, SV = 1
+    const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
+    let ws = null
+    ydoc.on('update', (update, origin) => {
+      if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
+    })
+    function connect() {
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
+      ws.binaryType = 'arraybuffer'
+      ws.onopen = () => {
+        // push everything we have (edits made while offline), then ask for the rest
+        ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
+        ws.send(pack(SV, Y.encodeStateVector(ydoc)))
+      }
+      ws.onmessage = ({ data }) => {
+        const m = new Uint8Array(data)
+        if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
+        else if (m[0] === SV) ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc, m.subarray(1))))
+      }
+      ws.onclose = () => setTimeout(connect, 1000)
+    }
+    connect()
 
     window.board = board
     window.ydoc = ydoc
