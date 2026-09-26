@@ -1,0 +1,24 @@
+{
+  "name": "quickdraw-import",
+  "version": "0.1.0",
+  "description": "Board import for Quickdraw: validated JSON files in the core's clipboard format.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  }
+}
