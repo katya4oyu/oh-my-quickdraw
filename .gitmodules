@@ -1,0 +1,4 @@
+[submodule "vendor/quickdraw"]
+	path = vendor/quickdraw
+	url = https://github.com/katya4oyu/quickdraw.git
+	branch = main

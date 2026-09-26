@@ -1,0 +1,10 @@
+{
+  "name": "quickdraw-extensions",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ]
+}
