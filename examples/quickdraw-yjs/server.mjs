@@ -1,16 +1,23 @@
 // Example server: serves the workspace root (so the page can import the
 // vendored core and the package source without a build step) and relays
-// WebSocket messages at /ws to every other client. The relay is stateless and
-// dependency-free: a minimal RFC 6455 server for unfragmented messages.
+// WebSocket messages at /ws to every other client — a minimal RFC 6455
+// server for unfragmented messages.
+// Messages are one type byte + payload: 0 = Yjs update, 1 = state vector.
+// Updates are persisted as-is in SQLite (built-in node:sqlite) and merged
+// once they pile up; a state vector is answered from what is stored, so the
+// board comes back even when no other peer is online.
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { DatabaseSync } from 'node:sqlite'
+import * as Y from 'yjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+const UPDATE = 0, SV = 1
 
 function frame(opcode, payload) {
   const n = payload.length
@@ -42,8 +49,33 @@ function parse(buf) {
   return [frames, buf]
 }
 
-export function createExampleServer() {
+function openStore(dbPath, compactEvery) {
+  const db = new DatabaseSync(dbPath)
+  db.exec('CREATE TABLE IF NOT EXISTS updates (seq INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)')
+  const insert = db.prepare('INSERT INTO updates (data) VALUES (?)')
+  const all = db.prepare('SELECT data FROM updates ORDER BY seq')
+  const count = db.prepare('SELECT count(*) AS n FROM updates')
+  const state = () => Y.mergeUpdates(all.all().map((r) => r.data))
+  return {
+    state,
+    append(update) {
+      insert.run(update)
+      if (count.get().n < compactEvery) return
+      db.exec('BEGIN')
+      try {
+        const merged = state()
+        db.exec('DELETE FROM updates')
+        insert.run(merged)
+        db.exec('COMMIT')
+      } catch (e) { db.exec('ROLLBACK'); throw e }
+    },
+    close: () => db.close(),
+  }
+}
+
+export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } = {}) {
   const clients = new Set()
+  const store = openStore(dbPath, compactEvery)
 
   const server = createServer(async (req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
@@ -70,9 +102,15 @@ export function createExampleServer() {
       for (const { opcode, payload } of frames) {
         if (opcode === 8) { socket.end(frame(8, Buffer.alloc(0))); clients.delete(socket); return }
         if (opcode === 9) { socket.write(frame(10, payload)); continue }
-        if (opcode !== 1 && opcode !== 2) continue
-        const out = frame(opcode, payload)
-        for (const peer of clients) if (peer !== socket && peer.writable) peer.write(out)
+        if (opcode !== 2 || payload.length === 0) continue
+        if (payload[0] === SV) {
+          const diff = Y.diffUpdate(store.state(), payload.subarray(1))
+          socket.write(frame(2, Buffer.concat([Buffer.from([UPDATE]), diff])))
+        } else if (payload[0] === UPDATE) {
+          store.append(payload.subarray(1))
+          const out = frame(2, payload)
+          for (const peer of clients) if (peer !== socket && peer.writable) peer.write(out)
+        }
       }
     })
     const drop = () => clients.delete(socket)
@@ -87,12 +125,13 @@ export function createExampleServer() {
     },
     close() {
       for (const s of clients) s.destroy()
-      return new Promise((ok) => server.close(ok))
+      return new Promise((ok) => server.close(ok)).then(() => store.close())
     },
   }
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  const { port } = await createExampleServer().listen(Number(process.env.PORT || 8080))
+  const dbPath = process.env.DB || join(import.meta.dirname, 'board.sqlite')
+  const { port } = await createExampleServer({ dbPath }).listen(Number(process.env.PORT || 8080))
   console.log(`Quickdraw Yjs example: http://localhost:${port}/examples/quickdraw-yjs/ (open in two tabs or devices)`)
 }

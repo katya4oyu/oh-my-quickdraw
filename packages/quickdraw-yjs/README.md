@@ -14,4 +14,4 @@ const unbind = bindYjs(board.editor.store, ydoc) // pair ydoc with any Yjs provi
 - On bind, an empty shared map is seeded from the store; otherwise the store loads the shared state.
 - Local edits, including undo/redo, go to Yjs. Remote changes apply as `'remote'` and stay out of local undo history.
 
-Example: `npm run dev -w examples/quickdraw-yjs`, then open the printed URL in two tabs or on two devices. The example server includes a stateless, dependency-free WebSocket relay at `/ws`.
+Example: `npm run dev -w examples/quickdraw-yjs`, then open the printed URL in two tabs or on two devices. The example server includes a dependency-free WebSocket relay at `/ws` that persists the board in SQLite (`node:sqlite`, `board.sqlite` or `$DB`).

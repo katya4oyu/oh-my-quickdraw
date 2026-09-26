@@ -25,9 +25,9 @@
 
     bindYjs(board.editor.store, ydoc)
 
-    // transport: the example server's stateless relay; swap in any Yjs provider.
-    // Messages are one type byte + payload: 0 = update, 1 = state vector
-    // (a peer asking for what it is missing).
+    // transport: the example server's relay, which also persists the board;
+    // swap in any Yjs provider. Messages are one type byte + payload:
+    // 0 = update, 1 = state vector (asking the server for what we are missing).
     const UPDATE = 0, SV = 1
     const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
     let ws = null
@@ -45,7 +45,6 @@
       ws.onmessage = ({ data }) => {
         const m = new Uint8Array(data)
         if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
-        else if (m[0] === SV) ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc, m.subarray(1))))
       }
       ws.onclose = () => setTimeout(connect, 1000)
     }
