@@ -2,7 +2,9 @@
 // vendored core and the package source without a build step) and relays
 // WebSocket messages at /ws to every other client — a minimal RFC 6455
 // server for unfragmented messages.
-// Messages are one type byte + payload: 0 = Yjs update, 1 = state vector.
+// Messages are one type byte + payload: 0 = Yjs update, 1 = state vector,
+// 2 = presence (JSON, e.g. a cursor). Presence is relayed tagged with the
+// sender's connection id and never stored; a disconnect relays { gone: true }.
 // Updates are persisted as-is in SQLite (built-in node:sqlite) and merged
 // once they pile up; a state vector is answered from what is stored, so the
 // board comes back even when no other peer is online.
@@ -17,7 +19,7 @@ import * as Y from 'yjs'
 const root = resolve(import.meta.dirname, '../..')
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-const UPDATE = 0, SV = 1
+const UPDATE = 0, SV = 1, PRESENCE = 2
 
 function frame(opcode, payload) {
   const n = payload.length
@@ -76,6 +78,9 @@ function openStore(dbPath, compactEvery) {
 export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } = {}) {
   const clients = new Set()
   const store = openStore(dbPath, compactEvery)
+  let nextId = 1
+  const presence = (id, data) => frame(2, Buffer.concat([Buffer.from([PRESENCE]), Buffer.from(JSON.stringify({ ...data, id }))]))
+  const broadcast = (from, out) => { for (const peer of clients) if (peer !== from && peer.writable) peer.write(out) }
 
   const server = createServer(async (req, res) => {
     const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
@@ -95,12 +100,13 @@ export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } 
     const accept = createHash('sha1').update(key + GUID).digest('base64')
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
     clients.add(socket)
+    const id = nextId++
     let buf = Buffer.alloc(0)
     socket.on('data', (chunk) => {
       let frames
       ;[frames, buf] = parse(Buffer.concat([buf, chunk]))
       for (const { opcode, payload } of frames) {
-        if (opcode === 8) { socket.end(frame(8, Buffer.alloc(0))); clients.delete(socket); return }
+        if (opcode === 8) { socket.end(frame(8, Buffer.alloc(0))); drop(); return }
         if (opcode === 9) { socket.write(frame(10, payload)); continue }
         if (opcode !== 2 || payload.length === 0) continue
         if (payload[0] === SV) {
@@ -108,12 +114,15 @@ export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } 
           socket.write(frame(2, Buffer.concat([Buffer.from([UPDATE]), diff])))
         } else if (payload[0] === UPDATE) {
           store.append(payload.subarray(1))
-          const out = frame(2, payload)
-          for (const peer of clients) if (peer !== socket && peer.writable) peer.write(out)
+          broadcast(socket, frame(2, payload))
+        } else if (payload[0] === PRESENCE) {
+          try { broadcast(socket, presence(id, JSON.parse(payload.subarray(1)))) } catch {}
         }
       }
     })
-    const drop = () => clients.delete(socket)
+    function drop() {
+      if (clients.delete(socket)) broadcast(socket, presence(id, { gone: true }))
+    }
     socket.on('close', drop)
     socket.on('error', drop)
   })

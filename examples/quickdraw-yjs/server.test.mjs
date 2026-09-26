@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import * as Y from 'yjs'
 import { createExampleServer } from './server.mjs'
 
-const UPDATE = 0, SV = 1
+const UPDATE = 0, SV = 1, PRESENCE = 2
 const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
 
 let apps = []
@@ -82,6 +82,20 @@ describe('relay', () => {
 
     url = await start({ dbPath, compactEvery: 3 })
     expect(Object.keys(await fetchState(url))).toHaveLength(5)
+  })
+
+  it('relays presence tagged with the sender id, and announces disconnects', async () => {
+    const url = await start()
+    const [a, b] = await Promise.all([open(url), open(url)])
+    const decode = (m) => { expect(m[0]).toBe(PRESENCE); return JSON.parse(new TextDecoder().decode(m.subarray(1))) }
+    let got = next(b)
+    a.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify({ name: 'Mac', x: 1, y: 2 }))))
+    const cursor = decode(await got)
+    expect(cursor).toMatchObject({ name: 'Mac', x: 1, y: 2 })
+    got = next(b)
+    a.close()
+    expect(decode(await got)).toEqual({ id: cursor.id, gone: true })
+    b.close()
   })
 
   it('serves the example page', async () => {
