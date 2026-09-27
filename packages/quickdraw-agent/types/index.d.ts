@@ -16,6 +16,8 @@ export interface Operations {
   update(id: string, change: { text?: string, color?: ColorId }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', gap?: number, at?: Point }): string[]
+  /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
+  fit(frameId: string, opts?: { ids?: string[] }): string[]
   delete(ids: string[]): string[]
 }
 
