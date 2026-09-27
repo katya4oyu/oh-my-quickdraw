@@ -46,6 +46,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | `examples/quickdraw-frames` | Frames: add, move with members, export as PNG |
 | `examples/quickdraw-markdown` | Markdown cards drawn on the canvas, edited in place |
 | `examples/quickdraw-embed` | A YouTube (or other allowed) page, a link card (with a made-up preview), and sandboxed inline HTML |
+| `examples/quickdraw-agent` | Agent participants, panel and note requests, pinned threads, approvals, and undo |
 | `examples/quickdraw-toolbar` | The toolbar with two items of its own |
 
 ## App

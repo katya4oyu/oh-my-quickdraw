@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — agent panel example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    .hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 40; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 9px; background: #fff; box-shadow: 0 2px 12px #0002; font: 12px system-ui; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js",
+      "quickdraw-agent": "../../packages/quickdraw-agent/src/index.js",
+      "quickdraw-frames": "../../packages/quickdraw-frames/src/index.js",
+      "quickdraw-markdown": "../../packages/quickdraw-markdown/src/index.js",
+      "quickdraw-embed": "../../packages/quickdraw-embed/src/index.js",
+      "quickdraw-toolbar": "../../packages/quickdraw-toolbar/src/index.js"
+    } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <div class="hint">Ask from the AI panel, select a note and tap “Ask AI”, or create a note starting with “@AI …”. Approve one request to see Allow/Deny.</div>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { BOARD_TOOLS, createAgentPanel, agentAskTool } from 'quickdraw-agent'
+    import { createToolbar } from 'quickdraw-toolbar'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+    const { editor } = board
+    const agents = [{ id: 'board-ai', name: 'Board AI', knows: ['This board', 'The web'], status: 'idle' }]
+    const listeners = new Set()
+    const storageKey = 'quickdraw-agent-example-threads'
+    const readThreads = () => {
+      try { return JSON.parse(localStorage.getItem(storageKey) || '[]') } catch { return [] }
+    }
+    const writeThreads = (threads) => localStorage.setItem(storageKey, JSON.stringify(threads))
+    const waiting = new Map()
+    let requests = 0
+    const emit = (event) => {
+      const threads = readThreads()
+      const thread = threads.find((item) => item.request.id === event.requestId)
+      if (thread) {
+        thread.events.push(event)
+        if (event.type === 'op') thread.diffs.push(event.diff)
+        thread.status = event.type === 'approval' ? 'waiting' : event.type === 'done' || event.type === 'error' ? event.type : 'working'
+        writeThreads(threads)
+      }
+      for (const listener of listeners) listener({ type: 'event', event })
+    }
+    const host = {
+      agents: () => agents,
+      threads: readThreads,
+      onEvent(fn) { listeners.add(fn); return () => listeners.delete(fn) },
+      async ask(request) {
+        requests++
+        const threads = readThreads()
+        threads.push({ request, events: [], diffs: [], status: 'working' })
+        writeThreads(threads)
+        agents[0].status = 'working'
+        listeners.forEach((fn) => fn({ type: 'agents' }))
+        emit({ type: 'progress', requestId: request.id, text: 'Reading the board and planning a small change…' })
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        if (requests % 2 === 0) {
+          emit({ type: 'approval', requestId: request.id, id: `approval-${request.id}`, text: 'Add an example frame and notes?' })
+          const allow = await new Promise((resolve) => waiting.set(request.id, resolve))
+          if (!allow) {
+            emit({ type: 'message', requestId: request.id, text: 'Request denied; no board changes made.' })
+            emit({ type: 'done', requestId: request.id, text: 'Stopped after denial.' })
+            agents[0].status = 'idle'
+            listeners.forEach((fn) => fn({ type: 'agents' }))
+            return
+          }
+        }
+        const anchor = request.anchor
+        const context = request.context.shapeIds
+        const frame = BOARD_TOOLS.find((tool) => tool.name === 'add_frame')
+        const frameResult = frame.run(editor.store, {
+          title: 'AI: ' + request.text.slice(0, 28),
+          ...(context.length ? { around: context } : { at: { x: anchor.x || 0, y: anchor.y || 0 }, w: 460, h: 300 }),
+        }, { name: agents[0].name })
+        emit({ type: 'op', requestId: request.id, op: frameResult.op, diff: frameResult.diff })
+        const note = BOARD_TOOLS.find((tool) => tool.name === 'add_note')
+        for (const [index, text] of ['Plan the next step', 'Check the result with the team'].entries()) {
+          const result = note.run(editor.store, { text, at: { x: (anchor.x || 0) + 30 + index * 150, y: (anchor.y || 0) + 80 } }, { name: agents[0].name })
+          emit({ type: 'op', requestId: request.id, op: result.op, diff: result.diff })
+        }
+        emit({ type: 'message', requestId: request.id, text: `Added a frame and two notes for “${request.text}”.` })
+        emit({ type: 'done', requestId: request.id, text: 'Board update complete.' })
+        agents[0].status = 'idle'
+        listeners.forEach((fn) => fn({ type: 'agents' }))
+      },
+      reply(requestId, message) {
+        if (typeof message === 'object' && message.approval) {
+          const resolve = waiting.get(requestId)
+          if (resolve) { waiting.delete(requestId); resolve(message.allow) }
+        } else {
+          emit({ type: 'message', requestId, text: message })
+        }
+      },
+    }
+
+    const panel = createAgentPanel({ editor, host })
+    createToolbar(editor, { context: [agentAskTool(panel)] })
+    const center = editor.viewportPageBounds()
+    for (const [index, text] of ['Select a note and ask AI', 'Try a committed @AI note'].entries()) {
+      const tool = BOARD_TOOLS.find((item) => item.name === 'add_note')
+      tool.run(editor.store, { text, at: { x: center.x + 150 + index * 230, y: center.y + 180 } }, { name: 'Example' })
+    }
+  </script>
+</body>
+</html>
