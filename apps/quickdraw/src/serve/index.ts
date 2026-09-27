@@ -1,7 +1,8 @@
 // `quickdraw serve`: the boards' home. Serves the list of boards (/), each
 // board's page (/b/<id>), the packages the page imports (from wherever Node
 // resolves them, so it runs outside this repo), the boards API (/api/boards),
-// a relay per board (/ws/<id>, see ../protocol.js) and link previews (/preview).
+// a relay per board (/ws/<id>, see ../protocol.js), with the agents on it and
+// the requests to them, and link previews (/preview).
 // Updates are persisted in SQLite; a state vector is answered from what is
 // stored, so a board comes back even when no other peer is online.
 import { existsSync, realpathSync } from 'node:fs'
@@ -12,15 +13,17 @@ import type { Duplex } from 'node:stream'
 import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
-import { PRESENCE, SV, UPDATE } from '../protocol.js'
+import type { AgentEvent, AgentParticipant, AgentRequest } from 'quickdraw-agent'
+import { AGENT, PRESENCE, SV, UPDATE } from '../protocol.js'
 import { handlePreview } from './preview.ts'
 import { BOARD_ID, openBoards } from './boards.ts'
+import { openThreads } from './threads.ts'
 import { accept, BINARY, CLOSE, frame, parse, PING, PONG } from './websocket.ts'
 
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -58,6 +61,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   const protocol = fileURLToPath(new URL('../protocol.js', import.meta.url))
   const mounts = new Map(PACKAGES.map((name) => [name.replace('@quickdrawjs/', ''), join(packageRoot(name), 'src')]))
   const boards = openBoards(dbPath, compactEvery)
+  const threads = openThreads(dbPath)
 
   function locate(pathname: string): string | null {
     if (pathname === '/') return join(web, 'index.html')
@@ -93,6 +97,66 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   let nextId = 1
   const presence = (id: number, data: object) => frame(BINARY, Buffer.concat([Buffer.from([PRESENCE]), Buffer.from(JSON.stringify({ ...data, id }))]))
   const broadcast = (room: Set<Duplex>, from: Duplex, out: Buffer) => { for (const peer of room) if (peer !== from && peer.writable) peer.write(out) }
+
+  // agents: a connection that joined as one; the others are pages
+  const agentOf = new Map<Duplex, AgentParticipant>()
+  const agentMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([AGENT]), Buffer.from(JSON.stringify(value))]))
+  const send = (to: Duplex, value: object) => { if (to.writable) to.write(agentMsg(value)) }
+  const pages = (room: Set<Duplex>) => [...room].filter((s) => !agentOf.has(s))
+  const agentsIn = (room: Set<Duplex>) => [...room].flatMap((s) => agentOf.get(s) ?? [])
+  const toPages = (room: Set<Duplex>, value: object) => { const out = agentMsg(value); for (const p of pages(room)) if (p.writable) p.write(out) }
+  const announce = (room: Set<Duplex>) => toPages(room, { kind: 'agents', agents: agentsIn(room) })
+  function record(room: Set<Duplex>, event: AgentEvent) {
+    if (threads.append(event.requestId, event)) toPages(room, { kind: 'event', event })
+  }
+  const str = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max
+  const AGENT_EVENTS = new Set(['progress', 'message', 'question', 'approval', 'op', 'done', 'error'])
+
+  function onAgentMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
+    const agent = agentOf.get(socket)
+    if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
+      send(socket, { kind: 'agents', agents: agentsIn(room) })
+      send(socket, { kind: 'threads', threads: threads.list(board) })
+    } else if (m.kind === 'join' && !agent && str(m.agent?.name, 100)) {
+      // its id, unique on the board: what requests are addressed to
+      const taken = new Set(agentsIn(room).map((a) => a.id))
+      const base = String(str(m.agent.id, 100) ? m.agent.id : m.agent.name)
+      let id = base
+      for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
+      const knows = Array.isArray(m.agent.knows) ? m.agent.knows.filter((k: unknown) => str(k, 100)).slice(0, 8) : []
+      agentOf.set(socket, { id, name: m.agent.name, knows, status: 'idle' })
+      send(socket, { kind: 'joined', id })
+      announce(room)
+    } else if (m.kind === 'status' && agent && ['idle', 'working', 'waiting'].includes(m.status)) {
+      agent.status = m.status
+      announce(room)
+    } else if (m.kind === 'event' && agent && AGENT_EVENTS.has(m.event?.type)) {
+      // only about a request to this agent, on this board
+      const t = threads.get(m.event.requestId)
+      if (t?.board === board && t.thread.request.to === agent.id) record(room, m.event)
+    } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
+      const request = m.request as AgentRequest
+      if (threads.get(request.id)) return
+      const thread = threads.create(board, request)
+      broadcast(new Set(pages(room)), socket, agentMsg({ kind: 'thread', thread })) // the sender has it
+      const to = [...room].find((s) => agentOf.get(s)?.id === request.to)
+      if (to) send(to, { kind: 'request', request })
+      else record(room, { type: 'error', requestId: request.id, message: 'That agent is not on this board.' })
+    } else if (m.kind === 'reply' && !agent && str(m.requestId, 100)) {
+      const t = threads.get(m.requestId)
+      if (t?.board !== board) return
+      const { message } = m
+      const to = [...room].find((s) => agentOf.get(s)?.id === t.thread.request.to)
+      if (str(message, 20_000)) {
+        record(room, { type: 'reply', requestId: m.requestId, text: message })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message })
+      } else if (message && str(message.approval, 200) && typeof message.allow === 'boolean') {
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow } })
+      } else if (message?.undo && Number.isInteger(message.undo.reverted) && Array.isArray(message.undo.skipped)) {
+        record(room, { type: 'undo', requestId: m.requestId, reverted: message.undo.reverted, skipped: message.undo.skipped.filter((s: unknown) => str(s, 200)) })
+      }
+    }
+  }
 
   const server: Server = createServer(async (req, res) => {
     const { pathname } = new URL(req.url ?? '/', 'http://x')
@@ -134,12 +198,27 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
           broadcast(peers, socket, frame(BINARY, payload))
         } else if (payload[0] === PRESENCE) {
           try { broadcast(peers, socket, presence(id, JSON.parse(payload.subarray(1).toString()))) } catch {}
+        } else if (payload[0] === AGENT) {
+          let m
+          try { m = JSON.parse(payload.subarray(1).toString()) } catch { continue }
+          if (m && typeof m === 'object') onAgentMessage(board, peers, socket, m)
         }
       }
     })
     function drop() {
       if (!peers.delete(socket)) return
       broadcast(peers, socket, presence(id, { gone: true }))
+      const agent = agentOf.get(socket)
+      if (agent) {
+        agentOf.delete(socket)
+        announce(peers)
+        // what it was still doing will not finish
+        for (const t of threads.list(board!)) {
+          if (t.request.to === agent.id && (t.status === 'working' || t.status === 'waiting')) {
+            record(peers, { type: 'error', requestId: t.request.id, message: `${agent.name} left the board.` })
+          }
+        }
+      }
       if (!peers.size) rooms.delete(board!)
     }
     socket.on('close', drop)
@@ -149,12 +228,13 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   return {
     server,
     boards,
+    threads,
     listen(port = 8795, host = '127.0.0.1') {
       return new Promise<{ port: number }>((ok) => server.listen(port, host, () => ok(server.address() as { port: number })))
     },
     close() {
       for (const room of rooms.values()) for (const s of room) s.destroy()
-      return new Promise<void>((ok) => server.close(() => ok())).then(() => boards.close())
+      return new Promise<void>((ok) => server.close(() => ok())).then(() => { boards.close(); threads.close() })
     },
   }
 }

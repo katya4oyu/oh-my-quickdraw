@@ -17,6 +17,7 @@
       "imports": {
         "yjs": "https://esm.sh/yjs@13.6.33",
         "@quickdrawjs/core": "/_/core/src/index.js",
+        "quickdraw-agent": "/_/quickdraw-agent/src/index.js",
         "quickdraw-yjs": "/_/quickdraw-yjs/src/index.js",
         "quickdraw-export": "/_/quickdraw-export/src/index.js",
         "quickdraw-import": "/_/quickdraw-import/src/index.js",
@@ -40,7 +41,8 @@
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
-    import { UPDATE, SV, PRESENCE, pack, packPresence, unpackPresence } from '/protocol.js'
+    import { createAgentPanel, agentTools } from 'quickdraw-agent'
+    import { UPDATE, SV, PRESENCE, AGENT, pack, packPresence, unpackPresence, packAgent, unpackAgent } from '/protocol.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
@@ -60,13 +62,38 @@
       return p
     }
 
+    // the AI panel: agents on this board and requests to them, through the relay
+    // (AGENT messages, /protocol.js), which keeps the threads
+    let agents = []
+    const panelListeners = new Set()
+    const toPanel = (event) => panelListeners.forEach((fn) => fn(event))
+    function sendAgent(message) {
+      if (ws?.readyState !== WebSocket.OPEN) throw new Error('Not connected to the board; try again in a moment.')
+      ws.send(packAgent(message))
+    }
+    const panel = createAgentPanel({ editor: board.editor, host: {
+      agents: () => agents,
+      threads: () => [], // they come once connected
+      onEvent(fn) { panelListeners.add(fn); return () => panelListeners.delete(fn) },
+      ask: (request) => sendAgent({ kind: 'request', request }),
+      reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
+    } })
+    function onAgentMessage(m) {
+      if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
+      else if (m.kind === 'threads') toPanel({ type: 'threads', threads: m.threads })
+      else if (m.kind === 'thread') toPanel({ type: 'thread', thread: m.thread })
+      else if (m.kind === 'event') toPanel({ type: 'event', event: m.event })
+    }
+
     // the right rail puts things on the board; the selection bar acts on the selected one.
     // Markdown and embeds hide themselves on a core without registerShapeType.
     const frames = frameTools()
     const cards = markdownTools()
     const web = embedTools(embeds, { fetchPreview })
+    const ai = agentTools(panel)
     createToolbar(board.editor, {
       rail: [
+        ...ai.rail, '-',
         ...frames.rail, ...cards.rail, ...web.rail,
         '-',
         { id: 'more', title: 'More', icon: MORE_ICON, menu: [
@@ -75,7 +102,7 @@
           exportTool(),
         ] },
       ],
-      context: [...frames.context, ...cards.context, ...web.context],
+      context: [...ai.context, ...frames.context, ...cards.context, ...web.context],
     })
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it
@@ -92,15 +119,19 @@
         // push everything we have (edits made while offline), then ask for the rest
         ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
         ws.send(pack(SV, Y.encodeStateVector(ydoc)))
+        ws.send(packAgent({ kind: 'hello' })) // the agents here and the threads
         sendCursor()
       }
       ws.onmessage = ({ data }) => {
         const m = new Uint8Array(data)
         if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
         else if (m[0] === PRESENCE) showCursor(unpackPresence(m))
+        else if (m[0] === AGENT) onAgentMessage(unpackAgent(m))
       }
       ws.onclose = () => {
         for (const id of cursors.keys()) showCursor({ id, gone: true })
+        agents = []
+        toPanel({ type: 'agents' })
         setTimeout(connect, 1000)
       }
     }

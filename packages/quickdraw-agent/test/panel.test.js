@@ -40,7 +40,10 @@ describe('agent panel request model', () => {
     expect(thread.diffs).toHaveLength(1)
     expect(thread.status).toBe('waiting')
     expect(updateAgentThread(thread, { type: 'done' }).status).toBe('done')
-    expect(updateAgentThread({ ...thread, status: 'done' }, { type: 'reply', text: 'thanks' }).status).toBe('done')
+    const done = { ...thread, status: 'done' }
+    expect(updateAgentThread(done, { type: 'reply', text: 'thanks' }).status).toBe('done')
+    expect(updateAgentThread(done, { type: 'message', text: 'you are welcome' }).status).toBe('done')
+    expect(updateAgentThread(done, { type: 'question', text: 'which one?' }).status).toBe('waiting')
   })
 
   it('pins a thread that is not about a shape to the first shape it adds', () => {
@@ -50,6 +53,14 @@ describe('agent panel request model', () => {
     expect(thread.request.anchor).toEqual({ x: 1, y: 2, shapeId: 'frame' })
     const about = updateAgentThread({ request: { id: 's', anchor: { shapeId: 'mine' } }, events: [], diffs: [] }, { type: 'op', op: 'op:3', diff: { records: [] }, ids: ['frame'] })
     expect(about.request.anchor.shapeId).toBe('mine')
+  })
+
+  it('takes an undo from another device', () => {
+    let thread = { request: { id: 'r' }, events: [], diffs: [], status: 'working' }
+    thread = updateAgentThread(thread, { type: 'op', op: 'op:1', diff: { records: [] } })
+    thread = updateAgentThread(thread, { type: 'done' })
+    thread = updateAgentThread(thread, { type: 'undo', reverted: 2, skipped: ['shape:x'] })
+    expect(thread).toMatchObject({ diffs: [], undoResult: { reverted: 2, skipped: ['shape:x'] }, status: 'done' })
   })
 
   it('undoes newest operation first and reports only changed records as skipped', () => {
