@@ -36,3 +36,21 @@ A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `di
 - **Text in Node**: `installMeasure` provides an estimating stand-in for the canvas the core measures text with, so notes and text can be laid out. Browsers draw with real measurements.
 
 Types: [`types/index.d.ts`](types/index.d.ts).
+
+## Agent panel
+
+`createAgentPanel` adds the human side of agents to an editor. The host injects participants, request/reply transport, events and stored threads; this package does not choose a runtime or persist anything.
+
+```js
+import { createAgentPanel, agentAskTool } from 'quickdraw-agent'
+import { createToolbar } from 'quickdraw-toolbar'
+
+const panel = createAgentPanel({ editor, host })
+createToolbar(editor, { context: [agentAskTool(panel)] })
+```
+
+The panel sends `{ id, to, text, context: { shapeIds, frameId?, viewport }, anchor }` requests. The selection item opens the composer with the selected shape as context; a committed note beginning with `@AI` or `@<agent name>` sends its remaining text with that note as context and anchor. Host events populate pinned threads; `op` event diffs are undone newest-first with `undoDiff`, reporting records changed since the operation. `panel.destroy()` removes its UI and subscriptions.
+
+Host shape: `agents()`, `ask(request)`, `reply(requestId, messageOrApproval)`, `threads()`, and `onEvent(fn)`. Events carry `requestId` and use `progress`, `message`, `question`, `approval`, `op`, `done`, or `error` types.
+
+Example: [`examples/quickdraw-agent`](../../examples/quickdraw-agent).

@@ -67,3 +67,79 @@ export const BOARD_TOOLS: BoardTool[]
 /** In Node (no canvas): installs an estimating text measurer for the core. False when there is a real one. */
 export function installMeasure(): boolean
 export function estimateWidth(font: string, text: string): number
+
+export type AgentStatus = 'idle' | 'working' | 'waiting'
+export interface AgentParticipant { id: string, name: string, knows: string[], status: AgentStatus }
+export interface AgentViewport { x: number, y: number, w: number, h: number }
+export interface AgentAnchor { shapeId?: string, x?: number, y?: number }
+export interface AgentRequest {
+  id: string
+  to: string
+  text: string
+  context: { shapeIds: string[], frameId?: string, viewport: AgentViewport }
+  anchor: AgentAnchor
+}
+export type AgentEvent =
+  | { type: 'progress' | 'message' | 'question', requestId: string, text: string }
+  | { type: 'approval', requestId: string, id: string, text?: string }
+  | { type: 'op', requestId: string, op: string, diff: Diff }
+  | { type: 'done', requestId: string, text?: string }
+  | { type: 'error', requestId: string, message: string }
+export type AgentHostEvent = { type: 'agents', agents?: AgentParticipant[] } | { type: 'event', event: AgentEvent }
+export interface AgentThread {
+  request: AgentRequest
+  events: AgentEvent[]
+  diffs: Diff[]
+  status: string
+  undoResult?: { reverted: number, skipped: string[] }
+}
+export interface AgentHost {
+  agents(): AgentParticipant[]
+  ask(request: AgentRequest): void | Promise<void>
+  reply(requestId: string, message: string | { approval: string, allow: boolean }): void | Promise<void>
+  threads(): AgentThread[]
+  onEvent(fn: (event: AgentHostEvent | AgentEvent) => void): void | (() => void)
+}
+export interface AgentEditor {
+  readonly store: Store
+  readonly selection: Set<string>
+  readonly camera: { x: number, y: number, z: number }
+  viewportPageBounds(): AgentViewport
+  pageToScreen(x: number, y: number): Point
+  on(event: string, fn: (...args: unknown[]) => void): () => void
+}
+export interface AgentPanel {
+  askSelection(shapeIds?: string[]): AgentRequest
+  openForSelection(shapeIds: string[]): void
+  askText(text: string, anchor?: AgentAnchor): AgentRequest
+  show(): void
+  readonly threads: AgentThread[]
+  destroy(): void
+}
+/** Add a host-driven participant panel, canvas threads and request pins. */
+export function createAgentPanel(options: {
+  editor: AgentEditor
+  store?: Store
+  container?: HTMLElement
+  host: AgentHost
+}): AgentPanel
+/** A quickdraw-toolbar selection item; import this package's item into context. */
+export function agentAskTool(panel: AgentPanel): {
+  id: string
+  title: string
+  icon: string
+  when(shape: object): boolean
+  run(ctx: { editor: AgentEditor, shape: { id: string } }): AgentRequest
+}
+export function buildAgentRequest(options: {
+  id: string
+  to: string
+  text: string
+  editor: AgentEditor
+  shapeIds?: string[]
+  frameId?: string
+  anchor?: AgentAnchor
+}): AgentRequest
+export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
+export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
+export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }
