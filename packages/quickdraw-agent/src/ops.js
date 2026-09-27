@@ -3,7 +3,7 @@
 // store transaction whose diff is returned, so it can be logged and undone.
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
-import { composeDiff, newId, pageBounds, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
+import { newId, pageBounds, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
 import { createFrame, frameTitle, isFrame, renameFrame } from 'quickdraw-frames'
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { TYPE as EMBED } from 'quickdraw-embed'
@@ -298,21 +298,38 @@ function route(store, [ra, rb]) {
 }
 
 // Runs fn(ops) as one operation, all or nothing. Returns { op, diff, result, focus }.
+// The diff compares each touched record before and after, rather than composing
+// the diffs as they are emitted: a listener that edits in response (frame
+// membership) emits its diff before the one that caused it, out of order.
 export function runOp(store, name, fn) {
   const op = 'op:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const { ops, focus, reroute } = operations(store, name, op)
-  let diff = emptyDiff()
-  const off = store.listen((d) => { diff = composeDiff(diff, d) }, { source: 'user' })
+  const before = new Map(store.all().map((r) => [r.id, r]))
+  const touched = new Set()
+  const off = store.listen((d) => {
+    for (const part of [d.added, d.removed, d.updated]) for (const id of Object.keys(part)) touched.add(id)
+  }, { source: 'user' })
+  const since = () => {
+    const diff = emptyDiff()
+    for (const id of touched) {
+      const a = before.get(id), b = store.get(id)
+      if (a === b) continue
+      if (!a) diff.added[id] = b
+      else if (!b) diff.removed[id] = a
+      else diff.updated[id] = [a, b]
+    }
+    return diff
+  }
   let result
   try {
     try {
       store.transact(() => { result = fn(ops); reroute() })
     } catch (e) {
-      revert(store, diff) // the transaction still applied what came before the error
+      revert(store, since()) // the transaction still applied what came before the error
       throw e
     }
   } finally { off() }
-  return { op, diff, result, focus: focus() }
+  return { op, diff: since(), result, focus: focus() }
 }
 
 // Runs a list of steps as one operation. Steps may name what they add
