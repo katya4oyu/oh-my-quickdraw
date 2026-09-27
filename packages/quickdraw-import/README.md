@@ -20,3 +20,5 @@ An imported shape is synced to every peer, so a file is validated as a whole bef
 - Each type's required geometry must be present and numeric (`pts`, `w`/`h`, `dx`/`dy`, ...).
 - Image assets must be inline `data:` PNG, JPEG, GIF or WebP — no remote URLs, no SVG. Unreferenced assets are dropped.
 - At most 5000 shapes and 25 MB per file.
+
+Example: `examples/quickdraw-import` (run `npm run dev` at the workspace root).

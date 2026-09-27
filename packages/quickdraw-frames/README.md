@@ -27,3 +27,5 @@ const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.sto
 
 - No clipping, and a frame looks like a plain rectangle: both would need a core drawing hook.
 - `quickdraw-import` gives imported shapes fresh ids without remapping `frameId`, so an imported frame loses its title link; its members rejoin by position when moved.
+
+Example: `examples/quickdraw-frames` (run `npm run dev` at the workspace root).
