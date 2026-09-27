@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
-import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame } from '../src/index.js'
+import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame, setFrameAspect } from '../src/index.js'
 
 // 10×10 box at (x, y): center at (x + 5, y + 5)
 const box = (id, x, y) => ({ id, typeName: 'shape', type: 'geo', x, y, rot: 0, z: 1, props: { geo: 'rectangle', w: 10, h: 10 } })
@@ -118,5 +118,49 @@ describe('frames', () => {
     expect(frameTitle(store, frame)).toBe('')
     renameFrame(store, frame, 'Back')
     expect(store.get(frame + '-title')).toMatchObject({ frameId: frame, x: 0, props: { text: 'Back' } })
+  })
+
+  it('resizing from the left or top keeps members in place and carries the title', () => {
+    const { store, frame } = setup()
+    store.update(frame, { x: -100, y: -50, props: { w: 300, h: 250 } }) // top-left handle
+    expect(store.get('shape:in')).toMatchObject({ x: 50, y: 50 })
+    expect(store.get(frame + '-title')).toMatchObject({ x: -100, y: -84 })
+  })
+
+  describe('aspect', () => {
+    const framed = (aspect) => {
+      const store = new Store()
+      bindFrames(store)
+      return { store, frame: createFrame(store, { x: 0, y: 0, w: 320, aspect }) }
+    }
+
+    it('creates the frame at that aspect', () => {
+      const { store, frame } = framed(16 / 9)
+      expect(store.get(frame).props).toMatchObject({ w: 320, h: 180 })
+    })
+
+    it('keeps it when the width is dragged, in the same undo step', () => {
+      const { store, frame } = framed(16 / 9)
+      store.update(frame, { props: { w: 640 } }) // right handle
+      expect(store.get(frame)).toMatchObject({ x: 0, y: 0, props: { w: 640, h: 360 } })
+      store.undo()
+      expect(store.get(frame).props).toMatchObject({ w: 320, h: 180 })
+    })
+
+    it('keeps it when the height leads, anchoring the dragged-from edges', () => {
+      const { store, frame } = framed(1)
+      store.update(frame, { x: 0, y: -80, props: { w: 330, h: 400 } }) // mostly the top edge
+      expect(store.get(frame)).toMatchObject({ x: 0, y: -80, props: { w: 400, h: 400 } }) // left edge untouched, so it stays
+    })
+
+    it('can be set or cleared later', () => {
+      const { store, frame } = framed(null)
+      setFrameAspect(store, frame, 4 / 3)
+      expect(store.get(frame).props.h).toBe(240)
+      setFrameAspect(store, frame, null)
+      store.update(frame, { props: { w: 100 } })
+      expect(store.get(frame).props).toMatchObject({ w: 100, h: 240 })
+      expect('aspect' in store.get(frame)).toBe(false)
+    })
   })
 })
