@@ -13,11 +13,17 @@
 // stopped if it tries to navigate away. Iframes ignore the pointer until
 // activated (double-click, or activate()), so the board stays usable.
 //
-// Record: { type: 'embed', props: { kind: 'url' | 'html', url? | html?, w, h, title? } }
+// Link cards: a URL's placeholder is a card from its stored Open Graph
+// preview, with an Open button. It is what a viewer sees when their rules do
+// not allow the page, and all there is for kind 'link' (never an iframe).
+//
+// Record: { type: 'embed', props: { kind: 'url' | 'link' | 'html', url? | html?, w, h, title?, preview? } }
 import * as core from '@quickdrawjs/core'
 import { resolveEmbedUrl, htmlDocument, DEFAULT_RULES, URL_SANDBOX, URL_ALLOW, HTML_SANDBOX } from './policy.js'
+import { cleanPreview, PREVIEW_LIMITS } from './preview.js'
 
 export * from './policy.js'
+export * from './preview.js'
 
 export const TYPE = 'embed'
 export const isEmbedSupported = () => typeof core.registerShapeType === 'function'
@@ -27,9 +33,110 @@ function hostOf(url) {
   try { return new URL(url).hostname } catch { return 'invalid URL' }
 }
 
-function draw(ctx, shape, { theme }) {
-  const { w, h, kind, url, title } = shape.props
+// decoded preview images, by data URL
+const images = new Map()
+function cardImage(src, onLoad) {
+  let img = images.get(src)
+  if (!img && typeof Image !== 'undefined') {
+    img = new Image()
+    img.onload = () => onLoad?.()
+    img.src = src
+    images.set(src, img)
+    if (images.size > 100) images.delete(images.keys().next().value)
+  }
+  return img?.complete && img.naturalWidth ? img : null
+}
+
+// break opportunities: runs of spaces, single CJK characters, other words
+const SEGMENT = /\s+|[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]|[^\s\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]+/g
+
+// up to n lines of text within maxW, wrapping at spaces or between CJK
+// characters (words longer than a line break anywhere); ellipsized when cut
+export function fitLines(ctx, text, maxW, n) {
+  const fits = (t) => ctx.measureText(t).width <= maxW
+  const segs = text.match(SEGMENT) || []
+  const lines = []
+  let line = ''
+  let cut = false
+  const push = () => { lines.push(line.trimEnd()); line = '' }
+  for (let i = 0; i < segs.length && !cut; i++) {
+    let seg = segs[i]
+    if (fits(line + seg)) { line += seg; continue }
+    if (/^\s+$/.test(seg)) { push(); cut = lines.length === n && i < segs.length - 1; continue }
+    if (line.trim()) push()
+    else line = ''
+    while (lines.length < n && !fits(seg) && seg.length > 1) { // a word wider than the line
+      let k = seg.length - 1
+      while (k > 1 && !fits(seg.slice(0, k))) k--
+      lines.push(seg.slice(0, k))
+      seg = seg.slice(k)
+    }
+    if (lines.length === n) cut = true
+    else line = seg
+  }
+  if (!cut && line.trim()) {
+    if (lines.length < n) push()
+    else cut = true
+  }
+  if (cut) {
+    let last = lines[n - 1]
+    while (last && !fits(last + '…')) last = last.slice(0, -1)
+    lines[n - 1] = last.trimEnd() + '…'
+  }
+  return lines
+}
+
+function drawCard(ctx, shape, { theme, onAssetLoad }) {
+  const { w, h, url, title, preview = {} } = shape.props
   const grey = theme.colors.grey
+  ctx.beginPath()
+  ctx.roundRect(0, 0, w, h, 8)
+  ctx.fillStyle = theme.background
+  ctx.fill()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = grey.stroke
+  ctx.stroke()
+  ctx.save()
+  ctx.clip()
+  let y = 0
+  if (preview.image) {
+    const ih = Math.min(h * 0.55, w * 0.52)
+    const img = cardImage(preview.image, onAssetLoad)
+    if (img) { // cover: crop to the box
+      const k = Math.max(w / img.naturalWidth, ih / img.naturalHeight)
+      const sw = w / k, sh = ih / k
+      ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, w, ih)
+    } else {
+      ctx.fillStyle = grey.fill
+      ctx.fillRect(0, 0, w, ih)
+    }
+    y = ih
+  }
+  const pad = 12, maxW = w - pad * 2, foot = h - pad - 14
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  y += pad
+  const text = (font, color, str, n, lh) => {
+    ctx.font = font
+    ctx.fillStyle = color
+    for (const line of fitLines(ctx, str, maxW, n)) {
+      if (y + lh > foot) return
+      ctx.fillText(line, pad, y)
+      y += lh
+    }
+  }
+  text(`bold 15px ${core.FONTS.sans}`, theme.colors.black.stroke, title || preview.title || hostOf(url), 2, 20)
+  if (preview.description) { y += 4; text(`13px ${core.FONTS.sans}`, grey.stroke, preview.description, 3, 18) }
+  ctx.font = `12px ${core.FONTS.sans}`
+  ctx.fillStyle = grey.stroke
+  ctx.fillText(fitLines(ctx, '↗ ' + (preview.siteName || hostOf(url)), maxW, 1)[0] ?? '', pad, foot)
+  ctx.restore()
+}
+
+function draw(ctx, shape, opts) {
+  const { w, h, kind, title } = shape.props
+  if (kind !== 'html') return drawCard(ctx, shape, opts)
+  const grey = opts.theme.colors.grey
   ctx.beginPath()
   ctx.roundRect(0, 0, w, h, 8)
   ctx.fillStyle = grey.fill
@@ -41,7 +148,7 @@ function draw(ctx, shape, { theme }) {
   ctx.font = `14px ${core.FONTS.sans}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(title || (kind === 'html' ? '</> HTML' : `▶ ${hostOf(url)}`), w / 2, h / 2, w - 24)
+  ctx.fillText(title || '</> HTML', w / 2, h / 2, w - 24)
 }
 
 let registered = false
@@ -57,16 +164,62 @@ export function registerEmbed() {
   return (registered = true)
 }
 
-// kind 'url': { url }, or kind 'html': { html }. Returns the new id.
-export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title }) {
+// kind 'url' (an iframe where allowed, a card elsewhere) or 'link' (always a
+// card): { url, preview?, fetchPreview? }; kind 'html': { html }.
+// fetchPreview(url) -> { title?, description?, siteName?, image?: Blob | data URL }
+// is the app's way past CORS (a proxy, a desktop shell…); its answer is
+// cleaned, the image shrunk inline, and stored once. Returns the new id.
+export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title, preview, fetchPreview }) {
   if (!registerEmbed()) throw new Error(UNSUPPORTED)
   const id = core.newId()
+  const link = kind === 'link'
   const props = kind === 'html'
     ? { kind, html: html ?? '', w: w ?? 400, h: h ?? 300 }
-    : { kind: 'url', url: url ?? '', w: w ?? 480, h: h ?? 270 }
+    : { kind: link ? 'link' : 'url', url: url ?? '', w: w ?? (link ? 320 : 480), h: h ?? (link ? 260 : 270) }
   if (title) props.title = title
+  const clean = kind !== 'html' && cleanPreview(preview)
+  if (clean) props.preview = clean
   store.put({ id, typeName: 'shape', type: TYPE, x, y, rot: 0, z: store.maxZ() + 1, props })
+  if (fetchPreview && kind !== 'html') addPreview(store, id, fetchPreview)
   return id
+}
+
+// Fetches a card's preview with the app's fetchPreview and stores it.
+// Resolves to the stored preview, or null (no answer, or the card changed).
+export async function addPreview(store, id, fetchPreview) {
+  const url = store.get(id)?.props.url
+  if (!url) return null
+  let p
+  try { p = await fetchPreview(url) } catch { return null }
+  if (!p) return null
+  const image = typeof Blob !== 'undefined' && p.image instanceof Blob ? await shrinkImage(p.image).catch(() => undefined) : p.image
+  const preview = cleanPreview({ ...p, image })
+  if (!preview || store.get(id)?.props.url !== url) return null
+  store.update(id, { props: { preview } })
+  return preview
+}
+
+// an image blob as a small inline JPEG, within the preview size limit
+async function shrinkImage(blob, max = 480) {
+  const bmp = await createImageBitmap(blob)
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(bmp.width * k))
+  c.height = Math.max(1, Math.round(bmp.height * k))
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height)
+  for (const q of [0.8, 0.6, 0.4]) {
+    const d = c.toDataURL('image/jpeg', q)
+    if (d.length <= PREVIEW_LIMITS.image) return d
+  }
+  return undefined
+}
+
+// opens a card's link in a new tab, http(s) only, telling it nothing about the board
+function openLink(url) {
+  try {
+    const u = new URL(url)
+    if (u.protocol === 'https:' || u.protocol === 'http:') window.open(u.href, '_blank', 'noopener,noreferrer')
+  } catch {}
 }
 
 // Shows embeds over the board. opts.rules: the URL rules (DEFAULT_RULES);
@@ -106,15 +259,35 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
     return box
   }
 
-  // the iframe (or a notice) for a record, per this viewer's rules and choices
+  // over a card drawn on the canvas: an Open button, and an optional badge
+  function cardControls(url, badge) {
+    const box = document.createElement('div')
+    Object.assign(box.style, { position: 'absolute', inset: '0', font: `12px ${core.FONTS.sans}` })
+    const b = document.createElement('button')
+    b.textContent = 'Open ↗'
+    Object.assign(b.style, { position: 'absolute', right: '8px', bottom: '8px', pointerEvents: 'auto', font: `600 12px ${core.FONTS.sans}`, padding: '4px 10px', borderRadius: '999px', border: '1px solid #bbb', background: '#fff', cursor: 'pointer' })
+    b.onclick = () => openLink(url)
+    box.append(b)
+    if (badge) {
+      const t = document.createElement('span')
+      t.textContent = badge
+      Object.assign(t.style, { position: 'absolute', left: '8px', top: '8px', padding: '2px 8px', borderRadius: '999px', background: 'rgba(0,0,0,0.55)', color: '#fff' })
+      box.append(t)
+    }
+    return box
+  }
+
+  // the iframe (or controls, or a notice) for a record, per this viewer's rules and choices
   function content(s) {
     const p = s.props
+    if (p.kind === 'link') return cardControls(p.url)
     if (p.kind === 'url') {
       const v = verdict(p.url)
-      if (v.pending) return note('Checking…')
+      if (v.pending) return cardControls(p.url, 'Checking…')
       const r = v.r
-      // with allow-same-origin, a page from our own origin could reach into the board
-      if (!r || new URL(r.src).origin === location.origin) return note(`Not allowed here: ${hostOf(p.url)}`)
+      // with allow-same-origin, a page from our own origin could reach into the board;
+      // not allowed: the card stays, with nothing loaded from the site
+      if (!r || new URL(r.src).origin === location.origin) return cardControls(p.url, 'Link only')
       const f = document.createElement('iframe')
       Object.assign(f, { src: r.src, allow: URL_ALLOW, referrerPolicy: 'strict-origin-when-cross-origin', allowFullscreen: true, title: p.title || r.name })
       f.setAttribute('sandbox', URL_SANDBOX)
@@ -136,8 +309,10 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
 
   function mount(s) {
     const wrap = document.createElement('div')
-    Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0', transformOrigin: '0 0', borderRadius: '8px', overflow: 'hidden', background: '#fff' })
+    Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0', transformOrigin: '0 0', borderRadius: '8px', overflow: 'hidden' })
     const c = content(s)
+    // iframes and HTML notices sit on white; card controls let the card show through
+    if (c.tagName === 'IFRAME' || s.props.kind === 'html') wrap.style.background = '#fff'
     if (c.tagName === 'IFRAME') Object.assign(c.style, { width: '100%', height: '100%', border: '0', display: 'block' })
     wrap.append(c)
     layer.append(wrap)

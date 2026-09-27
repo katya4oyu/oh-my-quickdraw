@@ -23,6 +23,7 @@
   <div id="board"></div>
   <div class="actions">
     <button id="url">Add URL</button>
+    <button id="link">Add link</button>
     <button id="html">Add HTML</button>
     <button id="use">Use</button>
   </div>
@@ -32,11 +33,22 @@
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
-    // allowed sites: YouTube, Vimeo, Figma, CodePen, Google Maps embeds (pass { rules } to change)
+    // allowed sites: YouTube, Vimeo, Figma, CodePen, Google Maps embeds (pass { rules } to change);
+    // other URLs show as link cards
     const embeds = bindEmbeds(editor)
 
     // a core without registerShapeType (upstream Quickdraw) cannot draw embeds
     if (!isEmbedSupported()) for (const b of document.querySelectorAll('.actions button')) b.disabled = true
+
+    // link previews through the example server's /preview proxy (browsers cannot read
+    // other sites' HTML); the card keeps what it got, so viewers never contact the site
+    async function fetchPreview(url) {
+      const r = await fetch('/preview?url=' + encodeURIComponent(url))
+      if (!r.ok) return null
+      const p = await r.json()
+      if (p.image) p.image = await (await fetch(p.image)).blob() // the package shrinks it
+      return p
+    }
 
     const place = (id) => { editor.setTool('select'); editor.setSelection([id]) }
     const center = (w, h) => {
@@ -47,7 +59,13 @@
 
     document.getElementById('url').onclick = () => {
       const url = prompt('URL (YouTube, Vimeo, Figma, CodePen or a Google Maps embed)', 'https://www.youtube.com/watch?v=aqz-KE-bpKQ')
-      if (url) place(createEmbed(editor.store, { ...center(480, 270), url }))
+      if (url) place(createEmbed(editor.store, { ...center(480, 270), url, fetchPreview }))
+    }
+
+    // a card only: never an iframe, whatever the site
+    document.getElementById('link').onclick = () => {
+      const url = prompt('Link URL', 'https://github.com/')
+      if (url) place(createEmbed(editor.store, { ...center(320, 260), kind: 'link', url, fetchPreview }))
     }
 
     // runs sandboxed: scripts only, no network, stopped if it tries to navigate

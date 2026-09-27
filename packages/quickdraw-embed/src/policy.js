@@ -6,6 +6,7 @@
 // permission. URLs must be https and match an allowed rule, which also
 // rewrites them to the provider's embed URL. Inline HTML runs in an
 // opaque-origin sandbox (scripts only) under a CSP that allows no network.
+import { checkPreview } from './preview.js'
 
 export const MAX_URL_LENGTH = 2048
 export const MAX_HTML_LENGTH = 200_000
@@ -92,8 +93,11 @@ export function validateEmbed(shape) {
   const p = shape.props
   if (!Number.isFinite(p.w) || !Number.isFinite(p.h) || p.w < 40 || p.h < 40 || p.w > 4000 || p.h > 4000) return 'bad size'
   if (p.title != null && (typeof p.title !== 'string' || p.title.length > 200)) return 'bad props.title'
-  if (p.kind === 'url') {
-    if (typeof p.url !== 'string' || p.url.length > MAX_URL_LENGTH || !p.url.startsWith('https://')) return 'bad props.url'
+  if (p.kind === 'url' || p.kind === 'link') {
+    if (typeof p.url !== 'string' || p.url.length > MAX_URL_LENGTH || !/^https?:\/\//.test(p.url)) return 'bad props.url'
+    if (p.kind === 'url' && !p.url.startsWith('https://')) return 'bad props.url'
+    const err = checkPreview(p.preview)
+    if (err) return err
   } else if (p.kind === 'html') {
     if (typeof p.html !== 'string') return 'bad props.html'
     if (p.html.length > MAX_HTML_LENGTH) return `props.html is too long (max ${MAX_HTML_LENGTH} characters)`

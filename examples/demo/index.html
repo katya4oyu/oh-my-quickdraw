@@ -141,7 +141,17 @@
       const id = selectedCard()
       if (id) downloadMarkdown(board.editor.store, id)
     }
-    // a URL (YouTube, Vimeo, Figma, CodePen, Google Maps embed), or empty for a small HTML sample
+    // link previews through the example server's /preview proxy (browsers cannot read
+    // other sites' HTML); the card keeps what it got, so viewers never contact the site
+    async function fetchPreview(url) {
+      const r = await fetch('/preview?url=' + encodeURIComponent(url))
+      if (!r.ok) return null
+      const p = await r.json()
+      if (p.image) p.image = await (await fetch(p.image)).blob() // the package shrinks it
+      return p
+    }
+    // a URL (YouTube, Vimeo, Figma, CodePen, Google Maps embed; other sites become link cards),
+    // or empty for a small HTML sample
     document.getElementById('embed-add').onclick = () => {
       const url = prompt('Embed URL (leave empty for an HTML sample)', '')
       if (url == null) return
@@ -149,7 +159,7 @@
       const w = Math.min(480, v.w * 0.9)
       const at = { x: v.x + (v.w - w) / 2, y: v.y + v.h * 0.15, w, h: w * 9 / 16 }
       const id = url.trim()
-        ? createEmbed(board.editor.store, { ...at, url: url.trim() })
+        ? createEmbed(board.editor.store, { ...at, url: url.trim(), fetchPreview })
         : createEmbed(board.editor.store, { ...at, kind: 'html', html: '<style>body{font:16px system-ui;display:grid;place-items:center;height:100vh}</style><button onclick="this.textContent=+this.textContent+1">0</button>' })
       board.editor.setTool('select')
       board.editor.setSelection([id])
