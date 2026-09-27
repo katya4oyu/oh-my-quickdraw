@@ -24,7 +24,7 @@ It listens on 127.0.0.1. To reach it from other devices, put something in front,
 
 ## `quickdraw agent codex`
 
-`quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]`, from the directory Codex should work in (`--model` and `--effort`, such as `low`, `medium` or `high`, override your Codex defaults; the thread shows what it runs on):
+`quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]`, from the directory Codex should work in (it offers the panel the models Codex lists, so people choose the model and effort per request; `--model` and `--effort` set the defaults there instead of your Codex settings; the thread shows what it runs on):
 
 ```sh
 cd ~/src/some-project

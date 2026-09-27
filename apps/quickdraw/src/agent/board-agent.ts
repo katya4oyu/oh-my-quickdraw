@@ -13,7 +13,9 @@ import { bindFrames } from 'quickdraw-frames'
 import { BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import type { Board } from '../board/open.ts'
 
-export interface Participant { id: string, name: string, knows: string[] }
+import type { AgentModel } from 'quickdraw-agent'
+
+export interface Participant { id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string }
 
 export interface BoardAgent {
   /** set by the runtime: a new request */

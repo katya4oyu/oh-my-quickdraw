@@ -81,23 +81,37 @@ export function commandText(command: string): string {
   return clip(text.replace(/\s+/g, ' ').trim(), 80)
 }
 
-/** Connects an app-server to a board agent; resolves once Codex is ready. */
+/** Starts the conversation with app-server: the models it offers (for the panel), and the person's defaults */
+export async function initCodex(server: AppServer, defaults: { model?: string, effort?: string } = {}) {
+  await server.request('initialize', {
+    clientInfo: { name: 'quickdraw', title: 'Quickdraw', version: '0.1.0' },
+    capabilities: { experimentalApi: true, requestAttestation: false }, // dynamicTools is experimental
+  })
+  server.notify('initialized')
+  const listed: Json[] = (await server.request('model/list', {}))?.data ?? []
+  const models = listed.filter((m) => !m.hidden).map((m) => ({
+    id: m.id, name: m.displayName ?? m.id,
+    efforts: (m.supportedReasoningEfforts ?? []).map((e: Json) => e.reasoningEffort),
+    effort: m.defaultReasoningEffort,
+  }))
+  const config = (await server.request('config/read', {}).catch(() => null))?.config ?? {}
+  const model = defaults.model ?? config.model ?? listed.find((m) => m.isDefault)?.id
+  const effort = defaults.effort ?? config.model_reasoning_effort ?? models.find((m) => m.id === model)?.effort
+  return { models, model, effort }
+}
+
 export interface CodexOptions {
   cwd: string
   name: string
-  /** a Codex model id (see `codex` / model/list); otherwise the person's Codex default */
+  /** used when a request does not say (the panel sends what the person chose) */
   model?: string
-  /** reasoning effort, such as low, medium, high; otherwise the model's default */
   effort?: string
 }
 
+/** Connects an initialized app-server (initCodex) to a board agent. */
 export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name, model, effort }: CodexOptions) {
-  const ready = server.request('initialize', {
-    clientInfo: { name: 'quickdraw', title: 'Quickdraw', version: '0.1.0' },
-    capabilities: { experimentalApi: true, requestAttestation: false }, // dynamicTools is experimental
-  }).then(() => server.notify('initialized'))
 
-  const byRequest = new Map<string, { threadId: string, turnId: string | null }>()
+  const byRequest = new Map<string, { threadId: string, turnId: string | null, effort?: string }>()
   const requestOf = new Map<string, string>() // Codex thread -> request
   let waiting = 0
   const updateStatus = () => {
@@ -109,7 +123,7 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     const t = byRequest.get(requestId)!
     const input = [{ type: 'text', text, text_elements: [] }]
     if (t.turnId) await server.request('turn/steer', { threadId: t.threadId, input, expectedTurnId: t.turnId })
-    else await server.request('turn/start', { threadId: t.threadId, input, ...(effort ? { effort } : {}) })
+    else await server.request('turn/start', { threadId: t.threadId, input, ...(t.effort ? { effort: t.effort } : {}) })
   }
 
   server.onNotification((method, p) => {
@@ -168,17 +182,17 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
   agent.onRequest = async (request) => {
     try {
       agent.lookAt(request)
-      await ready
+      const use = { model: request.options?.model ?? model, effort: request.options?.effort ?? effort }
       const started = await server.request('thread/start', {
         cwd,
-        ...(model ? { model } : {}),
+        ...(use.model ? { model: use.model } : {}),
         developerInstructions: instructions(name),
         dynamicTools: agent.tools.map((t) => ({ type: 'function', ...t })),
       })
       const { thread } = started
-      const used = [started.model, effort ?? started.reasoningEffort].filter(Boolean).join(' · ')
+      const used = [started.model, use.effort ?? started.reasoningEffort].filter(Boolean).join(' · ')
       if (used) agent.emit(request.id, { type: 'progress', text: used })
-      byRequest.set(request.id, { threadId: thread.id, turnId: null })
+      byRequest.set(request.id, { threadId: thread.id, turnId: null, effort: use.effort })
       requestOf.set(thread.id, request.id)
       await turn(request.id, prompt(request))
     } catch (e) {
@@ -189,5 +203,4 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     if (!byRequest.has(requestId)) return // from before this agent started
     try { await turn(requestId, text) } catch (e) { agent.emit(requestId, { type: 'error', message: (e as Error).message }) }
   }
-  await ready
 }

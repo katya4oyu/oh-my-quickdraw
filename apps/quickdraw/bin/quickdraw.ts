@@ -11,8 +11,9 @@ const USAGE = `quickdraw <command>
         SQLite persistence (<data>/boards.sqlite), link previews (/preview)
   agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]
         Codex joins a board, working in this directory (its files, AGENTS.md
-        and your Codex settings), and takes requests from the board's AI panel;
-        --model and --effort (low, medium, high, …) override your Codex defaults
+        and your Codex settings), and takes requests from the board's AI panel,
+        where people choose the model and effort per request; --model and
+        --effort (low, medium, high, …) set the defaults there
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -53,7 +54,7 @@ if (command === 'serve') {
   const { resolveBoard, serverOf } = await import('../src/commands/boards.ts')
   const { openBoard } = await import('../src/board/open.ts')
   const { joinBoard } = await import('../src/agent/board-agent.ts')
-  const { startAppServer, runCodex } = await import('../src/agent/codex.ts')
+  const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
   const cwd = process.cwd()
   const folder = basename(cwd)
   const name = values.name ?? `Codex · ${folder}`
@@ -62,8 +63,8 @@ if (command === 'serve') {
     const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server))
     const board = await openBoard({ url, name })
     const codex = startAppServer(cwd)
-    const running = [values.model, values.effort].filter(Boolean).join(' · ')
-    const agent = await joinBoard(board, { id, name, knows: running ? [folder, running] : [folder] })
+    const offered = await initCodex(codex, { model: values.model, effort: values.effort })
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered })
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
       codex.close()
@@ -74,7 +75,7 @@ if (command === 'serve') {
     board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
     process.on('SIGINT', () => leave(0))
     process.on('SIGTERM', () => leave(0))
-    await runCodex(codex, agent, { cwd, name, model: values.model, effort: values.effort })
+    await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
   } catch (e) {
     process.stderr.write(JSON.stringify({ error: (e as Error).message }) + '\n')

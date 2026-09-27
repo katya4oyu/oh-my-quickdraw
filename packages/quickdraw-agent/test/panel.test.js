@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
+import { undoAgentRequest, agentOptions, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -13,6 +13,19 @@ describe('agent panel request model', () => {
     expect(selection).toEqual({ id: 's', to: 'board', text: 'Arrange these', context: { shapeIds: ['a', 'f1', 'f2'], frameIds: ['f1', 'f2'], viewport: { x: -10, y: 20, w: 800, h: 600 } }, anchor: { shapeId: 'a', x: 5, y: 6 } })
     expect(panel.context).toMatchObject({ shapeIds: [], frameIds: [] })
     expect(note.anchor.shapeId).toBe('note')
+  })
+
+  it('runs a request on the chosen model and effort, falling back to what the agent and the model offer', () => {
+    const agent = { id: 'codex', name: 'Codex', knows: [], status: 'idle', model: 'b', effort: 'high', models: [
+      { id: 'a', name: 'A', efforts: ['low', 'medium'], effort: 'medium' },
+      { id: 'b', name: 'B', efforts: ['low', 'medium', 'high'], effort: 'medium' },
+    ] }
+    expect(agentOptions(agent)).toEqual({ model: 'b', effort: 'high' }) // the agent's defaults
+    expect(agentOptions(agent, { model: 'a' })).toEqual({ model: 'a', effort: 'medium' }) // that model's default
+    expect(agentOptions(agent, { model: 'a', effort: 'high' })).toEqual({ model: 'a', effort: 'medium' }) // not offered there
+    expect(agentOptions(agent, { model: 'gone', effort: 'low' })).toEqual({ model: 'b', effort: 'low' })
+    expect(agentOptions({ ...agent, models: undefined })).toBeUndefined()
+    expect(buildAgentRequest({ id: 'r', to: 'codex', text: 'x', editor, options: { model: 'a', effort: 'low' } }).options).toEqual({ model: 'a', effort: 'low' })
   })
 
   it('recognizes only explicit @AI or known @agent-name mentions', () => {

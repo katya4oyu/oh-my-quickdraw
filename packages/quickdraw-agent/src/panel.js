@@ -2,12 +2,22 @@ import { pageBounds } from '@quickdrawjs/core'
 import { textOf, undoDiff } from './ops.js'
 
 /** Build the common request shape from a panel, selection, or committed note. */
-export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameIds = [], anchor = {} }) {
+export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameIds = [], anchor = {}, options }) {
   return {
     id, to, text: String(text).trim(),
     context: { shapeIds: [...shapeIds], frameIds: [...frameIds], viewport: { ...editor.viewportPageBounds() } },
     anchor: { ...anchor },
+    ...(options ? { options: { ...options } } : {}),
   }
+}
+
+/** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults. */
+export function agentOptions(agent, choice = {}) {
+  const models = agent?.models
+  if (!models?.length) return undefined
+  const model = models.find((m) => m.id === choice.model) ?? models.find((m) => m.id === agent.model) ?? models[0]
+  const fallback = model.id === agent.model && model.efforts.includes(agent.effort) ? agent.effort : model.effort
+  return { model: model.id, effort: model.efforts.includes(choice.effort) ? choice.effort : fallback }
 }
 
 /** A committed note beginning with @AI or a known agent name is a request. */
@@ -130,7 +140,8 @@ const STYLE = `
 .qda-chip .qd-tool{width:22px;height:22px}.qda-chip .qd-tool svg{width:13px;height:13px}
 .qda-input{display:flex;align-items:flex-end;gap:6px;padding:4px 4px 4px 10px;border-radius:14px;background:var(--qd-seg-bg)}
 .qda-input textarea{flex:1;border:0;outline:0;background:transparent;color:inherit;resize:none;font:16px/1.35 system-ui,-apple-system,sans-serif;padding:4px 0;max-height:120px}
-.qda-input select{font:inherit;font-size:12px;border:0;background:transparent;color:var(--qd-ink-soft);align-self:center;max-width:110px}
+.qda-opts{display:flex;flex-wrap:wrap;gap:4px}
+.qda-opts select{font:inherit;font-size:12px;border:1px solid var(--qd-border);border-radius:999px;padding:3px 8px;background:transparent;color:var(--qd-ink);max-width:170px}
 .qda-send{background:var(--qd-on-bg)!important;color:var(--qd-on-ink)!important;border-radius:50%!important;width:30px!important;height:30px!important}
 .qda-send:disabled{opacity:.3}
 .qda-pins{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:30}
@@ -187,6 +198,16 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   let view = null // null: the list; else the open thread's id
   let pendingShapeIds = null // the selection a request will be about
   let editingNoteId = null
+  // the model and effort chosen per agent, remembered on this device
+  const CHOICES = 'quickdraw-agent:choices'
+  let choices = {}
+  try { choices = JSON.parse(localStorage.getItem(CHOICES) || '{}') } catch {}
+  const choose = (agentId, patch) => {
+    choices = { ...choices, [agentId]: { ...choices[agentId], ...patch } }
+    try { localStorage.setItem(CHOICES, JSON.stringify(choices)) } catch {}
+    renderFoot()
+  }
+  const optionsFor = (agentId) => agentOptions(getAgents().find((a) => a.id === agentId), choices[agentId])
 
   const panel = el('section', 'qda')
   panel.hidden = true
@@ -206,12 +227,18 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const prompt = el('textarea')
   prompt.rows = 1
   prompt.setAttribute('aria-label', 'Message')
+  const opts = el('div', 'qda-opts')
   const picker = el('select')
   picker.setAttribute('aria-label', 'Ask')
+  const modelPick = el('select')
+  modelPick.setAttribute('aria-label', 'Model')
+  const effortPick = el('select')
+  effortPick.setAttribute('aria-label', 'Effort')
+  opts.append(picker, modelPick, effortPick)
   const send = iconButton(ICONS.send, 'Send', 'qda-send')
   send.type = 'submit'
-  input.append(prompt, picker, send)
-  foot.append(chip, input)
+  input.append(prompt, send)
+  foot.append(chip, opts, input)
   panel.append(head, body, foot)
   ;(container.querySelector('.qd-ui') || container).append(panel)
   const pinLayer = el('div', 'qda-pins')
@@ -238,7 +265,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       dot.dataset.status = agent.status
       row.title = `${STATUS[agent.status] || agent.status}${agent.knows?.length ? ' · knows ' + agent.knows.join(', ') : ''}`
       row.append(dot, el('span', '', agent.name))
-      if (agent.knows?.length) row.append(el('span', 'qda-muted', agent.knows.join(' · ')))
+      const knows = (agent.knows || []).filter((k) => !agent.name.includes(k)) // "Codex · repo" already says repo
+      if (knows.length) row.append(el('span', 'qda-muted', knows.join(' · ')))
       who.append(row)
     }
     body.append(who)
@@ -324,13 +352,31 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     chip.hidden = inThread || !selected.length
     if (selected.length) chipText.textContent = about(store, selected)
     picker.hidden = inThread || agents.length < 2
-    if (picker.options.length !== agents.length || [...picker.options].some((o, i) => o.value !== agents[i].id)) {
-      const keep = picker.value
-      picker.replaceChildren(...agents.map((a) => Object.assign(el('option', '', a.name), { value: a.id })))
-      if (agents.some((a) => a.id === keep)) picker.value = keep
+    fill(picker, agents.map((a) => [a.id, a.name]))
+    // the model and effort, for an agent that offers them
+    const agent = agents.find((a) => a.id === picker.value) ?? agents[0]
+    const chosen = agentOptions(agent, choices[agent?.id])
+    modelPick.hidden = effortPick.hidden = inThread || !chosen
+    if (chosen) {
+      const model = agent.models.find((m) => m.id === chosen.model)
+      fill(modelPick, agent.models.map((m) => [m.id, m.name]), chosen.model)
+      fill(effortPick, model.efforts.map((e) => [e, e]), chosen.effort)
     }
+    opts.hidden = picker.hidden && modelPick.hidden
     prompt.placeholder = inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
     send.disabled = !prompt.value.trim() || (!inThread && !agents.length)
+  }
+
+  // a select's options, rebuilt only when they change (an open picker stays open)
+  function fill(select, items, value) {
+    const key = JSON.stringify(items)
+    if (select.dataset.items !== key) {
+      const keep = select.value
+      select.replaceChildren(...items.map(([v, label]) => Object.assign(el('option', '', label), { value: v })))
+      select.dataset.items = key
+      if (items.some(([v]) => v === keep)) select.value = keep
+    }
+    if (value != null) select.value = value
   }
 
   function render() {
@@ -417,18 +463,19 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     Promise.resolve(host.ask(request)).catch((error) => handleEvent({ type: 'error', message: String(error) }, request.id))
     return request
   }
+  const currentAgent = () => picker.value || getAgents()[0]?.id || ''
   function askSelection(shapeIds = [...editor.selection], text = prompt.value) {
     const selected = shapeIds.map((id) => store.get(id)).filter(Boolean)
     const first = selected[0]
     const v = editor.viewportPageBounds()
     const anchor = first ? { shapeId: first.id, x: first.x, y: first.y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 }
     return sendRequest(buildAgentRequest({
-      id: crypto.randomUUID(), to: picker.value || getAgents()[0]?.id || '', text, editor,
+      id: crypto.randomUUID(), to: currentAgent(), text, editor, options: optionsFor(currentAgent()),
       shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id), anchor,
     }))
   }
   function askText(text, anchor = {}) {
-    return sendRequest(buildAgentRequest({ id: crypto.randomUUID(), to: picker.value || getAgents()[0]?.id || '', text, editor, anchor }))
+    return sendRequest(buildAgentRequest({ id: crypto.randomUUID(), to: currentAgent(), text, editor, anchor, options: optionsFor(currentAgent()) }))
   }
   function openForSelection(shapeIds) {
     pendingShapeIds = [...shapeIds]
@@ -446,7 +493,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const mention = detectAgentMention(shape.props.text, getAgents())
     if (!mention) return
     sendRequest(buildAgentRequest({
-      id: crypto.randomUUID(), to: mention.to, text: mention.text, editor,
+      id: crypto.randomUUID(), to: mention.to, text: mention.text, editor, options: optionsFor(mention.to),
       shapeIds: [id], anchor: { shapeId: id, x: shape.x, y: shape.y },
     }))
   }
@@ -462,6 +509,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   }))
   back.addEventListener('click', () => { view = null; render() })
   close.addEventListener('click', hide)
+  picker.addEventListener('change', renderFoot)
+  modelPick.addEventListener('change', () => choose(currentAgent(), { model: modelPick.value }))
+  effortPick.addEventListener('change', () => choose(currentAgent(), { effort: effortPick.value }))
   chipClear.addEventListener('click', () => { pendingShapeIds = null; renderFoot() })
   prompt.addEventListener('input', () => {
     prompt.style.height = 'auto'

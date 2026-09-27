@@ -69,7 +69,18 @@ export function installMeasure(): boolean
 export function estimateWidth(font: string, text: string): number
 
 export type AgentStatus = 'idle' | 'working' | 'waiting'
-export interface AgentParticipant { id: string, name: string, knows: string[], status: AgentStatus }
+/** A model an agent can run a request on, with the reasoning efforts it takes and its default. */
+export interface AgentModel { id: string, name: string, efforts: string[], effort: string }
+export interface AgentParticipant {
+  id: string
+  name: string
+  knows: string[]
+  status: AgentStatus
+  /** what the person may choose from, per request; `model` and `effort`: the agent's defaults */
+  models?: AgentModel[]
+  model?: string
+  effort?: string
+}
 export interface AgentViewport { x: number, y: number, w: number, h: number }
 export interface AgentAnchor { shapeId?: string, x?: number, y?: number }
 export interface AgentRequest {
@@ -79,6 +90,8 @@ export interface AgentRequest {
   /** What was selected; `frameIds`: the frames among it. */
   context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport }
   anchor: AgentAnchor
+  /** chosen in the panel, for an agent that offers models */
+  options?: { model?: string, effort?: string }
 }
 export type AgentEvent =
   | { type: 'progress' | 'message' | 'question', requestId: string, text: string }
@@ -154,8 +167,11 @@ export function buildAgentRequest(options: {
   editor: AgentEditor
   shapeIds?: string[]
   frameIds?: string[]
+  options?: { model?: string, effort?: string }
   anchor?: AgentAnchor
 }): AgentRequest
+/** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults; undefined for an agent that offers none. */
+export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
 export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }

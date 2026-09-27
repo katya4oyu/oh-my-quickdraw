@@ -14,13 +14,20 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   const m = JSON.parse(line)
   if (m.id != null && !m.method) { waiting.get(m.id)?.(m.result ?? m.error); waiting.delete(m.id); return }
   if (m.method === 'initialize') return out({ id: m.id, result: { userAgent: 'mock' } })
+  if (m.method === 'model/list') return out({ id: m.id, result: { data: [
+    { id: 'fast', displayName: 'Fast', hidden: false, isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },
+    { id: 'deep', displayName: 'Deep', hidden: false, isDefault: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
+    { id: 'secret', displayName: 'Secret', hidden: true, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [] },
+  ], nextCursor: null } })
+  if (m.method === 'config/read') return out({ id: m.id, result: { config: {} } })
   if (m.method === 'thread/start') {
     tools = m.params.dynamicTools.map((t) => t.name)
     process.stderr.write(`cwd=${m.params.cwd} tools=${tools.length} instructions=${m.params.developerInstructions.length}\n`)
-    return out({ id: m.id, result: { thread: { id: `thread-${++threads}` } } })
+    return out({ id: m.id, result: { thread: { id: `thread-${++threads}` }, model: m.params.model ?? 'fast', reasoningEffort: null } })
   }
   if (m.method === 'turn/start') {
     const threadId = m.params.threadId, turnId = `turn-${++turns}`, text = m.params.input[0].text
+    process.stderr.write(`effort=${m.params.effort}\n`)
     out({ id: m.id, result: { turn: { id: turnId } } })
     out({ method: 'turn/started', params: { threadId, turn: { id: turnId, status: 'inProgress' } } })
     if (turns === 1) {

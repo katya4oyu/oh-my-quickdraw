@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
-import { commandText, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { commandText, initCodex, startAppServer, runCodex } from '../src/agent/codex.ts'
 import { AGENT, packAgent, unpackAgent } from '../src/protocol.js'
 
 const MOCK = fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url))
@@ -45,13 +45,20 @@ describe('quickdraw agent codex', () => {
     const person = await page(url)
 
     const board = await openBoard({ url, name: 'Codex · repo' })
-    const agent = await joinBoard(board, { id: 'codex-repo', name: 'Codex · repo', knows: ['repo'] })
     const codex = startAppServer(process.cwd(), ['node', MOCK])
+    const offered = await initCodex(codex, { effort: 'medium' })
+    // what people may choose from: the models Codex lists (not hidden ones), and the defaults
+    expect(offered).toEqual({ model: 'fast', effort: 'medium', models: [
+      { id: 'fast', name: 'Fast', efforts: ['low', 'medium'], effort: 'low' },
+      { id: 'deep', name: 'Deep', efforts: ['medium', 'high'], effort: 'high' },
+    ] })
+    const agent = await joinBoard(board, { id: 'codex-repo', name: 'Codex · repo', knows: ['repo'], ...offered })
     cleanup.push(() => agent.close(), () => codex.close())
-    await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · repo' })
+    await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · repo', model: offered.model, effort: offered.effort })
     await person.until(() => person.agents.at(-1)?.[0]?.name === 'Codex · repo')
+    expect(person.agents.at(-1)?.[0]).toMatchObject({ model: 'fast', effort: 'medium', models: offered.models })
 
-    const request = { id: 'r1', to: 'codex-repo', text: 'Add a note', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {} }
+    const request = { id: 'r1', to: 'codex-repo', text: 'Add a note', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {}, options: { model: 'deep', effort: 'high' } }
     person.send({ kind: 'request', request })
     await person.until(() => person.events.some((e) => e.type === 'approval'))
     expect(person.agents.at(-1)?.[0].status).toBe('waiting')
@@ -60,7 +67,8 @@ describe('quickdraw agent codex', () => {
     person.send({ kind: 'reply', requestId: 'r1', message: { approval: approval.id, allow: true } })
     await person.until(() => person.events.some((e) => e.type === 'done'))
 
-    expect(person.events.map((e) => e.type)).toEqual(['progress', 'op', 'progress', 'approval', 'message', 'done'])
+    expect(person.events.map((e) => e.type)).toEqual(['progress', 'progress', 'op', 'progress', 'approval', 'message', 'done'])
+    expect(person.events[0].text).toBe('deep · high') // the model and effort chosen in the panel
     const op = person.events.find((e) => e.type === 'op')
     expect(op.diff).toBeTruthy()
     expect(person.events.find((e) => e.type === 'message').text).toBe('Added a note (Add a note).')
