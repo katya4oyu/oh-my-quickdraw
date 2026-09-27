@@ -1,11 +1,11 @@
 import { pageBounds } from '@quickdrawjs/core'
-import { undoDiff } from './ops.js'
+import { textOf, undoDiff } from './ops.js'
 
 /** Build the common request shape from a panel, selection, or committed note. */
-export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameId, anchor = {} }) {
+export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameIds = [], anchor = {} }) {
   return {
     id, to, text: String(text).trim(),
-    context: { shapeIds: [...shapeIds], ...(frameId ? { frameId } : {}), viewport: { ...editor.viewportPageBounds() } },
+    context: { shapeIds: [...shapeIds], frameIds: [...frameIds], viewport: { ...editor.viewportPageBounds() } },
     anchor: { ...anchor },
   }
 }
@@ -151,6 +151,17 @@ function injectStyle() {
 const STATUS = { idle: 'Idle', working: 'Working', waiting: 'Needs you', done: 'Done', error: 'Error', undone: 'Undone' }
 const threadStatus = (thread) => (thread.undoResult ? 'undone' : thread.status)
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+// "About: Ideas" for one shape or frame, "About 2 frames and 3 shapes" for more
+function about(store, all) {
+  const shapes = all.filter((s) => !s.isFrameTitle) // a frame's title goes with it
+  const frames = shapes.filter((s) => s.isFrame)
+  if (shapes.length === 1) {
+    const text = textOf(store, shapes[0]) || (shapes[0].isFrame ? 'a frame' : shapes[0].type)
+    return `About: ${String(text).split('\n')[0]}`
+  }
+  const rest = shapes.length - frames.length
+  return 'About ' + [frames.length && plural(frames.length, 'frame'), rest && plural(rest, 'shape')].filter(Boolean).join(' and ')
+}
 
 /** Toolbar items (quickdraw-toolbar's shape): AI on the rail, "Ask AI" on the selection bar. */
 export function agentTools(panel) {
@@ -205,7 +216,11 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const getAgents = () => host.agents() || []
   const agentName = (id) => getAgents().find((a) => a.id === id)?.name || 'AI'
 
-  function show() { panel.hidden = false; render() }
+  function show() {
+    if (panel.hidden && editor.selection.size) { pendingShapeIds = [...editor.selection]; view = null }
+    panel.hidden = false
+    render()
+  }
   function hide() { panel.hidden = true; renderPins() }
   function open(id) { view = id; show() }
 
@@ -301,10 +316,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const inThread = view && threads.has(view)
     const selected = (pendingShapeIds || []).map((id) => store.get(id)).filter(Boolean)
     chip.hidden = inThread || !selected.length
-    if (selected.length) {
-      const text = selected[0].props?.text || selected[0].title || selected[0].type
-      chipText.textContent = selected.length === 1 ? `About: ${String(text).split('\n')[0]}` : `About ${plural(selected.length, 'shape')}`
-    }
+    if (selected.length) chipText.textContent = about(store, selected)
     picker.hidden = inThread || agents.length < 2
     if (picker.options.length !== agents.length || [...picker.options].some((o, i) => o.value !== agents[i].id)) {
       const keep = picker.value
@@ -375,7 +387,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const anchor = first ? { shapeId: first.id, x: first.x, y: first.y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 }
     return sendRequest(buildAgentRequest({
       id: crypto.randomUUID(), to: picker.value || getAgents()[0]?.id || '', text, editor,
-      shapeIds: selected.map((s) => s.id), frameId: selected.find((shape) => shape.isFrame)?.id, anchor,
+      shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id), anchor,
     }))
   }
   function askText(text, anchor = {}) {
@@ -405,6 +417,11 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const offHost = host.onEvent((event) => handleEvent(event))
   const offs = ['camera', 'change'].map((name) => editor.on(name, renderPins))
   offs.push(editor.on('edit', onEdit))
+  offs.push(editor.on('selection', () => {
+    if (panel.hidden) return
+    pendingShapeIds = editor.selection.size ? [...editor.selection] : null
+    renderFoot()
+  }))
   back.addEventListener('click', () => { view = null; render() })
   close.addEventListener('click', hide)
   chipClear.addEventListener('click', () => { pendingShapeIds = null; renderFoot() })

@@ -26,9 +26,11 @@
     import { createQuickdraw } from '@quickdrawjs/core'
     import { BOARD_TOOLS, createAgentPanel, agentTools } from 'quickdraw-agent'
     import { createToolbar } from 'quickdraw-toolbar'
+    import { bindFrames } from 'quickdraw-frames'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
+    bindFrames(editor.store) // frame membership, so agents find free space in a frame
     const agents = [{ id: 'board-ai', name: 'Board AI', knows: ['This board', 'The web'], status: 'idle' }]
     const listeners = new Set()
     const storageKey = 'quickdraw-agent-example-threads'
@@ -37,6 +39,7 @@
     }
     const writeThreads = (threads) => localStorage.setItem(storageKey, JSON.stringify(threads))
     const waiting = new Map()
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
     let requests = 0
     const emit = (event) => {
       const threads = readThreads()
@@ -63,7 +66,7 @@
         emit({ type: 'progress', requestId: request.id, text: 'Reading the board and planning a small change…' })
         await new Promise((resolve) => setTimeout(resolve, 500))
         if (requests % 2 === 0) {
-          emit({ type: 'approval', requestId: request.id, id: `approval-${request.id}`, text: 'Add an example frame and notes?' })
+          emit({ type: 'approval', requestId: request.id, id: `approval-${request.id}`, text: 'May I change the board?' })
           const allow = await new Promise((resolve) => waiting.set(request.id, resolve))
           if (!allow) {
             emit({ type: 'message', requestId: request.id, text: 'Request denied; no board changes made.' })
@@ -73,20 +76,34 @@
             return
           }
         }
-        // a frame in free space with two notes in it, then the view follows it
         const run = (name, args) => {
           const result = BOARD_TOOLS.find((tool) => tool.name === name).run(editor.store, args, { name: agents[0].name })
           emit({ type: 'op', requestId: request.id, op: result.op, diff: result.diff, ids: result.ids })
           return result
         }
+        const frames = request.context.frameIds
+        if (frames.length) {
+          // a note in each selected frame
+          let added = 0
+          for (const id of frames) {
+            try { run('add_note', { text: request.text, in: id }); added++ }
+            catch { emit({ type: 'message', requestId: request.id, text: 'One frame is full, so I left it alone.' }) }
+          }
+          emit({ type: 'message', requestId: request.id, text: `Added a note to ${plural(added, 'frame')}.` })
+          emit({ type: 'done', requestId: request.id })
+          agents[0].status = 'idle'
+          listeners.forEach((fn) => fn({ type: 'agents' }))
+          return
+        }
+        // otherwise: a frame in free space with two notes in it, then the view follows it
         const frame = run('add_frame', { title: request.text.slice(0, 40), w: 480, h: 280 })
         const f = editor.store.get(frame.ids[0])
         for (const [i, text] of ['Plan the next step', 'Check the result with the team'].entries()) {
           run('add_note', { text, at: { x: f.x + 30 + i * 220, y: f.y + 50 } })
         }
-        const box = editor.container.getBoundingClientRect()
-        const z = Math.min(1, (box.width - 40) / f.props.w)
-        editor.setCamera({ x: box.width / 2 / z - (f.x + f.props.w / 2), y: box.height / 3 / z - (f.y + f.props.h / 2), z }, { animate: 400 })
+        const fbox = editor.container.getBoundingClientRect()
+        const fz = Math.min(1, (fbox.width - 40) / f.props.w)
+        editor.setCamera({ x: fbox.width / 2 / fz - (f.x + f.props.w / 2), y: fbox.height / 3 / fz - (f.y + f.props.h / 2), z: fz }, { animate: 400 })
         emit({ type: 'message', requestId: request.id, text: `Added a frame and two notes for “${request.text}”.` })
         emit({ type: 'done', requestId: request.id, text: 'Board update complete.' })
         agents[0].status = 'idle'
@@ -115,16 +132,17 @@
     const ai = agentTools(panel)
     createToolbar(editor, { rail: ai.rail, context: ai.context })
 
-    // two notes to start from, in view on a phone too (a note is 200 × 200)
+    // two frames with a note each, to select one, several, or a note
     const v = editor.viewportPageBounds()
-    const narrow = v.w < 520
-    const add = BOARD_TOOLS.find((item) => item.name === 'add_note')
-    for (const [i, text] of ['Select me and tap ✦', 'Or write a note that starts with @AI'].entries()) {
-      const at = narrow
-        ? { x: v.x + v.w / 2 - 100, y: v.y + v.h / 2 - 225 + i * 240 }
-        : { x: v.x + v.w / 2 - 220 + i * 240, y: v.y + v.h / 2 - 100 }
-      add.run(editor.store, { text, at }, { name: 'Example' })
-    }
+    const tool = (name, args) => BOARD_TOOLS.find((item) => item.name === name).run(editor.store, args, { name: 'Example' })
+    const seeds = [['Ideas', 'Select me and tap ✦'], ['Questions', 'Or write a note that starts with @AI']]
+    seeds.forEach(([title, text], i) => {
+      const frame = tool('add_frame', { title, at: { x: v.x + 40, y: v.y + 80 + i * 330 }, w: 500, h: 260 })
+      tool('add_note', { text, at: { x: v.x + 70, y: v.y + 110 + i * 330 } })
+    })
+    const box = editor.container.getBoundingClientRect()
+    const z = Math.min(1, (box.width - 20) / 580)
+    editor.setCamera({ x: -v.x - (580 - box.width / z) / 2, y: -v.y - 20, z })
   </script>
 </body>
 </html>

@@ -7,11 +7,11 @@ const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
 describe('agent panel request model', () => {
   it('builds the same request context from panel, selection and note anchors', () => {
-    const selection = buildAgentRequest({ id: 's', to: 'board', text: 'Arrange these', editor, shapeIds: ['a', 'b'], frameId: 'frame', anchor: { shapeId: 'a', x: 5, y: 6 } })
+    const selection = buildAgentRequest({ id: 's', to: 'board', text: 'Arrange these', editor, shapeIds: ['a', 'f1', 'f2'], frameIds: ['f1', 'f2'], anchor: { shapeId: 'a', x: 5, y: 6 } })
     const panel = buildAgentRequest({ id: 'p', to: 'board', text: 'Summarize', editor, anchor: {} })
     const note = buildAgentRequest({ id: 'n', to: 'board', text: 'Research', editor, anchor: { shapeId: 'note', x: 1, y: 2 } })
-    expect(selection).toEqual({ id: 's', to: 'board', text: 'Arrange these', context: { shapeIds: ['a', 'b'], frameId: 'frame', viewport: { x: -10, y: 20, w: 800, h: 600 } }, anchor: { shapeId: 'a', x: 5, y: 6 } })
-    expect(panel.context.shapeIds).toEqual([])
+    expect(selection).toEqual({ id: 's', to: 'board', text: 'Arrange these', context: { shapeIds: ['a', 'f1', 'f2'], frameIds: ['f1', 'f2'], viewport: { x: -10, y: 20, w: 800, h: 600 } }, anchor: { shapeId: 'a', x: 5, y: 6 } })
+    expect(panel.context).toMatchObject({ shapeIds: [], frameIds: [] })
     expect(note.anchor.shapeId).toBe('note')
   })
 

@@ -76,7 +76,8 @@ export interface AgentRequest {
   id: string
   to: string
   text: string
-  context: { shapeIds: string[], frameId?: string, viewport: AgentViewport }
+  /** What was selected; `frameIds`: the frames among it. */
+  context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport }
   anchor: AgentAnchor
 }
 export type AgentEvent =
@@ -144,7 +145,7 @@ export function buildAgentRequest(options: {
   text: string
   editor: AgentEditor
   shapeIds?: string[]
-  frameId?: string
+  frameIds?: string[]
   anchor?: AgentAnchor
 }): AgentRequest
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
