@@ -101,6 +101,17 @@ export function importJSON(editor, data, opts) {
   return ids
 }
 
+// A toolbar item (the plain-object shape quickdraw-toolbar takes) for a menu
+// of board actions; opts are openJSON's, e.g. { types }.
+const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+export function importTool(opts) {
+  return {
+    id: 'import-json', title: 'Import JSON…',
+    icon: svg('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>'),
+    run: ({ editor }) => openJSON(editor, opts).catch((e) => alert(`Import failed: ${e.message}`)),
+  }
+}
+
 // Asks the user for a .json file and imports it. Resolves to the new ids
 // ([] when cancelled); rejects on an unreadable or invalid file.
 export function openJSON(editor, opts) {

@@ -37,3 +37,5 @@ Every peer must register the type (call `bindMarkdownEditing` or `registerMarkdo
 A textarea laid over the card, outside the board so the core's shortcuts stay out of the way; it commits on blur, Escape or ⌘/Ctrl+Enter.
 
 Example: `examples/quickdraw-markdown` (run `npm run dev` at the workspace root).
+
+Toolbar items: `markdownTools()` returns `{ rail, context }` for [`quickdraw-toolbar`](../quickdraw-toolbar) — plain objects, no dependency on it.

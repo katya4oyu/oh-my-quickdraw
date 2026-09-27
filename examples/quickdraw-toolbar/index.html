@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — toolbar example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+  </style>
+  <!-- in your own project, a bundler resolves this from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    import { createQuickdraw, newId } from '@quickdrawjs/core'
+    import { createToolbar } from '../../packages/quickdraw-toolbar/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+    const { editor } = board
+    const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+
+    // items are plain objects: extension packages ship theirs (frameTools(), markdownTools()…)
+    createToolbar(editor, {
+      // the rail: things to put on the board
+      rail: [{
+        id: 'stamp', title: 'Stamp', icon: svg('<path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/>'),
+        menu: ['yellow', 'green', 'violet'].map((color) => ({
+          id: 'stamp-' + color, title: `${color} star`,
+          run: () => {
+            const v = editor.viewportPageBounds()
+            const id = newId()
+            editor.store.put({ id, typeName: 'shape', type: 'geo', x: v.x + v.w / 2 - 50, y: v.y + v.h / 2 - 50, rot: 0, z: editor.store.maxZ() + 1,
+              props: { geo: 'star', w: 100, h: 100, color, size: 'm', dash: 'solid', fill: 'solid', font: 'sans' } })
+            editor.setTool('select')
+            editor.setSelection([id])
+          },
+        })),
+      }],
+      // the selection bar: only over a selected star
+      context: [{
+        id: 'spin', title: 'Rotate 45°', icon: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+        when: (shape) => shape.type === 'geo' && shape.props.geo === 'star',
+        run: ({ shape }) => editor.store.update(shape.id, { rot: (shape.rot || 0) + Math.PI / 4 }),
+      }],
+    })
+  </script>
+</body>
+</html>

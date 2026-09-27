@@ -62,3 +62,5 @@ A synced or imported record carries a URL or some HTML, never permission: each v
 - At most 200,000 characters.
 
 Example: `examples/quickdraw-embed` (run `npm run dev` at the workspace root).
+
+Toolbar items: `embedTools(embeds, { fetchPreview })` returns `{ rail, context }` for [`quickdraw-toolbar`](../quickdraw-toolbar) — plain objects, no dependency on it.

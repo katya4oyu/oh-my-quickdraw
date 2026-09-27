@@ -1,0 +1,18 @@
+{
+  "name": "quickdraw-toolbar",
+  "version": "0.1.0",
+  "description": "An icon toolbar for Quickdraw extensions: a rail for adding things, and a bar over the selection.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "license": "MIT"
+}

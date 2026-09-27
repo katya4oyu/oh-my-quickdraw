@@ -16,6 +16,17 @@ export function exportJSON(store, { ids = null } = {}) {
   return { quickdraw: 1, shapes, assets }
 }
 
+// A toolbar item (the plain-object shape quickdraw-toolbar takes) for a menu
+// of board actions: the selection when there is one, otherwise the board.
+const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+export function exportTool() {
+  return {
+    id: 'export-json', title: 'Export JSON',
+    icon: svg('<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>'),
+    run: ({ editor }) => downloadJSON(editor, { ids: editor.selection.size ? editor.selection : null }),
+  }
+}
+
 // Saves the export as a .json file, named like the core's PNG export.
 export function downloadJSON(editor, { ids = null } = {}) {
   const data = exportJSON(editor.store, { ids })

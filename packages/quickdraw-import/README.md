@@ -26,3 +26,5 @@ An imported shape is synced to every peer, so a file is validated as a whole bef
 - Other shape types only through `types`: `{ [type]: (shape) => error | null }`. They still get the common checks (record shape, finite position, props object); the function checks the props.
 
 Example: `examples/quickdraw-import` (run `npm run dev` at the workspace root).
+
+Toolbar item: `importTool({ types })` is a menu entry for [`quickdraw-toolbar`](../quickdraw-toolbar) — a plain object, no dependency on it.

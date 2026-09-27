@@ -24,6 +24,7 @@ import { cleanPreview, PREVIEW_LIMITS } from './preview.js'
 
 export * from './policy.js'
 export * from './preview.js'
+export { embedTools, EMBED_ICONS } from './tools.js'
 
 export const TYPE = 'embed'
 export const isEmbedSupported = () => typeof core.registerShapeType === 'function'
@@ -215,7 +216,7 @@ async function shrinkImage(blob, max = 480) {
 }
 
 // opens a card's link in a new tab, http(s) only, telling it nothing about the board
-function openLink(url) {
+export function openLink(url) {
   try {
     const u = new URL(url)
     if (u.protocol === 'https:' || u.protocol === 'http:') window.open(u.href, '_blank', 'noopener,noreferrer')
