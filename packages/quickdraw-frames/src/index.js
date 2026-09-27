@@ -18,6 +18,8 @@
 //   adopts the member copies made alongside it; it goes to the back
 import { pageBounds, composeDiff, newId, drawShape } from '@quickdrawjs/core'
 
+export { frameTools, FRAME_ICONS, FRAME_RATIOS } from './tools.js'
+
 export const isFrame = (rec) => !!rec && rec.isFrame === true
 const isTitle = (rec) => rec.isFrameTitle === true || rec.id === rec.frameId + '-title'
 

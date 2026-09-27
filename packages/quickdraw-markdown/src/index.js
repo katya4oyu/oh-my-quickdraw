@@ -13,6 +13,7 @@ import { layoutMarkdown } from './layout.js'
 
 export { parseMarkdown, parseInline } from './parse.js'
 export { layoutMarkdown } from './layout.js'
+export { markdownTools, MARKDOWN_ICONS } from './tools.js'
 
 export const TYPE = 'markdown'
 const PAD = 14
