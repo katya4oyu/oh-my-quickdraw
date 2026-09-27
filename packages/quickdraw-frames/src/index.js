@@ -2,21 +2,26 @@
 // core change: a frame is a straight-edged, unfilled geo rectangle marked
 // `isFrame`, sent to the back; its title is a text shape above its top-left
 // corner; members carry `frameId`. The title is a member too, so it moves
-// and exports with the frame.
+// with the frame. exportFrame renders just the contents, cut at the edges.
+//
+// A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape.
 //
 // bindFrames keeps it consistent on local edits:
 // - a shape dropped with its center inside a frame joins it; dragged out, it leaves
-// - moving a frame moves its members; resizing re-checks what is inside
+// - moving a frame moves its members; resizing keeps the aspect, carries the
+//   title along with the top-left corner and re-checks what is inside
 // - deleting a frame deletes its title and releases its members
-import { pageBounds, composeDiff, newId } from '@quickdrawjs/core'
+import { pageBounds, composeDiff, newId, drawShape } from '@quickdrawjs/core'
 
 export const isFrame = (rec) => !!rec && rec.isFrame === true
 
-export function createFrame(store, { x, y, w = 480, h = 320, title = 'Frame' }) {
+// aspect: width / height to keep (h follows w), or omitted for a free frame
+export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, title = 'Frame' }) {
   const id = newId()
+  if (aspect) h = w / aspect
   store.transact(() => {
     store.put({
-      id, typeName: 'shape', type: 'geo', isFrame: true, x, y, rot: 0, z: store.minZ() - 1,
+      id, typeName: 'shape', type: 'geo', isFrame: true, ...(aspect ? { aspect } : {}), x, y, rot: 0, z: store.minZ() - 1,
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
     putTitle(store, store.get(id), title)
@@ -41,7 +46,48 @@ export function renameFrame(store, frameId, title) {
   else if (isFrame(store.get(frameId))) putTitle(store, store.get(frameId), title)
 }
 
-// the frame, its title and its members: pass to editor.exportImage({ ids })
+// sets (keeping the width) or clears (null) a frame's aspect
+export function setFrameAspect(store, frameId, aspect) {
+  const f = store.get(frameId)
+  if (!isFrame(f)) return
+  const { aspect: _, ...rest } = f
+  store.put(aspect ? { ...rest, aspect, props: { ...f.props, h: f.props.w / aspect } } : rest)
+}
+
+// The frame's contents as a PNG, cut exactly at its edges: members only, no
+// outline, title or margin. background: the theme's paper color, or transparent.
+export async function exportFrame(editor, frameId, { scale = 2, background = true } = {}) {
+  const f = editor.store.get(frameId)
+  if (!isFrame(f)) return null
+  const { w, h } = f.props
+  const k = Math.min(scale, Math.sqrt(24e6 / (w * h))) // stay under ~24MP, like the core
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(w * k))
+  canvas.height = Math.max(1, Math.round(h * k))
+  const ctx = canvas.getContext('2d')
+  if (background) {
+    ctx.fillStyle = editor.theme.background
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+  ctx.setTransform(k, 0, 0, k, -f.x * k, -f.y * k)
+  const shapes = editor.shapesSorted().filter((s) => s.frameId === frameId && s.id !== frameId + '-title')
+  await decodeImages(editor.store, shapes)
+  for (const s of shapes) drawShape(ctx, s, { theme: editor.theme, store: editor.store, zoom: k })
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+}
+
+// images must be decoded before the snapshot, as in the core's own export
+function decodeImages(store, shapes) {
+  return Promise.all(shapes.map((s) => {
+    const a = s.type === 'image' && store.asset(s.props.assetId)
+    if (!a) return null
+    const img = new Image()
+    img.src = a.src
+    return img.decode().catch(() => {})
+  }))
+}
+
+// the frame, its title and its members
 export function frameShapeIds(store, frameId) {
   const ids = new Set([frameId])
   for (const s of store.shapes()) if (s.frameId === frameId) ids.add(s.id)
@@ -53,6 +99,19 @@ function setFrame(store, s, frameId) {
   if (s.frameId === frameId) return
   const { frameId: _, ...rest } = s
   store.put(frameId ? { ...rest, frameId } : rest)
+}
+
+// a resized frame with an aspect, corrected: the side that changed more
+// (relatively) leads, and the edges opposite the dragged ones stay put
+function keepAspect(from, to) {
+  if (!to.aspect) return to
+  let { w, h } = to.props
+  if (Math.abs(w / from.props.w - 1) >= Math.abs(h / from.props.h - 1)) h = w / to.aspect
+  else w = h * to.aspect
+  if (w === to.props.w && h === to.props.h) return to
+  const x = to.x !== from.x ? to.x + to.props.w - w : to.x
+  const y = to.y !== from.y ? to.y + to.props.h - h : to.y
+  return { ...to, x, y, props: { ...to.props, w, h } }
 }
 
 function inside(b, frame) {
@@ -91,13 +150,19 @@ export function bindFrames(store) {
         // moved frames drag their members along, unless those moved in the
         // same change (a joint drag, or an undo/redo of one)
         for (const [id, [from, to]] of Object.entries(diff.updated)) {
-          if (!isFrame(to)) continue
-          const dx = to.x - from.x, dy = to.y - from.y
-          if (dx || dy) {
-            for (const s of store.shapes()) if (s.frameId === id && !touched.has(s.id)) store.update(s.id, { x: s.x + dx, y: s.y + dy })
-          }
-          if (to.props.w !== from.props.w || to.props.h !== from.props.h) {
+          if (!isFrame(to) || !store.has(id)) continue
+          const resized = to.props.w !== from.props.w || to.props.h !== from.props.h
+          if (resized) {
+            const f = keepAspect(from, to)
+            if (f !== to) store.put(f)
+            // the title rides the top-left corner; members stay where they are
+            const dx = f.x - from.x, dy = f.y - from.y
+            const t = store.get(id + '-title')
+            if (t && (dx || dy) && !touched.has(t.id)) store.update(t.id, { x: t.x + dx, y: t.y + dy })
             for (const s of store.shapes()) if (!isFrame(s) && s.id !== s.frameId + '-title') assign(s)
+          } else if (to.x !== from.x || to.y !== from.y) {
+            const dx = to.x - from.x, dy = to.y - from.y
+            for (const s of store.shapes()) if (s.frameId === id && !touched.has(s.id)) store.update(s.id, { x: s.x + dx, y: s.y + dy })
           }
         }
         // added or moved shapes join or leave frames by where they land
