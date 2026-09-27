@@ -3,7 +3,11 @@
 // rotates, exports and follows the theme like any other shape.
 // Record: { type: 'markdown', props: { md, w, color? } } — the height follows
 // the content. Corner-resizing changes the width; the text reflows.
-import { registerShapeType, newId, FONTS, COLOR_IDS } from '@quickdrawjs/core'
+//
+// registerShapeType comes from the katya4oyu/quickdraw fork. On a core without
+// it this module still loads: isMarkdownSupported() is false, cards cannot be
+// created, and parsing, layout and validateMarkdown keep working.
+import * as core from '@quickdrawjs/core'
 import { parseMarkdown } from './parse.js'
 import { layoutMarkdown } from './layout.js'
 
@@ -15,6 +19,10 @@ const PAD = 14
 const MIN_W = 120
 const MAX_W = 4000
 export const MAX_MD_LENGTH = 100_000
+
+const { newId, FONTS, COLOR_IDS } = core
+export const isMarkdownSupported = () => typeof core.registerShapeType === 'function'
+const UNSUPPORTED = 'This Quickdraw core cannot draw custom shapes (registerShapeType is missing)'
 
 // canvas text measurement; outside a browser (tests, servers) an estimate
 let measureCtx
@@ -75,14 +83,16 @@ function draw(ctx, shape, { theme }) {
 // corner or side handles: only the width changes; the height follows the text
 const scale = (shape, sx) => ({ ...shape, props: { ...shape.props, w: Math.max(MIN_W, shape.props.w * sx) } })
 
+// Registers the shape type; returns false on a core without registerShapeType.
 let registered = false
 export function registerMarkdown() {
-  if (!registered) registerShapeType(TYPE, { bounds, draw, scale })
-  registered = true
+  if (!isMarkdownSupported()) return false
+  if (!registered) core.registerShapeType(TYPE, { bounds, draw, scale })
+  return (registered = true)
 }
 
 export function createMarkdown(store, { x, y, w = 360, md = '# Title\n\nWrite **Markdown** here.' }) {
-  registerMarkdown()
+  if (!registerMarkdown()) throw new Error(UNSUPPORTED)
   const id = newId()
   store.put({ id, typeName: 'shape', type: TYPE, x, y, rot: 0, z: store.maxZ() + 1, props: { md, w, color: 'black' } })
   return id
@@ -102,6 +112,7 @@ export function validateMarkdown(shape) {
 // Asks for a .md (or plain text) file and adds it as a card in the middle of
 // the view, selected. Resolves to the new id, or null when cancelled.
 export function openMarkdownFile(editor) {
+  if (!isMarkdownSupported()) return Promise.reject(new Error(UNSUPPORTED))
   return new Promise((resolve, reject) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -187,7 +198,7 @@ export function editMarkdown(editor, id) {
 // Double-click a card to edit it (desktop; iOS sends no dblclick on the
 // board, so offer another way to call editMarkdown there). Returns an unbind.
 export function bindMarkdownEditing(editor) {
-  registerMarkdown()
+  if (!registerMarkdown()) return () => {}
   const onDblClick = (e) => {
     const r = editor.container.getBoundingClientRect()
     const p = editor.screenToPage(e.clientX - r.left, e.clientY - r.top)

@@ -17,6 +17,18 @@ A private workspace for optional packages and examples that extend [`katya4oyu/q
 
 Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
 
+## Packages
+
+| Package | What it adds | Needs the fork's core? | Other dependencies |
+| --- | --- | --- | --- |
+| [`quickdraw-yjs`](packages/quickdraw-yjs) | Document sync over Yjs | No — works with upstream `@quickdrawjs/core` | `yjs` (peer) |
+| [`quickdraw-export`](packages/quickdraw-export) | Board or selection as a JSON file | No | — |
+| [`quickdraw-import`](packages/quickdraw-import) | Validated JSON import | No | — |
+| [`quickdraw-frames`](packages/quickdraw-frames) | Frames: membership, aspect ratios, content export | No | — |
+| [`quickdraw-markdown`](packages/quickdraw-markdown) | Markdown cards drawn on the canvas | **Yes** — `registerShapeType` ([katya4oyu/quickdraw#2](https://github.com/katya4oyu/quickdraw/pull/2)) | — |
+
+"Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown` still loads: `isMarkdownSupported()` is false, cards cannot be created or drawn, and `parseMarkdown` / `validateMarkdown` keep working.
+
 ## Examples
 
 `npm run dev` starts one server for all examples (static files, plus the Yjs relay with SQLite persistence) and prints their URLs:

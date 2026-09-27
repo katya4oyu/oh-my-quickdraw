@@ -30,11 +30,17 @@
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, openMarkdownFile, TYPE } from '../../packages/quickdraw-markdown/src/index.js'
+    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, isMarkdownSupported, openMarkdownFile, TYPE } from '../../packages/quickdraw-markdown/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
     bindMarkdownEditing(editor) // registers the shape type; double-click edits
+
+    // a core without registerShapeType (upstream Quickdraw) cannot draw cards
+    if (!isMarkdownSupported()) {
+      for (const b of document.querySelectorAll('.actions button')) b.disabled = true
+      document.querySelector('.actions').title = 'Needs the katya4oyu/quickdraw core (registerShapeType)'
+    }
 
     const SAMPLE = `# Markdown card
 

@@ -53,7 +53,7 @@
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
     import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
     import { openJSON } from '../../packages/quickdraw-import/src/index.js'
-    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, openMarkdownFile, validateMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
+    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, isMarkdownSupported, openMarkdownFile, validateMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
     import { bindFrames, createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -62,6 +62,8 @@
     bindYjs(board.editor.store, ydoc)
     bindFrames(board.editor.store)
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
+    // a core without registerShapeType (upstream Quickdraw) cannot draw cards
+    if (!isMarkdownSupported()) for (const id of ['md-add', 'md-edit', 'md-open', 'md-save']) document.getElementById(id).hidden = true
 
     // the selection when there is one, otherwise the whole board
     document.getElementById('export').onclick = () => {

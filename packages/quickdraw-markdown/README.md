@@ -17,6 +17,8 @@ downloadMarkdown(board.editor.store, id) // a card → <first heading>.md
 openJSON(board.editor, { types: { markdown: validateMarkdown } })
 ```
 
+**Needs the `katya4oyu/quickdraw` core** for `registerShapeType`. On the upstream core the module still loads, but `isMarkdownSupported()` is false: `createMarkdown` and `openMarkdownFile` fail with a clear error, `bindMarkdownEditing` does nothing, and cards already on a board are not drawn (their records stay intact through sync and saves). `parseMarkdown`, `layoutMarkdown` and `validateMarkdown` do not need the hook.
+
 Every peer must register the type (call `bindMarkdownEditing` or `registerMarkdown`) before remote cards arrive; unregistered types are not drawn.
 
 ## Record
