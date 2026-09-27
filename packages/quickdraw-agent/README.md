@@ -49,8 +49,8 @@ const panel = createAgentPanel({ editor, host })
 createToolbar(editor, { context: [agentAskTool(panel)] })
 ```
 
-The panel sends `{ id, to, text, context: { shapeIds, frameId?, viewport }, anchor }` requests. The selection item opens the composer with the selected shape as context; a committed note beginning with `@AI` or `@<agent name>` sends its remaining text with that note as context and anchor. Host events populate pinned threads; `op` event diffs are undone newest-first with `undoDiff`, reporting records changed since the operation. `panel.destroy()` removes its UI and subscriptions.
+The panel sends `{ id, to, text, context: { shapeIds, frameId?, viewport }, anchor }` requests. The selection item opens the composer with the selected shape as context; a committed note beginning with `@AI` or `@<agent name>` sends its remaining text with that note as context and anchor. Host events populate pinned threads; `op` event diffs are undone newest-first with `undoDiff`, reporting records changed since the operation. The panel reports the result to the host with `reply(requestId, { undo: { reverted, skipped } })`, so the host can persist the cleared diffs and undo result. `panel.destroy()` removes its UI and subscriptions.
 
-Host shape: `agents()`, `ask(request)`, `reply(requestId, messageOrApproval)`, `threads()`, and `onEvent(fn)`. Events carry `requestId` and use `progress`, `message`, `question`, `approval`, `op`, `done`, or `error` types.
+Host shape: `agents()`, `ask(request)`, `reply(requestId, messageOrApprovalOrUndo)`, `threads()`, and `onEvent(fn)`. Undo replies carry `{ undo: { reverted: number, skipped: string[] } }`. Events carry `requestId` and use `progress`, `message`, `question`, `approval`, `op`, `done`, or `error` types.
 
 Example: [`examples/quickdraw-agent`](../../examples/quickdraw-agent).

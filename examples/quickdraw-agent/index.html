@@ -94,11 +94,19 @@
         listeners.forEach((fn) => fn({ type: 'agents' }))
       },
       reply(requestId, message) {
-        if (typeof message === 'object' && message.approval) {
+        if (typeof message === 'string') {
+          emit({ type: 'message', requestId, text: message })
+        } else if ('approval' in message) {
           const resolve = waiting.get(requestId)
           if (resolve) { waiting.delete(requestId); resolve(message.allow) }
-        } else {
-          emit({ type: 'message', requestId, text: message })
+        } else if ('undo' in message) {
+          const threads = readThreads()
+          const thread = threads.find((item) => item.request.id === requestId)
+          if (thread) {
+            thread.diffs = []
+            thread.undoResult = message.undo
+            writeThreads(threads)
+          }
         }
       },
     }

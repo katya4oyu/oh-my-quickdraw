@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, buildAgentRequest, detectAgentMention, updateAgentThread } from '../src/panel.js'
+import { undoAgentRequest, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -20,6 +20,15 @@ describe('agent panel request model', () => {
     expect(detectAgentMention('@AI organize these', agents)).toEqual({ to: 'board', text: 'organize these' })
     expect(detectAgentMention('@Codex · project summarize', agents)).toEqual({ to: 'codex', text: 'summarize' })
     expect(detectAgentMention('AI organize these', agents)).toBeNull()
+  })
+
+  it('recognizes notes already anchored by live or restored threads', () => {
+    const threads = [
+      { request: { anchor: { shapeId: 'already-sent' } } },
+      { request: { anchor: {} } },
+    ]
+    expect(hasAgentThreadForAnchor('already-sent', threads)).toBe(true)
+    expect(hasAgentThreadForAnchor('new-note', threads)).toBe(false)
   })
 
   it('tracks event history, status transitions and operation diffs per thread', () => {

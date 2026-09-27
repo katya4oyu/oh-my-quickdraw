@@ -1,3 +1,4 @@
+import { pageBounds } from '@quickdrawjs/core'
 import { undoDiff } from './ops.js'
 
 const svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
@@ -29,6 +30,12 @@ export function detectAgentMention(text, agents) {
   const match = value.match(/^@AI(?:\s+([\s\S]*))?$/i)
   const agent = match && (agents.find((item) => /\bai\b/i.test(item.name)) || agents[0])
   return agent ? { to: agent.id, text: (match[1] || '').trim() } : null
+}
+
+/** Whether a board note is already the anchor of a restored or live thread. */
+export function hasAgentThreadForAnchor(shapeId, threads) {
+  for (const thread of threads) if (thread.request.anchor?.shapeId === shapeId) return true
+  return false
 }
 
 /** Track one thread's visible event history and per-request operation diffs. */
@@ -75,7 +82,7 @@ const STYLE = `
 .qd-agent-form textarea{resize:vertical;min-height:55px;padding:7px;border:1px solid #8886;border-radius:7px;background:transparent;color:inherit}
 .qd-agent-thread-view{border-top:1px solid #8883;margin-top:10px;padding-top:8px}.qd-agent-event{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .qd-agent-approval{display:flex;gap:6px}.qd-agent-pin{position:absolute;z-index:75;border:0;border-radius:999px;padding:5px 9px;background:#4b65d1;color:white;box-shadow:0 2px 8px #0004;cursor:pointer;white-space:nowrap}
-.qd-agent-pin[data-status="waiting"]{background:#c77b00}.qd-agent-pin[data-status="error"]{background:#b33}.qd-agent-hidden{display:none!important}
+.qd-agent-pin[data-status="waiting"]{background:#c77b00}.qd-agent-pin[data-status="error"]{background:#b33}.qd-agent-pin[data-status="undone"]{background:#666}.qd-agent-hidden{display:none!important}
 .qd-agent-toggle{position:absolute;z-index:80;right:12px;top:12px}
 `
 function injectStyle() {
@@ -85,7 +92,7 @@ function injectStyle() {
   style.textContent = STYLE
   document.head.append(style)
 }
-const statusText = (status) => ({ idle: '待機中', working: '作業中', waiting: '承認待ち', done: '完了', error: 'エラー' })[status] || status || '待機中'
+const statusText = (status) => ({ idle: 'Idle', working: 'Working', waiting: 'Waiting', done: 'Done', error: 'Error', undone: 'Undone' })[status] || status || 'Idle'
 
 /** Add the host-driven agent panel, thread list and canvas pins to an editor. */
 export function createAgentPanel({ editor, store = editor.store, container = editor.container, host }) {
@@ -95,9 +102,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   injectStyle()
   const threads = new Map((host.threads() || []).map((thread) => [thread.request.id, { ...thread, events: [...(thread.events || [])], diffs: [...(thread.diffs || [])] }]))
   const pins = new Map()
-  const requestedNotes = new Set()
   let selectedThread = null
   let pendingShapeIds = null
+  let editingNoteId = null
 
   const panel = el('section', 'qd-agent-panel')
   panel.setAttribute('aria-label', 'AI agents')
@@ -158,14 +165,15 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       }
       const anchor = thread.request.anchor || {}
       const shape = anchor.shapeId ? store.get(anchor.shapeId) : null
-      const point = shape
-        ? editor.pageToScreen(shape.x + (shape.props?.w || 0) / 2, shape.y + (shape.props?.h || 0) / 2)
+      const bounds = shape ? pageBounds(shape) : null
+      const point = bounds
+        ? editor.pageToScreen(bounds.x + bounds.w, bounds.y)
         : editor.pageToScreen(anchor.x || 0, anchor.y || 0)
       pin.style.left = `${point.x}px`
       pin.style.top = `${point.y}px`
-      pin.textContent = thread.request.text.slice(0, 32) || 'AI thread'
-      pin.dataset.status = thread.status
-      pin.title = `${thread.request.text} — ${statusText(thread.status)}`
+      pin.textContent = thread.undoResult ? 'Undone' : statusText(thread.status)
+      pin.dataset.status = thread.undoResult ? 'undone' : thread.status
+      pin.title = `${thread.request.text} — ${statusText(thread.undoResult ? 'undone' : thread.status)}`
     }
   }
   function renderThread() {
@@ -192,18 +200,25 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
         active.append(actions)
       }
     }
-    const undo = el('button', '', 'Undo this request')
-    undo.disabled = !thread.diffs.length
-    undo.addEventListener('click', () => {
-      thread.undoResult = undoAgentRequest(store, thread.diffs)
-      thread.diffs = []
-      renderThreads()
-    })
-    active.append(undo)
     if (thread.undoResult) {
       const result = thread.undoResult
-      active.append(el('div', 'qd-agent-event', `Undid ${result.reverted} change${result.reverted === 1 ? '' : 's'}${result.skipped.length ? `; these changed and were not undone: ${result.skipped.join(', ')}.` : '.'}`))
+      active.append(el('div', 'qd-agent-event', `Request undone. Reverted ${result.reverted} change${result.reverted === 1 ? '' : 's'}${result.skipped.length ? `; these changed and were not undone: ${result.skipped.join(', ')}.` : '.'}`))
+    } else if (thread.diffs.length) {
+      const undo = el('button', '', 'Undo this request')
+      undo.addEventListener('click', () => {
+        thread.undoResult = undoAgentRequest(store, thread.diffs)
+        thread.diffs = []
+        Promise.resolve(host.reply(thread.request.id, { undo: thread.undoResult })).catch((error) => {
+          thread.undoSyncError = String(error)
+          renderThread()
+        })
+        renderThreads()
+      })
+      active.append(undo)
+    } else {
+      active.append(el('div', 'qd-agent-muted', 'No board changes to undo.'))
     }
+    if (thread.undoSyncError) active.append(el('div', 'qd-agent-event', `Could not sync undo with the host: ${thread.undoSyncError}`))
     const followup = el('form', 'qd-agent-form')
     const message = el('textarea')
     message.placeholder = 'Follow up…'
@@ -223,7 +238,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     for (const thread of [...threads.values()].reverse()) {
       const button = el('button', 'qd-agent-thread')
       button.type = 'button'
-      button.append(el('span', '', thread.request.text), el('span', 'qd-agent-muted', statusText(thread.status)))
+      button.append(el('span', '', thread.request.text), el('span', 'qd-agent-muted', statusText(thread.undoResult ? 'undone' : thread.status)))
       button.addEventListener('click', () => { selectedThread = thread.request.id; renderThread() })
       threadList.append(button)
     }
@@ -266,13 +281,16 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     return sendRequest(buildAgentRequest({ id: crypto.randomUUID(), to: selector.value || getAgents()[0]?.id || '', text, editor, anchor }))
   }
   const onEdit = () => {
-    if (editor.editing) return
-    const id = [...editor.selection][0]
+    if (editor.editing) {
+      editingNoteId = editor.editing.id
+      return
+    }
+    const id = editingNoteId
+    editingNoteId = null
     const shape = id && store.get(id)
-    if (!shape || shape.type !== 'note' || requestedNotes.has(id)) return
+    if (!shape || shape.type !== 'note' || hasAgentThreadForAnchor(id, threads.values())) return
     const mention = detectAgentMention(shape.props.text, getAgents())
     if (!mention) return
-    requestedNotes.add(id)
     sendRequest(buildAgentRequest({
       id: crypto.randomUUID(), to: mention.to, text: mention.text, editor,
       shapeIds: [id], anchor: { shapeId: id, x: shape.x, y: shape.y },

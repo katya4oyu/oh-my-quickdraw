@@ -4,4 +4,5 @@
 export { describeBoard, boardToMarkdown, textOf, runOp, applySteps, undoDiff, parseRatio } from './ops.js'
 export { BOARD_TOOLS } from './tools.js'
 export { createAgentPanel, agentAskTool, buildAgentRequest, detectAgentMention, updateAgentThread, undoAgentRequest } from './panel.js'
+export { hasAgentThreadForAnchor } from './panel.js'
 export { installMeasure, estimateWidth } from './measure.js'

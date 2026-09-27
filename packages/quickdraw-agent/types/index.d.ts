@@ -86,17 +86,19 @@ export type AgentEvent =
   | { type: 'done', requestId: string, text?: string }
   | { type: 'error', requestId: string, message: string }
 export type AgentHostEvent = { type: 'agents', agents?: AgentParticipant[] } | { type: 'event', event: AgentEvent }
+export interface AgentUndoResult { reverted: number, skipped: string[] }
 export interface AgentThread {
   request: AgentRequest
   events: AgentEvent[]
   diffs: Diff[]
   status: string
-  undoResult?: { reverted: number, skipped: string[] }
+  undoResult?: AgentUndoResult
+  undoSyncError?: string
 }
 export interface AgentHost {
   agents(): AgentParticipant[]
   ask(request: AgentRequest): void | Promise<void>
-  reply(requestId: string, message: string | { approval: string, allow: boolean }): void | Promise<void>
+  reply(requestId: string, message: string | { approval: string, allow: boolean } | { undo: AgentUndoResult }): void | Promise<void>
   threads(): AgentThread[]
   onEvent(fn: (event: AgentHostEvent | AgentEvent) => void): void | (() => void)
 }
@@ -143,3 +145,4 @@ export function buildAgentRequest(options: {
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
 export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }
+export function hasAgentThreadForAnchor(shapeId: string, threads: Iterable<AgentThread>): boolean
