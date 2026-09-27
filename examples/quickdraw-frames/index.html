@@ -9,8 +9,8 @@
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
     .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
-    .actions button { pointer-events: auto; }
-    .actions button {
+    .actions button, .actions select { pointer-events: auto; }
+    .actions button, .actions select {
       font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
       border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
     }
@@ -23,23 +23,33 @@
 <body>
   <div id="board"></div>
   <div class="actions">
+    <select id="aspect" aria-label="Frame aspect ratio">
+      <option value="16:9">16:9</option>
+      <option value="16:10">16:10</option>
+      <option value="4:3">4:3</option>
+      <option value="1:1">1:1</option>
+      <option value="">Free</option>
+    </select>
     <button id="frame">Add frame</button>
     <button id="frame-rename">Rename frame</button>
     <button id="frame-export">Export frame</button>
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame } from '../../packages/quickdraw-frames/src/index.js'
+    import { bindFrames, createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
     bindFrames(editor.store)
 
     // a frame in the middle of the view, capturing what is already inside
+    const aspectInput = document.getElementById('aspect')
+    const aspect = () => { const [w, h] = aspectInput.value.split(':').map(Number); return h ? w / h : null }
     document.getElementById('frame').onclick = () => {
       const v = editor.viewportPageBounds()
-      const w = Math.min(480, v.w * 0.8), h = Math.min(320, v.h * 0.6)
-      const id = createFrame(editor.store, { x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2, w, h })
+      const a = aspect()
+      const w = Math.min(480, v.w * 0.8, a ? v.h * 0.6 * a : Infinity), h = Math.min(320, v.h * 0.6)
+      const id = createFrame(editor.store, { x: v.x + (v.w - w) / 2, y: v.y + (v.h - (a ? w / a : h)) / 2, w, h, aspect: a })
       editor.setTool('select')
       editor.setSelection([id])
     }
@@ -50,6 +60,12 @@
       return isFrame(s) ? s.id : s?.frameId
     }
 
+    // picking a ratio with a frame selected applies it to that frame
+    aspectInput.onchange = () => {
+      const frameId = selectedFrame()
+      if (frameId) setFrameAspect(editor.store, frameId, aspect())
+    }
+
     // a prompt, since the core only edits text on double-click, which iOS does not send
     document.getElementById('frame-rename').onclick = () => {
       const frameId = selectedFrame()
@@ -58,11 +74,11 @@
       if (title != null) renameFrame(editor.store, frameId, title)
     }
 
-    // the frame as a PNG
+    // the frame's contents as a PNG, cut at its edges
     document.getElementById('frame-export').onclick = async () => {
       const frameId = selectedFrame()
       if (!frameId) return alert('Select a frame first')
-      const blob = await editor.exportImage({ ids: frameShapeIds(editor.store, frameId) })
+      const blob = await exportFrame(editor, frameId)
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = (frameTitle(editor.store, frameId) || 'frame') + '.png'
