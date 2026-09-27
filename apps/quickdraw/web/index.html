@@ -3,162 +3,58 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Quickdraw</title>
-  <link rel="stylesheet" href="/_/core/src/quickdraw.css" />
+  <title>Boards — Quickdraw</title>
   <style>
-    html, body { margin: 0; height: 100%; }
-    #board { position: fixed; inset: 0; }
-    .cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 100; font: 600 11px system-ui; }
-    .cursor svg { display: block; }
-    .cursor span { position: absolute; left: 14px; top: 16px; padding: 1px 6px; border-radius: 6px; color: #fff; white-space: nowrap; }
+    :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0; --accent: #1971c2; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #333336; --accent: #4dabf7; } }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 22px; margin: 0 0 20px; }
+    form { display: flex; gap: 8px; margin-bottom: 24px; }
+    input { flex: 1; min-width: 0; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
+    button { font: inherit; padding: 8px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li a { display: flex; justify-content: space-between; gap: 16px; padding: 12px 4px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+    li a:hover .title { color: var(--accent); }
+    .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .empty { color: var(--muted); }
   </style>
-  <script type="importmap">
-    {
-      "imports": {
-        "yjs": "https://esm.sh/yjs@13.6.33",
-        "@quickdrawjs/core": "/_/core/src/index.js",
-        "quickdraw-yjs": "/_/quickdraw-yjs/src/index.js",
-        "quickdraw-export": "/_/quickdraw-export/src/index.js",
-        "quickdraw-import": "/_/quickdraw-import/src/index.js",
-        "quickdraw-markdown": "/_/quickdraw-markdown/src/index.js",
-        "quickdraw-embed": "/_/quickdraw-embed/src/index.js",
-        "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
-        "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js"
-      }
-    }
-  </script>
 </head>
 <body>
-  <div id="board"></div>
+  <main>
+    <h1>Boards</h1>
+    <form id="new">
+      <input name="title" placeholder="New board title" aria-label="New board title" autocomplete="off" />
+      <button>Create</button>
+    </form>
+    <ul id="boards"></ul>
+  </main>
   <script type="module">
-    import * as Y from 'yjs'
-    import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindYjs } from 'quickdraw-yjs'
-    import { exportTool } from 'quickdraw-export'
-    import { importTool } from 'quickdraw-import'
-    import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
-    import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
-    import { bindFrames, frameTools } from 'quickdraw-frames'
-    import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
-    import { UPDATE, SV, PRESENCE, pack, packPresence, unpackPresence } from '/protocol.js'
+    const list = document.getElementById('boards')
 
-    const board = createQuickdraw({ container: document.getElementById('board') })
-    const ydoc = new Y.Doc()
-
-    bindYjs(board.editor.store, ydoc)
-    bindFrames(board.editor.store)
-    bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
-    const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
-
-    // link previews through the server's /preview proxy (browsers cannot read
-    // other sites' HTML); the card keeps what it got, so viewers never contact the site
-    async function fetchPreview(url) {
-      const r = await fetch('/preview?url=' + encodeURIComponent(url))
-      if (!r.ok) return null
-      const p = await r.json()
-      if (p.image) p.image = await (await fetch(p.image)).blob() // the package shrinks it
-      return p
+    async function show() {
+      const boards = await (await fetch('/api/boards')).json()
+      list.replaceChildren(...boards.toReversed().map((b) => {
+        const li = document.createElement('li')
+        const a = Object.assign(document.createElement('a'), { href: '/b/' + b.id })
+        const title = Object.assign(document.createElement('span'), { className: 'title', textContent: b.title })
+        const meta = Object.assign(document.createElement('span'), { className: 'meta', textContent: `${b.id} · ${new Date(b.createdAt).toLocaleDateString()}` })
+        a.append(title, meta)
+        li.append(a)
+        return li
+      }))
+      if (!boards.length) list.innerHTML = '<li class="empty">No boards yet.</li>'
     }
 
-    // the right rail puts things on the board; the selection bar acts on the selected one.
-    // Markdown and embeds hide themselves on a core without registerShapeType.
-    const frames = frameTools()
-    const cards = markdownTools()
-    const web = embedTools(embeds, { fetchPreview })
-    createToolbar(board.editor, {
-      rail: [
-        ...frames.rail, ...cards.rail, ...web.rail,
-        '-',
-        { id: 'more', title: 'More', icon: MORE_ICON, menu: [
-          // Markdown cards and embeds are allowed in, checked by their own validators
-          importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }),
-          exportTool(),
-        ] },
-      ],
-      context: [...frames.context, ...cards.context, ...web.context],
-    })
-
-    // transport: the server's relay (/protocol.js), which also persists the board
-    let ws = null
-    ydoc.on('update', (update, origin) => {
-      if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
-    })
-    function connect() {
-      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
-      ws.binaryType = 'arraybuffer'
-      ws.onopen = () => {
-        // push everything we have (edits made while offline), then ask for the rest
-        ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
-        ws.send(pack(SV, Y.encodeStateVector(ydoc)))
-        sendCursor()
-      }
-      ws.onmessage = ({ data }) => {
-        const m = new Uint8Array(data)
-        if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
-        else if (m[0] === PRESENCE) showCursor(unpackPresence(m))
-      }
-      ws.onclose = () => {
-        for (const id of cursors.keys()) showCursor({ id, gone: true })
-        setTimeout(connect, 1000)
-      }
+    document.getElementById('new').onsubmit = async (e) => {
+      e.preventDefault()
+      const title = e.target.title.value.trim()
+      const r = await fetch('/api/boards', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: title || undefined }) })
+      if (r.ok) location.href = '/b/' + (await r.json()).id
     }
 
-    // live cursors: ours goes out in page coordinates, theirs are drawn over
-    // the board and follow the camera
-    const editor = board.editor
-    const ua = navigator.userAgent
-    const me = {
-      name: /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : 'Guest',
-      color: ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0c8599'][Math.floor(Math.random() * 6)],
-      x: null, y: null,
-    }
-    let queued = false
-    function sendCursor() {
-      if (ws?.readyState === WebSocket.OPEN) ws.send(packPresence(me))
-    }
-    function moveCursor(p) {
-      Object.assign(me, p)
-      if (queued) return
-      queued = true
-      requestAnimationFrame(() => { queued = false; sendCursor() })
-    }
-    addEventListener('pointermove', (e) => {
-      const r = editor.container.getBoundingClientRect()
-      moveCursor(editor.screenToPage(e.clientX - r.left, e.clientY - r.top))
-    }, { capture: true })
-    document.documentElement.addEventListener('pointerleave', () => moveCursor({ x: null, y: null }))
-
-    const cursors = new Map() // id -> { el, x, y }
-    function place(c) {
-      const r = editor.container.getBoundingClientRect()
-      const s = editor.pageToScreen(c.x, c.y)
-      c.el.style.transform = `translate(${r.left + s.x}px, ${r.top + s.y}px)`
-      c.el.hidden = c.x == null
-    }
-    function showCursor({ id, gone, name, color, x, y }) {
-      let c = cursors.get(id)
-      if (gone) { c?.el.remove(); cursors.delete(id); return }
-      if (!c) {
-        const el = document.createElement('div')
-        el.className = 'cursor'
-        el.innerHTML = `<svg width="16" height="20" viewBox="0 0 16 20"><path d="M1 1l13 10.5-6 .7L4.7 19z" stroke="#fff" stroke-width="1.5"/></svg><span></span>`
-        document.body.append(el)
-        cursors.set(id, c = { el })
-      }
-      c.el.querySelector('path').setAttribute('fill', color)
-      const label = c.el.querySelector('span')
-      label.textContent = name
-      label.style.background = color
-      Object.assign(c, { x, y })
-      place(c)
-    }
-    editor.on('camera', () => cursors.forEach(place))
-    addEventListener('resize', () => cursors.forEach(place))
-
-    connect()
-
-    window.board = board
-    window.ydoc = ydoc
+    show()
   </script>
 </body>
 </html>

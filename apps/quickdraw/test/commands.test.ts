@@ -8,6 +8,7 @@ import { bindYjs } from 'quickdraw-yjs'
 import { runOp } from 'quickdraw-agent'
 import { openBoard } from '../src/board/open.ts'
 import { main } from '../src/commands/index.ts'
+import { resolveBoard } from '../src/commands/boards.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { PRESENCE, UPDATE, unpackPresence } from '../src/protocol.js'
 
@@ -33,7 +34,7 @@ describe('a live board', () => {
   it('joins through the relay: peers see the change and the cursor', async () => {
     app = createQuickdrawServer()
     const { port } = await app.listen(0)
-    const url = `ws://127.0.0.1:${port}/ws`
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Live').id}`
 
     // a browser-like peer, bound the way the page is
     const doc = new Y.Doc(), peer = new Store()
@@ -62,5 +63,37 @@ describe('a live board', () => {
     const again = await openBoard({ url })
     expect((again.store.get(id) as { agent?: { name: string } } | undefined)?.agent?.name).toBe('Claude')
     await again.close()
+  })
+})
+
+describe('which board', () => {
+  let app: ReturnType<typeof createQuickdrawServer> | undefined
+  afterEach(() => app?.close())
+
+  it('by id, page URL or relay URL; without one, the only board — never a new one', async () => {
+    app = createQuickdrawServer()
+    const server = `http://127.0.0.1:${(await app.listen(0)).port}`
+    await expect(resolveBoard(undefined, server)).rejects.toThrow(/no boards yet/)
+    expect(app.boards.list()).toHaveLength(0)
+
+    const a = app.boards.create('Plan')
+    expect(await resolveBoard(undefined, server)).toBe(`ws://127.0.0.1:${server.split(':').pop()}/ws/${a.id}`)
+    expect(await resolveBoard(a.id, server)).toMatch(new RegExp(`/ws/${a.id}$`))
+    expect(await resolveBoard(`https://mac.example.ts.net:8795/b/${a.id}`, server)).toBe(`wss://mac.example.ts.net:8795/ws/${a.id}`)
+    expect(await resolveBoard('ws://elsewhere/ws/abcd1234', server)).toBe('ws://elsewhere/ws/abcd1234')
+    await expect(resolveBoard('Not An Id', server)).rejects.toThrow(/not a board/)
+
+    const b = app.boards.create('Retro')
+    await expect(resolveBoard(undefined, server)).rejects.toThrow(new RegExp(`2 boards; pass --board ID:\\n  ${a.id}  Plan\\n  ${b.id}  Retro`))
+  })
+
+  it('lists and makes boards from the command line', async () => {
+    app = createQuickdrawServer()
+    const server = `http://127.0.0.1:${(await app.listen(0)).port}`
+    const run = async (...args: string[]) => { let s = ''; await main([...args, '--server', server], (o) => { s += o }); return JSON.parse(s) }
+    const made = await run('new', 'Sprint', '12')
+    expect(made).toMatchObject({ title: 'Sprint 12', url: `${server}/b/${made.id}` })
+    expect((await run('boards')).map((b: { id: string }) => b.id)).toEqual([made.id])
+    expect(await run('note', 'hi')).toMatchObject({ ids: [expect.any(String)] }) // the only board
   })
 })

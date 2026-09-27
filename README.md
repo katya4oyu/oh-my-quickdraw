@@ -14,7 +14,7 @@ A private workspace for optional packages and examples that extend [`katya4oyu/q
 - `vendor/quickdraw/`: pinned Git submodule of the `katya4oyu/quickdraw` fork.
 - `packages/*`: reusable extension packages, managed as npm workspaces.
 - `examples/*`: one small example per package, also npm workspaces. Static files only: no example needs a server.
-- `apps/quickdraw`: the app built from all of this — the `quickdraw` command. `quickdraw serve` serves a board with every package, a relay for sync across devices, SQLite persistence and link previews; the other commands read and edit a board, for people and agents.
+- `apps/quickdraw`: the app built from all of this — the `quickdraw` command. `quickdraw serve` serves boards with every package, a relay per board for sync across devices, SQLite persistence and link previews; the other commands list, make, read and edit boards, for people and agents.
 - `skills/quickdraw`: the [Agent Skill](skills/quickdraw/SKILL.md) that teaches an agent the `quickdraw` command.
 
 Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
@@ -50,4 +50,4 @@ Add a package only when a concrete extension or example is ready to be named; th
 
 ## App
 
-`npm run dev` runs `quickdraw serve` from [`apps/quickdraw`](apps/quickdraw): every package on one board, synced across devices, kept in `~/.quickdraw`.
+`npm run dev` runs `quickdraw serve` from [`apps/quickdraw`](apps/quickdraw): boards with every package, synced across devices, kept in `~/.quickdraw`.

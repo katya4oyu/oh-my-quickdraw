@@ -5,16 +5,24 @@ description: Read and edit a Quickdraw whiteboard — summarize or answer questi
 
 # Quickdraw board
 
-The `quickdraw` command reads and edits a Quickdraw board: live on the board that `quickdraw serve` runs (people watching see the changes and your cursor), or a board JSON file. Every command prints JSON (`read` prints Markdown).
+The `quickdraw` command reads and edits Quickdraw boards: live on the boards that `quickdraw serve` holds (people watching see the changes and your cursor), or a board JSON file. Every command prints JSON (`read` prints Markdown).
+
+## Which board
+
+There are usually several boards. Work on the one the person means:
 
 ```sh
-quickdraw <command> …                                # the board `quickdraw serve` runs on this machine (ws://localhost:8795/ws)
-quickdraw <command> … --board ws://HOST:PORT/ws      # another live board
-quickdraw <command> … --file board.json              # a file (created if missing)
-export QUICKDRAW_BOARD=ws://HOST:PORT/ws             # or set it once
+quickdraw boards                                  # the boards: id and title
+quickdraw <command> … --board ID                  # a board by its id
+quickdraw <command> … --board https://HOST/b/ID   # or the URL the person has open in the browser
+quickdraw <command> … --file board.json           # a file (created if missing)
 ```
 
-If it cannot connect, the board is not running: ask the person to start `quickdraw serve` (do not start it yourself).
+- The person gives a URL or a title: use that board (match the title in `quickdraw boards`).
+- Nothing given and one board: commands use it without `--board`. Several: the command fails and lists them — ask which one, unless the request makes it clear.
+- Make a board (`quickdraw new "Title"`, prints its id and URL) only when asked for a new one; tell the person its URL.
+- `--server URL` (or `$QUICKDRAW_SERVER`) when the boards are served elsewhere than this machine's `quickdraw serve` (http://localhost:8795); `$QUICKDRAW_BOARD` sets the board once.
+- If it cannot connect, the boards are not running: ask the person to start `quickdraw serve` (do not start it yourself).
 
 Pass `--name` with your own name (e.g. `--name Claude`): it labels what you add and your cursor.
 
