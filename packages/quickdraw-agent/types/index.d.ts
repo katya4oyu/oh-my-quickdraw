@@ -11,6 +11,8 @@ export interface Operations {
   text(text: string, opts?: Placement): string
   shape(geo: GeoId, label?: string, opts?: Placement & { fill?: string }): string
   markdown(md: string, opts?: Placement): string
+  /** An image from a data URL of its natural size; `w`: shown width (400 at most by default). */
+  image(src: string, natural: { w: number, h: number }, opts?: Placement): string
   frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[] }): string
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
   update(id: string, change: { text?: string, color?: ColorId }): string

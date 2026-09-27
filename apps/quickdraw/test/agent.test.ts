@@ -4,8 +4,13 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { commandText, initCodex, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { imageSize, loadImage, within } from '../src/agent/images.ts'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { AGENT, packAgent, unpackAgent } from '../src/protocol.js'
 
+const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const MOCK = fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url))
 const cleanup: (() => unknown)[] = []
 afterEach(async () => { for (const fn of cleanup.reverse()) await fn(); cleanup.length = 0 })
@@ -52,7 +57,7 @@ describe('quickdraw agent codex', () => {
       { id: 'fast', name: 'Fast', efforts: ['low', 'medium'], effort: 'low' },
       { id: 'deep', name: 'Deep', efforts: ['medium', 'high'], effort: 'high' },
     ] })
-    const agent = await joinBoard(board, { id: 'codex-repo', name: 'Codex · repo', knows: ['repo'], ...offered })
+    const agent = await joinBoard(board, { id: 'codex-repo', name: 'Codex · repo', knows: ['repo'], ...offered }, { imageRoots: [process.cwd(), tmpdir()] })
     cleanup.push(() => agent.close(), () => codex.close())
     await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · repo', model: offered.model, effort: offered.effort })
     await person.until(() => person.agents.at(-1)?.[0]?.name === 'Codex · repo')
@@ -76,6 +81,17 @@ describe('quickdraw agent codex', () => {
     const note = board.store.get(op.ids[0])
     expect(note).toMatchObject({ type: 'note', props: { text: 'From Codex' }, agent: { name: 'Codex · repo', op: op.op } })
     await person.until(() => person.agents.at(-1)?.[0].status === 'idle')
+
+    // an image it generated goes on the board with add_image, as one more undoable operation
+    const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+    writeFileSync(join(dir, 'made.png'), PNG_1x1)
+    expect(agent.generated('r1', join(dir, 'made.png'))).toBe(1)
+    const placed = JSON.parse(await agent.runTool('r1', 'add_image', { image: 'latest', w: 120 }))
+    const image = board.store.get(placed.ids[0]) as any
+    expect(image).toMatchObject({ type: 'image', props: { w: 120, h: 120 } })
+    expect((board.store.get(image.props.assetId) as any).src).toBe('data:image/png;base64,' + PNG_1x1.toString('base64'))
+    await expect(agent.runTool('r1', 'add_image', { image: '2' })).rejects.toThrow(/no image 2/)
+    await expect(agent.runTool('r1', 'add_image', { image: '/etc/hosts' })).rejects.toThrow(/outside the working directory/)
 
     // a follow-up continues the same Codex thread
     person.send({ kind: 'reply', requestId: 'r1', message: 'Thanks' })
@@ -109,4 +125,21 @@ it('puts an operation on the board a piece at a time, ending as the operation wo
   expect(seen.length).toBe(4) // the cursor on each shape (not the frame's title)
   undoDiff(live, diff)
   expect(live.all().filter((r) => r.typeName === 'shape')).toEqual([])
+})
+
+it('reads image sizes and keeps to the allowed folders', () => {
+  expect(imageSize(PNG_1x1)).toEqual({ w: 1, h: 1 })
+  expect(imageSize(Buffer.from('GIF89a\x10\x00\x20\x00', 'latin1'))).toEqual({ w: 16, h: 32 })
+  expect(imageSize(Buffer.from('not an image'))).toBeNull()
+  expect(within('/a/b/c.png', ['/a'])).toBe(true)
+  expect(within('/a/../etc/x.png', ['/a'])).toBe(false)
+  expect(within('/ab/c.png', ['/a'])).toBe(false)
+})
+
+it('turns an image file into a data URL of its size', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+  writeFileSync(join(dir, 'a.png'), PNG_1x1)
+  writeFileSync(join(dir, 'a.txt'), 'x')
+  expect(await loadImage(join(dir, 'a.png'), [dir])).toEqual({ src: 'data:image/png;base64,' + PNG_1x1.toString('base64'), w: 1, h: 1 })
+  await expect(loadImage(join(dir, 'a.txt'), [dir])).rejects.toThrow(/not a PNG/)
 })

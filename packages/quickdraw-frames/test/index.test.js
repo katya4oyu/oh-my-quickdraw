@@ -36,6 +36,15 @@ describe('frames', () => {
     expect(store.get('shape:out').frameId).toBeUndefined()
   })
 
+  it('takes in an image dropped inside, added with its asset in one change (as a paste does)', () => {
+    const { store, frame } = setup()
+    store.transact(() => {
+      store.put({ id: 'asset:img', typeName: 'asset', src: 'data:image/png;base64,xx', w: 20, h: 20 })
+      store.put({ id: 'shape:img', typeName: 'shape', type: 'image', x: 60, y: 60, rot: 0, z: 2, props: { w: 20, h: 20, assetId: 'asset:img' } })
+    })
+    expect(store.get('shape:img').frameId).toBe(frame)
+  })
+
   it('moves members with the frame and undoes in one step', () => {
     const { store, frame } = setup()
     snapshot(store)

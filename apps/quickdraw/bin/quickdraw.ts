@@ -64,7 +64,9 @@ if (command === 'serve') {
     const board = await openBoard({ url, name })
     const codex = startAppServer(cwd)
     const offered = await initCodex(codex, { model: values.model, effort: values.effort })
-    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered })
+    const { homedir } = await import('node:os')
+    const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered }, { imageRoots: [cwd, generatedImages] })
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
       codex.close()

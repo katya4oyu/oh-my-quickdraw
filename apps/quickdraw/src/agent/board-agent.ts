@@ -10,8 +10,10 @@
 // board a piece at a time with the cursor on each — one undo, as before.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
-import { BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { applySteps, BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import type { Board } from '../board/open.ts'
+import { resolve as resolvePath } from 'node:path'
+import { loadImage } from './images.ts'
 
 import type { AgentModel } from 'quickdraw-agent'
 
@@ -24,6 +26,8 @@ export interface BoardAgent {
   onReply(requestId: string, text: string): void
   /** the tools, as the runtime hands them to the model */
   tools: { name: string, description: string, inputSchema: object }[]
+  /** an image the runtime generated for a request, for add_image to put on the board */
+  generated(requestId: string, file: string, opts?: { transparent?: boolean }): number
   /** runs a tool for a request, a piece at a time: what the model gets back, as text */
   runTool(requestId: string, name: string, args: unknown): Promise<string>
   /** puts the cursor on what a request is about, while the agent thinks */
@@ -78,12 +82,31 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
   if (Object.keys(diff.removed).length) store.applyDiff({ added: {}, updated: {}, removed: diff.removed }, 'user')
 }
 
-export function joinBoard(board: Board, me: Participant): Promise<BoardAgent> {
+// Images: the board tools take an image as data; the agent names a file instead
+const point = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }
+const ADD_IMAGE = {
+  name: 'add_image',
+  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['image'], properties: {
+    image: { type: 'string', description: '"latest", the number of a generated image, or a file path' },
+    w: { type: 'number', description: 'shown width' },
+    at: { ...point, description: 'page position of the top-left corner' },
+    in: { type: 'string', description: 'a frame id' },
+  } },
+}
+
+export interface JoinOptions {
+  /** where image files may be read from: the working directory first (relative paths are in it) */
+  imageRoots?: string[]
+}
+
+export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()] }: JoinOptions = {}): Promise<BoardAgent> {
   if (!board.relay) throw new Error('an agent needs a live board (quickdraw serve), not a file')
   const relay = board.relay
   const approvals = new Map<string, (allow: boolean) => void>()
   const approvalBase = Date.now().toString(36)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
+  const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
   let nextApproval = 1
 
@@ -104,21 +127,22 @@ export function joinBoard(board: Board, me: Participant): Promise<BoardAgent> {
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+    tools: [...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE],
+    generated(requestId, file, { transparent = false } = {}) {
+      const list = images.get(requestId) ?? []
+      list.push({ file, transparent })
+      images.set(requestId, list)
+      return list.length
+    },
     async runTool(requestId, name, args) {
+      if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
       const tool = BOARD_TOOLS.find((t) => t.name === name)
       if (!tool) throw new Error(`no tool ${name}`)
       if (name === 'read_board') {
         const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
         return typeof result === 'string' ? result : JSON.stringify(result)
       }
-      // made on a copy (checked, all or nothing), then put on the board a piece at a time
-      const copy = copyOf(board.store)
-      const r = tool.run(copy as never, (args ?? {}) as never, { name: me.name }) as { op: string, diff: Diff, ids: string[] }
-      holdCursor()
-      emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids: r.ids }) // first, so the panel can take the view there
-      await putLive(board.store, r.diff, copy, board.cursor)
-      return JSON.stringify({ op: r.op, ids: r.ids })
+      return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name }) as never)
     },
     lookAt(request) {
       const shape = request.anchor.shapeId ? board.store.get(request.anchor.shapeId) : undefined
@@ -140,6 +164,30 @@ export function joinBoard(board: Board, me: Participant): Promise<BoardAgent> {
       if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
     },
     close: () => { clearTimeout(hideTimer); return board.close() },
+  }
+
+  // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[] }) {
+    const copy = copyOf(board.store)
+    const r = make(copy)
+    holdCursor()
+    emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids: r.ids }) // first, so the panel can take the view there
+    await putLive(board.store, r.diff, copy, board.cursor)
+    return JSON.stringify({ op: r.op, ids: r.ids })
+  }
+
+  async function imageStep(requestId: string, args: Record<string, any>) {
+    const made = images.get(requestId) ?? []
+    const which = String(args.image ?? '')
+    const pick = which === 'latest' ? made.at(-1) : /^\d+$/.test(which) ? made[Number(which) - 1] : null
+    if ((which === 'latest' || /^\d+$/.test(which)) && !pick) throw new Error(made.length ? `there is no image ${which}; you made ${made.length}` : 'you have not generated an image for this request')
+    const file = pick ? pick.file : resolvePath(imageRoots[0], which)
+    const img = await loadImage(file, imageRoots, { transparent: pick?.transparent })
+    const step = { do: 'image', src: img.src, natural: { w: img.w, h: img.h }, w: args.w, at: args.at, in: args.in }
+    return (store: StoreType) => {
+      const { op, diff, result } = applySteps(store as never, me.name, [step])
+      return { op, diff, ids: [String((result as unknown[])[0])] }
+    }
   }
 
   return new Promise((resolve) => {

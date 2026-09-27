@@ -178,7 +178,7 @@ export function bindFrames(store) {
         // added or moved shapes join or leave frames by where they land
         for (const id of touched) {
           const s = store.get(id)
-          if (!s || isFrame(s) || isTitle(s) || handled.has(id)) continue
+          if (!s || s.typeName !== 'shape' || isFrame(s) || isTitle(s) || handled.has(id)) continue // not an image's asset
           const [from] = diff.updated[id] || []
           if (!from || from.x !== s.x || from.y !== s.y || from.rot !== s.rot) assign(s)
         }

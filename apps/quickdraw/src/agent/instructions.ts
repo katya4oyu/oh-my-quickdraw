@@ -10,4 +10,5 @@ export const instructions = (name: string) => `You are "${name}" on a Quickdraw 
 - Delete only what agents added; for anything else, ask.
 - A sticky note is a line or two. Longer text goes in a Markdown card (add_markdown). When you looked things up, put the sources (links) in the card.
 - When the request is about what is selected, work with those shapes and frames.
+- Images: generate them with your image generation, then put each one on the board with add_image ("latest", or its number). add_image also puts an image file from the working directory. Nothing you generate appears on the board until you add it.
 - Answer in the language of the request, briefly, saying what you did.`

@@ -187,3 +187,19 @@ describe('frames keep their size', () => {
     expect(titleOfG.y).toBeGreaterThanOrEqual(one.y + one.h + 24)
   })
 })
+
+describe('images', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgo='
+  it('puts an image (its asset and shape) in free space or a frame, sized to fit, and undoes both', () => {
+    const store = board()
+    const [f] = applySteps(store, 'Codex', [{ do: 'frame', title: 'F', at: { x: 0, y: 0 }, w: 600, h: 500 }]).result
+    const { result: [img], diff } = applySteps(store, 'Codex', [{ do: 'image', src: PNG, natural: { w: 1254, h: 1254 }, in: f }])
+    const shape = store.get(img)
+    expect(shape).toMatchObject({ type: 'image', frameId: f, props: { w: 400, h: 400 } })
+    expect(store.get(shape.props.assetId)).toMatchObject({ typeName: 'asset', src: PNG, w: 1254, h: 1254 })
+    undoDiff(store, diff)
+    expect(store.get(img)).toBeUndefined()
+    expect(store.get(shape.props.assetId)).toBeUndefined()
+    expect(() => applySteps(store, 'Codex', [{ do: 'image', src: 'https://example.com/x.png', natural: { w: 1, h: 1 } }])).toThrow(/data:image/)
+  })
+})

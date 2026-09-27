@@ -35,6 +35,7 @@ Codex joins the board as a participant with a cursor, and the board's AI panel s
 
 - It runs `codex app-server` (JSON-RPC over stdio). The board tools of [`quickdraw-agent`](../../packages/quickdraw-agent) go to Codex as client-defined tools (`dynamicTools`, part of app-server's **experimental** API), and run in this process, on its copy of the board: each operation goes to the panel with its diff, so a request can be undone at once, and no board command runs in Codex's sandbox.
 - People watch it work: each operation is made on a copy of the board first (checked, all or nothing), then put on the board a piece at a time with its cursor on each; the panel's view follows it for a request asked there.
+- **Images**: Codex's image generation works as usual; an `add_image` tool puts a generated image (or an image file from the working directory) on the board, where Codex says. Images are made lighter first (1024 px at most, a JPEG unless see-through; with `sips` on macOS), as every device loads them with the board.
 - One Codex thread per request; a follow-up in the panel continues it (and steers a turn that is still running).
 - Ctrl-C leaves the board; so does losing Codex or the board. What it was still doing ends with an error in the thread.
 

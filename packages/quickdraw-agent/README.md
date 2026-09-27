@@ -31,6 +31,7 @@ A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `di
 ## Operations
 
 - **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown`.
+- **Images**: an `image` step (`{ do: 'image', src: 'data:image/…', natural: { w, h }, w?, at?, in? }`) adds the image's asset and its shape; a runtime that reads files turns a file into that step.
 - **Writing** (`runOp`, `applySteps`): each operation is one store transaction, all or nothing. What an agent adds carries `agent: { name, op }`; it may move and edit anything but delete only what an agent added. Arrows between shapes keep `link: { from, to }` and follow them when they move in a later operation.
 - **The diff** compares each record the operation touched, before and after — including what listeners changed in response, such as frame membership — so `undoDiff` reverts the whole operation, and only where nobody has changed things since.
 - **Text in Node**: `installMeasure` provides an estimating stand-in for the canvas the core measures text with, so notes and text can be laid out. Browsers draw with real measurements.

@@ -142,6 +142,12 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
       if (item.type === 'commandExecution') agent.emit(requestId, { type: 'progress', text: `Running ${commandText(item.command)}` })
       else if (item.type === 'webSearch' && item.query) agent.emit(requestId, { type: 'progress', text: `Searching the web: ${clip(item.query)}` })
       else if (item.type === 'fileChange') agent.emit(requestId, { type: 'progress', text: 'Editing files' })
+    } else if (method === 'item/started' && p.item.type === 'imageGeneration') {
+      agent.emit(requestId, { type: 'progress', text: 'Generating an image…' })
+    } else if (method === 'item/completed' && p.item.type === 'imageGeneration' && p.item.savedPath) {
+      // add_image puts it on the board, where the model says
+      const n = agent.generated(requestId, p.item.savedPath, { transparent: p.item.transparentBackground === true })
+      agent.emit(requestId, { type: 'progress', text: `Generated image ${n}` })
     } else if (method === 'item/completed' && p.item.type === 'agentMessage' && p.item.text) {
       // commentary while it works is progress; the final answer is its reply
       agent.emit(requestId, { type: p.item.phase === 'commentary' ? 'progress' : 'message', text: p.item.text })
