@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
-import { bindFrames, createFrame, frameShapeIds, isFrame } from '../src/index.js'
+import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame } from '../src/index.js'
 
 // 10×10 box at (x, y): center at (x + 5, y + 5)
 const box = (id, x, y) => ({ id, typeName: 'shape', type: 'geo', x, y, rot: 0, z: 1, props: { geo: 'rectangle', w: 10, h: 10 } })
@@ -108,5 +108,15 @@ describe('frames', () => {
     const { store, frame } = setup()
     store.applyDiff({ added: {}, removed: {}, updated: { [frame]: [store.get(frame), { ...store.get(frame), x: 100 }] } }, 'remote')
     expect(store.get('shape:in').x).toBe(50)
+  })
+
+  it('renames a frame, recreating a deleted title', () => {
+    const { store, frame } = setup()
+    renameFrame(store, frame, 'Ideas')
+    expect(frameTitle(store, frame)).toBe('Ideas')
+    store.remove([frame + '-title'])
+    expect(frameTitle(store, frame)).toBe('')
+    renameFrame(store, frame, 'Back')
+    expect(store.get(frame + '-title')).toMatchObject({ frameId: frame, x: 0, props: { text: 'Back' } })
   })
 })

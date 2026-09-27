@@ -7,6 +7,7 @@ import { bindFrames, createFrame, frameShapeIds } from 'quickdraw-frames'
 
 bindFrames(board.editor.store)                        // once, before editing
 const id = createFrame(board.editor.store, { x, y, w, h, title: 'Plan' })
+renameFrame(board.editor.store, id, 'Ideas')          // frameTitle(store, id) reads it back
 const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.store, id) })
 ```
 
