@@ -1,0 +1,21 @@
+{
+  "name": "quickdraw-embed",
+  "version": "0.1.0",
+  "description": "Embeds for Quickdraw: allowed web pages and sandboxed inline HTML as live iframes over the board.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}

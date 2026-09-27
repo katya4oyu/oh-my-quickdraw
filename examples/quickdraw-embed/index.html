@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — embed example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button {
+      pointer-events: auto; font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
+  </style>
+  <!-- in your own project, a bundler resolves this from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <div class="actions">
+    <button id="url">Add URL</button>
+    <button id="html">Add HTML</button>
+    <button id="use">Use</button>
+  </div>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindEmbeds, createEmbed, isEmbedSupported, TYPE } from '../../packages/quickdraw-embed/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+    const { editor } = board
+    // allowed sites: YouTube, Vimeo, Figma, CodePen, Google Maps embeds (pass { rules } to change)
+    const embeds = bindEmbeds(editor)
+
+    // a core without registerShapeType (upstream Quickdraw) cannot draw embeds
+    if (!isEmbedSupported()) for (const b of document.querySelectorAll('.actions button')) b.disabled = true
+
+    const place = (id) => { editor.setTool('select'); editor.setSelection([id]) }
+    const center = (w, h) => {
+      const v = editor.viewportPageBounds()
+      const k = Math.min(1, (v.w * 0.9) / w)
+      return { x: v.x + (v.w - w * k) / 2, y: v.y + v.h * 0.15, w: w * k, h: h * k }
+    }
+
+    document.getElementById('url').onclick = () => {
+      const url = prompt('URL (YouTube, Vimeo, Figma, CodePen or a Google Maps embed)', 'https://www.youtube.com/watch?v=aqz-KE-bpKQ')
+      if (url) place(createEmbed(editor.store, { ...center(480, 270), url }))
+    }
+
+    // runs sandboxed: scripts only, no network, stopped if it tries to navigate
+    document.getElementById('html').onclick = () => {
+      place(createEmbed(editor.store, { ...center(320, 200), kind: 'html', html: `
+        <style>body{font:16px system-ui;display:grid;place-items:center;height:100vh;background:#fdf6e3}</style>
+        <div><button id="b" style="font-size:18px;padding:8px 16px">Clicked 0 times</button></div>
+        <script>let n = 0; b.onclick = () => { b.textContent = 'Clicked ' + ++n + ' times' }<\/script>` }))
+    }
+
+    // iOS sends no dblclick on the board: run inline HTML, then hand it the pointer
+    document.getElementById('use').onclick = () => {
+      const s = editor.store.get([...editor.selection][0])
+      if (s?.type !== TYPE) return alert('Select an embed first')
+      if (s.props.kind === 'html') embeds.run(s.id)
+      embeds.activate(s.id)
+    }
+  </script>
+</body>
+</html>
