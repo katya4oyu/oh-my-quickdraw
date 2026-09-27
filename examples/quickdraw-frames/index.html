@@ -8,7 +8,8 @@
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
-    .actions { position: fixed; top: 10px; right: 10px; z-index: 50; display: flex; gap: 6px; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button { pointer-events: auto; }
     .actions button {
       font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
       border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
@@ -23,11 +24,12 @@
   <div id="board"></div>
   <div class="actions">
     <button id="frame">Add frame</button>
+    <button id="frame-rename">Rename frame</button>
     <button id="frame-export">Export frame</button>
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindFrames, createFrame, frameShapeIds, isFrame } from '../../packages/quickdraw-frames/src/index.js'
+    import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
@@ -42,15 +44,28 @@
       editor.setSelection([id])
     }
 
-    // the selected frame, or the frame of the selected shape, as a PNG
-    document.getElementById('frame-export').onclick = async () => {
+    // the selected frame, or the frame of the selected shape
+    const selectedFrame = () => {
       const s = editor.store.get([...editor.selection][0])
-      const frameId = isFrame(s) ? s.id : s?.frameId
+      return isFrame(s) ? s.id : s?.frameId
+    }
+
+    // a prompt, since the core only edits text on double-click, which iOS does not send
+    document.getElementById('frame-rename').onclick = () => {
+      const frameId = selectedFrame()
+      if (!frameId) return alert('Select a frame first')
+      const title = prompt('Frame name', frameTitle(editor.store, frameId))
+      if (title != null) renameFrame(editor.store, frameId, title)
+    }
+
+    // the frame as a PNG
+    document.getElementById('frame-export').onclick = async () => {
+      const frameId = selectedFrame()
       if (!frameId) return alert('Select a frame first')
       const blob = await editor.exportImage({ ids: frameShapeIds(editor.store, frameId) })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = (editor.store.get(frameId + '-title')?.props.text || 'frame') + '.png'
+      a.download = (frameTitle(editor.store, frameId) || 'frame') + '.png'
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     }

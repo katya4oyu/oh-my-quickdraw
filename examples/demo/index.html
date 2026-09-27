@@ -31,6 +31,7 @@
   <div id="board"></div>
   <div class="actions">
     <button id="frame">Add frame</button>
+    <button id="frame-rename">Rename frame</button>
     <button id="frame-export">Export frame</button>
     <button id="import">Import JSON</button>
     <button id="export">Export JSON</button>
@@ -41,7 +42,7 @@
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
     import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
     import { openJSON } from '../../packages/quickdraw-import/src/index.js'
-    import { bindFrames, createFrame, frameShapeIds, isFrame } from '../../packages/quickdraw-frames/src/index.js'
+    import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
@@ -61,16 +62,29 @@
       board.editor.setTool('select')
       board.editor.setSelection([id])
     }
-    // the selected frame, or the frame of the selected shape, as a PNG
+    // the selected frame, or the frame of the selected shape
+    const selectedFrame = () => {
+      const s = board.editor.store.get([...board.editor.selection][0])
+      return isFrame(s) ? s.id : s?.frameId
+    }
+
+    // a prompt, since the core only edits text on double-click, which iOS does not send
+    document.getElementById('frame-rename').onclick = () => {
+      const frameId = selectedFrame()
+      if (!frameId) return alert('Select a frame first')
+      const title = prompt('Frame name', frameTitle(board.editor.store, frameId))
+      if (title != null) renameFrame(board.editor.store, frameId, title)
+    }
+
+    // the frame as a PNG
     document.getElementById('frame-export').onclick = async () => {
-      const { store, selection } = board.editor
-      const s = store.get([...selection][0])
-      const frameId = isFrame(s) ? s.id : s?.frameId
+      const { store } = board.editor
+      const frameId = selectedFrame()
       if (!frameId) return alert('Select a frame first')
       const blob = await board.editor.exportImage({ ids: frameShapeIds(store, frameId) })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = (store.get(frameId + '-title')?.props.text || 'frame') + '.png'
+      a.download = (frameTitle(store, frameId) || 'frame') + '.png'
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
     }
