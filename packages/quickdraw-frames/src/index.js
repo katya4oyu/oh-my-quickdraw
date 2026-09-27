@@ -5,15 +5,21 @@
 // with the frame. exportFrame renders just the contents, cut at the edges.
 //
 // A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape.
+// It also carries its own id as `frameKey`, and its title `isFrameTitle`:
+// copies (the core's duplicate, paste, import) keep those fields but get new
+// ids, which is how a copied frame is recognized and given its contents.
 //
 // bindFrames keeps it consistent on local edits:
 // - a shape dropped with its center inside a frame joins it; dragged out, it leaves
 // - moving a frame moves its members; resizing keeps the aspect, carries the
 //   title along with the top-left corner and re-checks what is inside
 // - deleting a frame deletes its title and releases its members
+// - a copied frame gets a title and copies of the original's members, or
+//   adopts the member copies made alongside it; it goes to the back
 import { pageBounds, composeDiff, newId, drawShape } from '@quickdrawjs/core'
 
 export const isFrame = (rec) => !!rec && rec.isFrame === true
+const isTitle = (rec) => rec.isFrameTitle === true || rec.id === rec.frameId + '-title'
 
 // aspect: width / height to keep (h follows w), or omitted for a free frame
 export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, title = 'Frame' }) {
@@ -21,7 +27,7 @@ export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, titl
   if (aspect) h = w / aspect
   store.transact(() => {
     store.put({
-      id, typeName: 'shape', type: 'geo', isFrame: true, ...(aspect ? { aspect } : {}), x, y, rot: 0, z: store.minZ() - 1,
+      id, typeName: 'shape', type: 'geo', isFrame: true, frameKey: id, ...(aspect ? { aspect } : {}), x, y, rot: 0, z: store.minZ() - 1,
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
     putTitle(store, store.get(id), title)
@@ -32,7 +38,7 @@ export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, titl
 
 function putTitle(store, frame, text) {
   store.put({
-    id: frame.id + '-title', typeName: 'shape', type: 'text', frameId: frame.id, x: frame.x, y: frame.y - 34, rot: 0, z: store.maxZ() + 1,
+    id: frame.id + '-title', typeName: 'shape', type: 'text', isFrameTitle: true, frameId: frame.id, x: frame.x, y: frame.y - 34, rot: 0, z: store.maxZ() + 1,
     props: { text, color: 'grey', size: 's', font: 'sans', autosize: true, scale: 1 },
   })
 }
@@ -135,9 +141,11 @@ export function bindFrames(store) {
     if (busy) return
     const touched = new Set([...Object.keys(diff.added), ...Object.keys(diff.updated), ...Object.keys(diff.removed)])
     const before = store.undos.length
+    const handled = new Set() // shapes placed here, not by position
     busy = true
     try {
       store.transact(() => {
+        for (const rec of Object.values(diff.added)) if (isFrame(rec) && rec.frameKey !== rec.id && store.has(rec.id)) adoptCopy(rec)
         // deleted frames: drop the title, release the members
         for (const [id, rec] of Object.entries(diff.removed)) {
           if (!isFrame(rec)) continue
@@ -159,7 +167,7 @@ export function bindFrames(store) {
             const dx = f.x - from.x, dy = f.y - from.y
             const t = store.get(id + '-title')
             if (t && (dx || dy) && !touched.has(t.id)) store.update(t.id, { x: t.x + dx, y: t.y + dy })
-            for (const s of store.shapes()) if (!isFrame(s) && s.id !== s.frameId + '-title') assign(s)
+            for (const s of store.shapes()) if (!isFrame(s) && !isTitle(s)) assign(s)
           } else if (to.x !== from.x || to.y !== from.y) {
             const dx = to.x - from.x, dy = to.y - from.y
             for (const s of store.shapes()) if (s.frameId === id && !touched.has(s.id)) store.update(s.id, { x: s.x + dx, y: s.y + dy })
@@ -168,7 +176,7 @@ export function bindFrames(store) {
         // added or moved shapes join or leave frames by where they land
         for (const id of touched) {
           const s = store.get(id)
-          if (!s || isFrame(s) || s.id === s.frameId + '-title') continue
+          if (!s || isFrame(s) || isTitle(s) || handled.has(id)) continue
           const [from] = diff.updated[id] || []
           if (!from || from.x !== s.x || from.y !== s.y || from.rot !== s.rot) assign(s)
         }
@@ -183,6 +191,30 @@ export function bindFrames(store) {
 
     function assign(s) {
       setFrame(store, s, frameAt(store, s)?.id)
+    }
+
+    // a frame copy: frameKey still names the original
+    function adoptCopy(copy) {
+      const id = copy.id, srcId = copy.frameKey
+      const src = store.get(srcId)
+      store.put({ ...copy, frameKey: id, z: store.minZ() - 1 })
+      // shapes copied alongside it still point at the original
+      const mates = srcId ? Object.values(diff.added).filter((s) => s.frameId === srcId && store.has(s.id)) : []
+      let title = null
+      for (const s of mates) {
+        handled.add(s.id)
+        if (isTitle(s)) { title ??= s.props.text; store.remove([s.id]) } // recreated below under the frame's id
+        else setFrame(store, store.get(s.id), id)
+      }
+      // copied on its own: copy the original's members too, keeping their offsets
+      if (!mates.some((s) => !isTitle(s)) && isFrame(src)) {
+        const dx = copy.x - src.x, dy = copy.y - src.y
+        let z = store.maxZ()
+        for (const s of store.shapes().filter((m) => m.frameId === srcId && !isTitle(m)).sort((a, b) => a.z - b.z)) {
+          store.put({ ...s, id: newId(), frameId: id, x: s.x + dx, y: s.y + dy, z: ++z })
+        }
+      }
+      putTitle(store, store.get(id), title ?? ((src && frameTitle(store, srcId)) || 'Frame'))
     }
   }, { source: 'user' })
 }

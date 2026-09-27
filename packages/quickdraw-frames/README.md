@@ -16,6 +16,7 @@ const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.sto
 - A frame is a `geo` rectangle with `isFrame: true` — solid grey outline, no fill, sent to the back. Being unfilled, it is picked by its edge; clicks inside reach its members.
 - Its title is a `text` shape with id `<frameId>-title`, placed above the top-left corner.
 - Members (the title included) carry `frameId`.
+- A frame keeps its own id in `frameKey`, and its title is marked `isFrameTitle`. Copies — the core's duplicate, paste, or `quickdraw-import` — keep these fields under new ids, which is how a copy is recognized.
 
 ## Rules (`bindFrames`, local edits only — peers apply their own)
 
@@ -23,8 +24,9 @@ const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.sto
 - Moving a frame moves its members, except those moved in the same change. The follow-up folds into the same undo step, including for keyboard nudges.
 - Resizing a frame re-checks membership.
 - Deleting a frame deletes its title and releases its members.
+- A copied frame goes to the back and gets its own title. Copied alone, it also gets copies of the original's members; copied together with members (or imported), it adopts those instead.
+- Frames made before `frameKey` existed are not recognized when copied; recreate them to get this.
 
 ## Not covered
 
 - No clipping, and a frame looks like a plain rectangle: both would need a core drawing hook.
-- `quickdraw-import` gives imported shapes fresh ids without remapping `frameId`, so an imported frame loses its title link; its members rejoin by position when moved.

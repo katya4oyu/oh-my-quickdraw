@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Store } from '@quickdrawjs/core'
+import { Store, newId } from '@quickdrawjs/core'
 import { bindFrames, createFrame, frameShapeIds, frameTitle, isFrame, renameFrame, setFrameAspect } from '../src/index.js'
 
 // 10×10 box at (x, y): center at (x + 5, y + 5)
@@ -161,6 +161,64 @@ describe('frames', () => {
       store.update(frame, { props: { w: 100 } })
       expect(store.get(frame).props).toMatchObject({ w: 100, h: 240 })
       expect('aspect' in store.get(frame)).toBe(false)
+    })
+  })
+
+  describe('copies', () => {
+    // what the core's duplicateSelection (and paste, and import) writes: the
+    // records spread into new ids, offset, on top
+    function duplicate(store, ids, offset = 16) {
+      const map = {}
+      let z = store.maxZ()
+      store.transact(() => {
+        for (const id of ids) {
+          const s = store.get(id)
+          map[id] = newId()
+          store.put({ ...s, id: map[id], x: s.x + offset, y: s.y + offset, z: ++z })
+        }
+      })
+      return map
+    }
+    const members = (store, frameId) => store.shapes().filter((s) => s.frameId === frameId && s.id !== frameId + '-title')
+
+    it('gives a frame copied on its own a title and copies of its members, at the back, in one undo step', () => {
+      const { store, frame } = setup()
+      renameFrame(store, frame, 'Plan')
+      const before = store.size
+      const copy = duplicate(store, [frame])[frame]
+      expect(store.get(copy)).toMatchObject({ frameKey: copy, x: 16, y: 16 })
+      expect(store.get(copy).z).toBeLessThan(store.get(frame).z)
+      expect(frameTitle(store, copy)).toBe('Plan')
+      expect(members(store, copy).map((s) => [s.x, s.y])).toEqual([[66, 66]])
+      expect(members(store, frame).map((s) => s.id)).toEqual(['shape:in'])
+      store.undo()
+      expect(store.size).toBe(before)
+    })
+
+    it('adopts member and title copies made alongside it instead of copying again', () => {
+      const { store, frame } = setup()
+      const before = store.size
+      const map = duplicate(store, [frame, 'shape:in', frame + '-title'])
+      const copy = map[frame]
+      expect(store.size).toBe(before + 3)
+      expect(store.get(map['shape:in']).frameId).toBe(copy)
+      expect(store.has(map[frame + '-title'])).toBe(false) // replaced by the copy's own title
+      expect(frameTitle(store, copy)).toBe('Plan')
+      expect(members(store, frame).map((s) => s.id)).toEqual(['shape:in'])
+    })
+
+    it('relinks an imported frame whose original is not on the board', () => {
+      const src = setup()
+      const records = [src.frame, src.frame + '-title', 'shape:in'].map((id) => src.store.get(id))
+      const store = new Store()
+      bindFrames(store)
+      const ids = Object.fromEntries(records.map((r) => [r.id, newId()]))
+      store.transact(() => { for (const r of records) store.put({ ...r, id: ids[r.id], x: r.x + 1000 }) }) // like quickdraw-import
+      const copy = ids[src.frame]
+      expect(store.get(copy).frameKey).toBe(copy)
+      expect(frameTitle(store, copy)).toBe('Plan')
+      expect(store.get(ids['shape:in']).frameId).toBe(copy)
+      expect(store.shapes()).toHaveLength(3)
     })
   })
 })
