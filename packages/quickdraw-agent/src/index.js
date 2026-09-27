@@ -4,3 +4,5 @@
 export { openBoard } from './board.js'
 export { describeBoard, boardToMarkdown, textOf, runOp, applySteps, undoDiff, parseRatio } from './ops.js'
 export { installMeasure, estimateWidth } from './measure.js'
+export { Renderer, renderPng } from './render.js'
+export { findChrome } from './chrome.js'
