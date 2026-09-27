@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store, pageBounds, hitShape } from '@quickdrawjs/core'
 import {
-  resolveEmbedUrl, htmlDocument, validateEmbed, createEmbed, HTML_CSP, HTML_SANDBOX, URL_SANDBOX, MAX_HTML_LENGTH,
+  resolveEmbedUrl, htmlDocument, validateEmbed, createEmbed, HTML_CSP, HTML_SANDBOX, URL_SANDBOX, MAX_HTML_LENGTH, LINK_CARDS_ONLY,
 } from '../src/index.js'
 
 describe('resolveEmbedUrl', () => {
@@ -86,5 +86,13 @@ describe('embed shapes in the core', () => {
     const id = createEmbed(store, { x: 10, y: 20, url: 'https://youtu.be/abc' })
     expect(pageBounds(store.get(id))).toEqual({ x: 10, y: 20, w: 480, h: 270 })
     expect(hitShape(store.get(id), 100, 100, 0)).toBe(true)
+  })
+})
+
+describe('LINK_CARDS_ONLY', () => {
+  it('allows no page and no HTML, and cannot be loosened by accident', async () => {
+    expect(LINK_CARDS_ONLY).toEqual({ rules: [], html: false })
+    expect(Object.isFrozen(LINK_CARDS_ONLY) && Object.isFrozen(LINK_CARDS_ONLY.rules)).toBe(true)
+    expect(await resolveEmbedUrl('https://www.youtube.com/watch?v=abc', LINK_CARDS_ONLY.rules)).toBeNull()
   })
 })

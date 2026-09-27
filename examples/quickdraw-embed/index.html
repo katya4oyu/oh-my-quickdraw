@@ -29,13 +29,16 @@
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindEmbeds, createEmbed, isEmbedSupported, TYPE } from '../../packages/quickdraw-embed/src/index.js'
+    import { bindEmbeds, createEmbed, isEmbedSupported, LINK_CARDS_ONLY, TYPE } from '../../packages/quickdraw-embed/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
     // allowed sites: YouTube, Vimeo, Figma, CodePen, Google Maps embeds (pass { rules } to change);
     // other URLs show as link cards
-    const embeds = bindEmbeds(editor)
+    // ?cards: link cards only — no live pages, no HTML
+    const cardsOnly = new URLSearchParams(location.search).has('cards')
+    const embeds = bindEmbeds(editor, cardsOnly ? LINK_CARDS_ONLY : {})
+    if (cardsOnly) document.getElementById('html').hidden = true
 
     // a core without registerShapeType (upstream Quickdraw) cannot draw embeds
     if (!isEmbedSupported()) for (const b of document.querySelectorAll('.actions button')) b.disabled = true

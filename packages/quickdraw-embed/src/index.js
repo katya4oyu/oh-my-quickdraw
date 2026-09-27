@@ -222,10 +222,15 @@ function openLink(url) {
   } catch {}
 }
 
+// Link cards only, for boards that should never show a live page or run HTML:
+// bindEmbeds(editor, LINK_CARDS_ONLY). URLs show as their cards, HTML as a notice.
+export const LINK_CARDS_ONLY = Object.freeze({ rules: Object.freeze([]), html: false })
+
 // Shows embeds over the board. opts.rules: the URL rules (DEFAULT_RULES);
+// opts.html: false never runs inline HTML, not even on Run;
 // opts.maxLive: at most this many iframes at once, the rest stay placeholders.
 // Returns { activate(id), deactivate(), run(id), destroy() }.
-export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) {
+export function bindEmbeds(editor, { rules = DEFAULT_RULES, html = true, maxLive = 8 } = {}) {
   const noop = () => {}
   if (!registerEmbed()) return { activate: noop, deactivate: noop, run: noop, refresh: noop, destroy: noop }
 
@@ -294,6 +299,7 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
       f.loading = 'lazy'
       return f
     }
+    if (!html) return note('Inline HTML is turned off on this board.')
     if (stopped.has(s.id)) return note('Stopped: this HTML tried to leave its page.', { label: 'Run again', onClick: () => { stopped.delete(s.id); run(s.id) } })
     if (!ran.has(s.id)) return note('Inline HTML, sandboxed with no network access.', { label: '▶ Run', onClick: () => run(s.id) })
     const f = document.createElement('iframe')
@@ -382,6 +388,7 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
   }
 
   function run(id) {
+    if (!html) return
     ran.add(id)
     schedule()
   }

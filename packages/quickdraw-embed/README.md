@@ -16,6 +16,8 @@ embeds.refresh()      // ask the URL rules again, after the app's allow list cha
 openJSON(board.editor, { types: { embed: validateEmbed } }) // quickdraw-import
 ```
 
+**Link cards only**: `bindEmbeds(board.editor, LINK_CARDS_ONLY)` (`{ rules: [], html: false }`) never shows a live page or runs HTML — every URL shows as its card, and inline HTML (which peers or imports may still bring) as a notice. `html: false` alone keeps allowed pages but turns HTML off.
+
 **Needs the `katya4oyu/quickdraw` core** for `registerShapeType`. On the upstream core the module loads, `isEmbedSupported()` is false, `createEmbed` throws and `bindEmbeds` does nothing; `resolveEmbedUrl` and `validateEmbed` still work.
 
 ## How it works
