@@ -7,7 +7,8 @@ import { parseArgs } from 'node:util'
 const USAGE = `quickdraw <command>
 
   serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]
-        the board: web page, relay (/ws), SQLite persistence, link previews (/preview)
+        the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
+        SQLite persistence (<data>/boards.sqlite), link previews (/preview)
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -22,9 +23,13 @@ if (command === 'serve') {
     },
   })
   const { createQuickdrawServer } = await import('../src/serve/index.ts')
+  const { importSingleBoard } = await import('../src/serve/boards.ts')
   const data = resolve(values.data)
   mkdirSync(data, { recursive: true })
-  const app = createQuickdrawServer({ dbPath: join(data, 'board.sqlite') })
+  const app = createQuickdrawServer({ dbPath: join(data, 'boards.sqlite') })
+  // a board from before there were several: kept as a board of its own
+  const imported = importSingleBoard(app.boards, join(data, 'board.sqlite'))
+  if (imported) console.log(`imported board.sqlite as the board "${imported.title}" (${imported.id})`)
   const { port } = await app.listen(Number(values.port), values.host)
   console.log(`http://${values.host === '0.0.0.0' ? 'localhost' : values.host}:${port}/   (data: ${data})`)
 } else {

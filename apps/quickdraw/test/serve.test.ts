@@ -3,6 +3,8 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Y from 'yjs'
+import { DatabaseSync } from 'node:sqlite'
+import { importSingleBoard } from '../src/serve/boards.ts'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
 import { PRESENCE, SV, UPDATE, pack } from '../src/protocol.js'
 
@@ -13,8 +15,10 @@ async function start(opts?: ServeOptions) {
   const app = createQuickdrawServer(opts)
   apps.push(app)
   const { port } = await app.listen(0)
-  return `ws://127.0.0.1:${port}/ws`
+  const id = app.boards.list()[0]?.id ?? app.boards.create('Test').id // after a restart: the same board
+  return `ws://127.0.0.1:${port}/ws/${id}`
 }
+const httpOf = (ws: string) => ws.replace('ws:', 'http:').replace(/\/ws\/.*/, '')
 
 const open = (u: string) => new Promise<WebSocket>((ok, fail) => {
   const ws = new WebSocket(u)
@@ -96,13 +100,62 @@ describe('relay', () => {
     b.close()
   })
 
-  it('serves the page, the protocol and the packages it imports, and nothing else', async () => {
-    const base = (await start()).replace('ws:', 'http:').replace('/ws', '')
-    for (const path of ['/', '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js']) {
+  it('serves the boards, their pages, the protocol and the packages the page imports, and nothing else', async () => {
+    const url = await start()
+    const base = httpOf(url)
+    const id = url.split('/').pop()
+    for (const path of ['/', `/b/${id}`, '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js']) {
       expect((await fetch(base + path)).status, path).toBe(200)
     }
-    for (const path of ['/_/core/package.json', '/_/quickdraw-agent/src/index.js', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
+    for (const path of ['/b/nosuchboard', '/board.html', '/_/core/package.json', '/_/quickdraw-agent/src/index.js', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
       expect((await fetch(base + path)).status, path).not.toBe(200)
     }
+  })
+})
+
+describe('boards', () => {
+  it('keep their own updates and peers', async () => {
+    const url = await start()
+    const app = apps[0]
+    const other = url.replace(/[^/]+$/, app.boards.create('Other').id)
+    const [a, b] = await Promise.all([open(url), open(other)])
+    let crossed = false
+    b.onmessage = () => { crossed = true }
+    a.send(pack(UPDATE, edit(2)))
+    expect(Object.keys(await fetchState(url))).toHaveLength(2)
+    expect(Object.keys(await fetchState(other))).toHaveLength(0)
+    expect(crossed).toBe(false)
+    a.close(); b.close()
+  })
+
+  it('are made on purpose: an unknown board is refused, not created', async () => {
+    const url = await start()
+    await expect(open(url.replace(/[^/]+$/, 'nosuchboard'))).rejects.toBeTruthy()
+    await expect(open(url.replace(/\/ws\/.*/, '/ws'))).rejects.toBeTruthy()
+    expect(apps[0].boards.list()).toHaveLength(1)
+  })
+
+  it('are listed and created through the API, which takes JSON only', async () => {
+    const base = httpOf(await start())
+    const made = await (await fetch(base + '/api/boards', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Sprint 12' }) })).json()
+    expect(made).toMatchObject({ title: 'Sprint 12', id: expect.stringMatching(/^[a-z0-9]{10}$/) })
+    expect((await (await fetch(base + '/api/boards')).json()).map((b: { title: string }) => b.title)).toEqual(['Test', 'Sprint 12'])
+    expect((await fetch(base + '/api/boards/' + made.id)).status).toBe(200)
+    expect((await fetch(base + '/api/boards', { method: 'POST', body: 'title=x' })).status).toBe(415) // a cross-site form
+  })
+
+  it('take in a board from before there were several, once', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-import-'))
+    const old = new DatabaseSync(join(dir, 'board.sqlite'))
+    old.exec('CREATE TABLE updates (seq INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)')
+    old.prepare('INSERT INTO updates (data) VALUES (?)').run(edit(3))
+    old.close()
+    const app = createQuickdrawServer({ dbPath: join(dir, 'boards.sqlite') })
+    apps.push(app)
+    const board = importSingleBoard(app.boards, join(dir, 'board.sqlite'))!
+    expect(importSingleBoard(app.boards, join(dir, 'board.sqlite'))).toBeNull() // renamed: not again
+    const doc = new Y.Doc()
+    Y.applyUpdate(doc, app.boards.state(board.id))
+    expect(doc.getMap('quickdraw').size).toBe(3)
   })
 })

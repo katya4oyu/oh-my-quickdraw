@@ -4,25 +4,28 @@ The app built from this repository's packages: one `quickdraw` command.
 
 ```sh
 npm link -w apps/quickdraw        # puts `quickdraw` on your PATH (once)
-quickdraw serve                   # http://127.0.0.1:8795/
-quickdraw note "Idea" --name Me   # edits that board; `quickdraw help` lists the commands
+quickdraw serve                   # http://127.0.0.1:8795/ lists the boards
+quickdraw new "Sprint 12"         # a board; prints its id and URL
+quickdraw note "Idea" --board ID  # edits it; `quickdraw help` lists the commands
 ```
 
 ## `quickdraw serve`
 
 `quickdraw serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]`
 
-- **The page** (`web/index.html`): the board with every package, driven by `quickdraw-toolbar`.
+- **Boards**: `/` lists them and makes new ones; `/b/<id>` is a board, with every package, driven by `quickdraw-toolbar`. `GET /api/boards` lists them, `POST /api/boards` (JSON `{ title }`) makes one. A board is only ever made on purpose: an unknown id is refused, never created.
 - **The packages it imports**, served from wherever Node resolves them (`/_/<package>/src/…`), so it runs from any directory. Only their `src` is served.
-- **A relay** at `/ws` for sync across tabs and devices, with live cursors. The protocol is in [`src/protocol.js`](src/protocol.js), shared by the server, the page and the CLI.
-- **Persistence**: the board's Yjs updates in `<data>/board.sqlite` (`node:sqlite`), merged as they pile up. The board comes back when no one else is online.
+- **A relay per board** at `/ws/<id>` for sync across tabs and devices, with live cursors. The protocol is in [`src/protocol.js`](src/protocol.js), shared by the server, the page and the CLI.
+- **Persistence**: the boards and their Yjs updates in `<data>/boards.sqlite` (`node:sqlite`), merged per board as they pile up. A board comes back when no one else is online.
 - **Link previews** at `/preview` for `quickdraw-embed`'s link cards, with SSRF guards (https on 443, public addresses on every redirect hop, timeouts, size caps).
 
 It listens on 127.0.0.1. To reach it from other devices, put something in front, such as `tailscale serve --https=8795 http://127.0.0.1:8795`.
 
 ## Board commands
 
-`quickdraw read | export | note | text | shape | markdown | frame | arrow | update | move | arrange | delete | apply | log | undo`, on the board `quickdraw serve` runs here, another one (`--board ws://…/ws` or `$QUICKDRAW_BOARD`), or a JSON file (`--file`). They join the board like a browser tab, as one more peer with a cursor, and print JSON. They are built on [`quickdraw-agent`](../../packages/quickdraw-agent)'s operations.
+`quickdraw boards | new | read | export | note | text | shape | markdown | frame | arrow | update | move | arrange | delete | apply | log | undo`. They join a board like a browser tab, as one more peer with a cursor, and print JSON.
+
+- **Which board**: `--board` takes an id, the page URL (`https://host/b/<id>`, as the browser shows it) or the relay URL (`ws://host/ws/<id>`); or `$QUICKDRAW_BOARD`; or `--file` for a JSON file. Ids are looked up on `--server` / `$QUICKDRAW_SERVER`, by default this machine's `quickdraw serve`. Without a board, the server's only board is used; with several, the command fails and lists them — it never makes one up. They are built on [`quickdraw-agent`](../../packages/quickdraw-agent)'s operations.
 
 - **Undo**: each operation's diff goes to `.quickdraw/log.jsonl` in the working directory (or `$QUICKDRAW_LOG`); `undo` reverts what nobody changed since and reports the rest.
 - **PNG** (`export --format png`): drawn by the core itself in a headless Chrome already on the machine — see below.
@@ -40,7 +43,7 @@ Agents learn the commands from the [Agent Skill](../../skills/quickdraw/SKILL.md
 
 ## Moving from the old example server
 
-A board from the old example server (`examples/quickdraw-yjs/board.sqlite`) carries over: copy the file to `~/.quickdraw/board.sqlite`.
+A board from the old example server (`examples/quickdraw-yjs/board.sqlite`) carries over: copy the file to `~/.quickdraw/board.sqlite`. The next `quickdraw serve` takes it in as a board called "Board" and renames the file to `board.sqlite.imported`.
 
 ## Development
 

@@ -7,10 +7,13 @@ import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
 import { openBoard } from '../board/open.ts'
+import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 
-export const DEFAULT_BOARD = 'ws://localhost:8795/ws'
+export const BOARD_USAGE = `Board commands: [--board ID | --file board.json] [--server URL] [--name Agent]
 
-export const BOARD_USAGE = `Board commands: [--board ws://host/ws | --file board.json] [--name Agent]
+Boards
+  boards                                  the boards on the server, oldest first
+  new [TITLE]                             a new board; prints its id and page URL
 
 Reading
   read [--format md|json]                 the board as a Markdown outline (default) or data
@@ -36,8 +39,10 @@ History
   log                                       this board's operations, newest last
   undo [OP]                                 the last operation (or OP), where untouched since
 
-The board comes from --board, --file, or $QUICKDRAW_BOARD (a ws:// URL or a file path);
-otherwise the one \`quickdraw serve\` runs here (${DEFAULT_BOARD}).`
+--board takes an id, a board's page URL (https://host/b/ID) or its relay URL (ws://host/ws/ID);
+or set $QUICKDRAW_BOARD (the same, or a file path). Ids are looked up on --server, $QUICKDRAW_SERVER,
+or the \`quickdraw serve\` on this machine (http://localhost:8795). Without a board, the server's
+only board is used; when it has several, say which.`
 
 const pair = (s: string | undefined, what: string): [number, number] | undefined => {
   if (s == null) return undefined
@@ -93,7 +98,7 @@ async function exportPng(store: Store, o: Options): Promise<string[]> {
 }
 
 const OPTIONS = {
-  board: { type: 'string' }, file: { type: 'string' }, name: { type: 'string', default: 'Agent' },
+  board: { type: 'string' }, file: { type: 'string' }, server: { type: 'string' }, name: { type: 'string', default: 'Agent' },
   format: { type: 'string' }, out: { type: 'string' }, color: { type: 'string' }, in: { type: 'string' },
   at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
   text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
@@ -103,16 +108,26 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'delete', 'apply']
+export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'delete', 'apply']
 
 export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
   if (!cmd || o.help || cmd === 'help') return out(BOARD_USAGE)
 
-  const target = o.board ?? o.file ?? process.env.QUICKDRAW_BOARD ?? DEFAULT_BOARD
-  const live = /^wss?:\/\//.test(target)
-  const board = await openBoard(live ? { url: target, name: o.name } : { file: target, name: o.name })
-  const boardKey = live ? target : resolve(target)
+  const server = serverOf(o.server)
+  if (cmd === 'boards') return out(JSON.stringify(await listBoards(server), null, 2))
+  if (cmd === 'new') {
+    const b = await createBoard(server, args.join(' ') || undefined)
+    return out(JSON.stringify({ ...b, url: `${server}/b/${b.id}` }))
+  }
+
+  const env = process.env.QUICKDRAW_BOARD
+  const envFile = env && !/^(wss?|https?):\/\//.test(env) && /[./\\]/.test(env) ? env : undefined
+  const file = o.file ?? (o.board ? undefined : envFile)
+  const url = file ? undefined : await resolveBoard(o.board ?? env, server)
+  const board = await openBoard(url ? { url, name: o.name } : { file: file!, name: o.name })
+  const live = !!url
+  const boardKey = url ?? resolve(file!)
   try {
     const { store } = board
     const size = pair(o.size, 'size')
