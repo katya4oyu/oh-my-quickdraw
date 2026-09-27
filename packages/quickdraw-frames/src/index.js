@@ -19,13 +19,26 @@ export function createFrame(store, { x, y, w = 480, h = 320, title = 'Frame' }) 
       id, typeName: 'shape', type: 'geo', isFrame: true, x, y, rot: 0, z: store.minZ() - 1,
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
-    store.put({
-      id: id + '-title', typeName: 'shape', type: 'text', frameId: id, x, y: y - 34, rot: 0, z: store.maxZ() + 1,
-      props: { text: title, color: 'grey', size: 's', font: 'sans', autosize: true, scale: 1 },
-    })
+    putTitle(store, store.get(id), title)
     for (const s of store.shapes()) if (!isFrame(s) && s.frameId !== id && inside(pageBounds(s), store.get(id))) setFrame(store, s, id)
   })
   return id
+}
+
+function putTitle(store, frame, text) {
+  store.put({
+    id: frame.id + '-title', typeName: 'shape', type: 'text', frameId: frame.id, x: frame.x, y: frame.y - 34, rot: 0, z: store.maxZ() + 1,
+    props: { text, color: 'grey', size: 's', font: 'sans', autosize: true, scale: 1 },
+  })
+}
+
+export const frameTitle = (store, frameId) => store.get(frameId + '-title')?.props.text ?? ''
+
+// sets the title text; recreates the title above the frame if it was deleted
+export function renameFrame(store, frameId, title) {
+  const t = store.get(frameId + '-title')
+  if (t) store.update(t.id, { props: { text: title } })
+  else if (isFrame(store.get(frameId))) putTitle(store, store.get(frameId), title)
 }
 
 // the frame, its title and its members: pass to editor.exportImage({ ids })
