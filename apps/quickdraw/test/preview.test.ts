@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { handlePreview, isPublicAddress } from './preview-proxy.mjs'
+import { handlePreview, isPublicAddress } from '../src/serve/preview.ts'
 
 // calls the handler like the dev server does, and returns [status, body]
-function ask(url) {
-  return new Promise((resolve) => {
-    const res = { writeHead: (status) => ({ end: (body) => resolve([status, JSON.parse(body)]) }) }
-    handlePreview({ url: '/preview' + (url == null ? '' : '?url=' + encodeURIComponent(url)) }, res)
+function ask(url?: string) {
+  return new Promise<[number, { error?: string }]>((resolve) => {
+    const res = { writeHead: (status: number) => ({ end: (body: string) => resolve([status, JSON.parse(body)]) }) }
+    handlePreview({ url: '/preview' + (url == null ? '' : '?url=' + encodeURIComponent(url)) }, res as never)
   })
 }
 

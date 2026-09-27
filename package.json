@@ -5,13 +5,18 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w examples/quickdraw-yjs",
-    "test": "npm test --workspaces --if-present"
+    "dev": "npm run dev -w apps/quickdraw",
+    "examples": "node examples/serve.mjs",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
-    "@quickdrawjs/core": "file:vendor/quickdraw/packages/core"
+    "@quickdrawjs/core": "file:vendor/quickdraw/packages/core",
+    "@types/node": "^25.9.8",
+    "typescript": "^7.0.2"
   }
 }

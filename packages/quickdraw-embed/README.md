@@ -36,7 +36,7 @@ A URL's placeholder is a card: its preview image, title, description and site, w
 - **Fetched once, by the creator, through the app.** Browsers cannot read other sites' HTML (CORS), so `createEmbed` / `addPreview` take the app's `fetchPreview(url) → { title?, description?, siteName?, image?: Blob | data URL }` — a proxy, a desktop shell, anything without CORS. `parseOpenGraph(html, url)` reads the tags for it.
 - **Stored in the record** (`props.preview`): text is bounded, the image shrunk to an inline JPEG (≤ 200 KB). Viewers never contact the site, and exporting never taints the canvas.
 - Preview text is drawn with `fillText`, never parsed as HTML; `checkPreview` (part of `validateEmbed`) rejects anything but bounded strings and inline raster images.
-- `examples/quickdraw-embed/preview-proxy.mjs` is a reference proxy (served at `/preview` by `npm run dev`), with SSRF guards: https on 443 only, public addresses only on every redirect hop, timeouts and size caps.
+- `apps/quickdraw/src/serve/preview.ts` is a reference proxy (served at `/preview` by `quickdraw serve`), with SSRF guards: https on 443 only, public addresses only on every redirect hop, timeouts and size caps.
 
 ## Security boundary
 
@@ -61,6 +61,6 @@ A synced or imported record carries a URL or some HTML, never permission: each v
 - A sandbox cannot stop a frame from navigating itself, which would reveal the viewer's IP to the target. The first load is the document; any later load stops the embed.
 - At most 200,000 characters.
 
-Example: `examples/quickdraw-embed` (run `npm run dev` at the workspace root).
+Example: `examples/quickdraw-embed` (run `npm run examples` at the workspace root).
 
 Toolbar items: `embedTools(embeds, { fetchPreview })` returns `{ rail, context }` for [`quickdraw-toolbar`](../quickdraw-toolbar) — plain objects, no dependency on it.

@@ -43,14 +43,12 @@
     // a core without registerShapeType (upstream Quickdraw) cannot draw embeds
     if (!isEmbedSupported()) for (const b of document.querySelectorAll('.actions button')) b.disabled = true
 
-    // link previews through the example server's /preview proxy (browsers cannot read
-    // other sites' HTML); the card keeps what it got, so viewers never contact the site
+    // link previews: a real app fetches the page on a server (browsers cannot read
+    // other sites' HTML) — apps/quickdraw does, at /preview. This example has no
+    // server, so it makes one up from the URL; the card keeps whatever it gets.
     async function fetchPreview(url) {
-      const r = await fetch('/preview?url=' + encodeURIComponent(url))
-      if (!r.ok) return null
-      const p = await r.json()
-      if (p.image) p.image = await (await fetch(p.image)).blob() // the package shrinks it
-      return p
+      const { hostname, pathname } = new URL(url)
+      return { siteName: hostname, title: pathname === '/' ? hostname : pathname.slice(1), description: 'A made-up preview: this example has no server to fetch the page.' }
     }
 
     const place = (id) => { editor.setTool('select'); editor.setSelection([id]) }

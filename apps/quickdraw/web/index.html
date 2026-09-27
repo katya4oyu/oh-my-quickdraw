@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Quickdraw — extensions demo</title>
-  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <title>Quickdraw</title>
+  <link rel="stylesheet" href="/_/core/src/quickdraw.css" />
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
@@ -16,7 +16,14 @@
     {
       "imports": {
         "yjs": "https://esm.sh/yjs@13.6.33",
-        "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js"
+        "@quickdrawjs/core": "/_/core/src/index.js",
+        "quickdraw-yjs": "/_/quickdraw-yjs/src/index.js",
+        "quickdraw-export": "/_/quickdraw-export/src/index.js",
+        "quickdraw-import": "/_/quickdraw-import/src/index.js",
+        "quickdraw-markdown": "/_/quickdraw-markdown/src/index.js",
+        "quickdraw-embed": "/_/quickdraw-embed/src/index.js",
+        "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
+        "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js"
       }
     }
   </script>
@@ -25,14 +32,15 @@
   <div id="board"></div>
   <script type="module">
     import * as Y from 'yjs'
-    import { createQuickdraw } from '../../vendor/quickdraw/packages/core/src/index.js'
-    import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
-    import { exportTool } from '../../packages/quickdraw-export/src/index.js'
-    import { importTool } from '../../packages/quickdraw-import/src/index.js'
-    import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
-    import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from '../../packages/quickdraw-embed/src/index.js'
-    import { bindFrames, frameTools } from '../../packages/quickdraw-frames/src/index.js'
-    import { createToolbar, MORE_ICON } from '../../packages/quickdraw-toolbar/src/index.js'
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindYjs } from 'quickdraw-yjs'
+    import { exportTool } from 'quickdraw-export'
+    import { importTool } from 'quickdraw-import'
+    import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
+    import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+    import { bindFrames, frameTools } from 'quickdraw-frames'
+    import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
+    import { UPDATE, SV, PRESENCE, pack, packPresence, unpackPresence } from '/protocol.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
@@ -42,7 +50,7 @@
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
     const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
 
-    // link previews through the example server's /preview proxy (browsers cannot read
+    // link previews through the server's /preview proxy (browsers cannot read
     // other sites' HTML); the card keeps what it got, so viewers never contact the site
     async function fetchPreview(url) {
       const r = await fetch('/preview?url=' + encodeURIComponent(url))
@@ -70,12 +78,7 @@
       context: [...frames.context, ...cards.context, ...web.context],
     })
 
-    // transport: the example server's relay, which also persists the board;
-    // swap in any Yjs provider. Messages are one type byte + payload:
-    // 0 = update, 1 = state vector (asking the server for what we are missing),
-    // 2 = presence (JSON; the server adds the sender's id).
-    const UPDATE = 0, SV = 1, PRESENCE = 2
-    const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
+    // transport: the server's relay (/protocol.js), which also persists the board
     let ws = null
     ydoc.on('update', (update, origin) => {
       if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
@@ -92,7 +95,7 @@
       ws.onmessage = ({ data }) => {
         const m = new Uint8Array(data)
         if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
-        else if (m[0] === PRESENCE) showCursor(JSON.parse(new TextDecoder().decode(m.subarray(1))))
+        else if (m[0] === PRESENCE) showCursor(unpackPresence(m))
       }
       ws.onclose = () => {
         for (const id of cursors.keys()) showCursor({ id, gone: true })
@@ -111,7 +114,7 @@
     }
     let queued = false
     function sendCursor() {
-      if (ws?.readyState === WebSocket.OPEN) ws.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify(me))))
+      if (ws?.readyState === WebSocket.OPEN) ws.send(packPresence(me))
     }
     function moveCursor(p) {
       Object.assign(me, p)

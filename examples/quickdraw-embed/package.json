@@ -1,8 +1,5 @@
 {
   "name": "quickdraw-embed-example",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run"
-  }
+  "type": "module"
 }

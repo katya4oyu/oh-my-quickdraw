@@ -1,4 +1,4 @@
-// A client for the example server's relay (examples/quickdraw-yjs/server.mjs):
+// A client for the relay of `quickdraw serve` (apps/quickdraw/src/protocol.js):
 // messages are one type byte + payload — 0 = Yjs update, 1 = state vector,
 // 2 = presence (JSON). The agent joins like any browser tab: it sends what it
 // has, asks for the rest, and shows a cursor while it works.

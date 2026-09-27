@@ -1,12 +1,5 @@
 {
   "name": "quickdraw-yjs-example",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "node server.mjs",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "yjs": "^13.6.33"
-  }
+  "type": "module"
 }
