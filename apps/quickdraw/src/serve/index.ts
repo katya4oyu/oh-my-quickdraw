@@ -100,6 +100,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
+  let closing = false
   const agentMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([AGENT]), Buffer.from(JSON.stringify(value))]))
   const send = (to: Duplex, value: object) => { if (to.writable) to.write(agentMsg(value)) }
   const pages = (room: Set<Duplex>) => [...room].filter((s) => !agentOf.has(s))
@@ -209,7 +210,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       if (!peers.delete(socket)) return
       broadcast(peers, socket, presence(id, { gone: true }))
       const agent = agentOf.get(socket)
-      if (agent) {
+      if (agent && !closing) { // not while the server shuts down: the threads are closed
         agentOf.delete(socket)
         announce(peers)
         // what it was still doing will not finish
@@ -233,6 +234,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       return new Promise<{ port: number }>((ok) => server.listen(port, host, () => ok(server.address() as { port: number })))
     },
     close() {
+      closing = true
       for (const room of rooms.values()) for (const s of room) s.destroy()
       return new Promise<void>((ok) => server.close(() => ok())).then(() => { boards.close(); threads.close() })
     },
