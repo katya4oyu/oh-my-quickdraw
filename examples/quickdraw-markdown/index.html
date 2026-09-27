@@ -8,7 +8,8 @@
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
-    .actions { position: fixed; top: 10px; right: 10px; z-index: 50; display: flex; gap: 6px; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button { pointer-events: auto; }
     .actions button {
       font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
       border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
@@ -24,10 +25,12 @@
   <div class="actions">
     <button id="add">Add Markdown</button>
     <button id="edit">Edit</button>
+    <button id="open">Open .md</button>
+    <button id="save">Save .md</button>
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindMarkdownEditing, createMarkdown, editMarkdown, TYPE } from '../../packages/quickdraw-markdown/src/index.js'
+    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, openMarkdownFile, TYPE } from '../../packages/quickdraw-markdown/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
@@ -55,11 +58,25 @@ const md = 'fenced code'
       editor.setSelection([id])
     }
 
+    const selectedCard = () => {
+      const s = editor.store.get([...editor.selection][0])
+      if (s?.type !== TYPE) alert('Select a Markdown card first')
+      else return s.id
+    }
+
     // iOS sends no dblclick on the board, so edit the selected card from here
     document.getElementById('edit').onclick = () => {
-      const s = editor.store.get([...editor.selection][0])
-      if (s?.type !== TYPE) return alert('Select a Markdown card first')
-      editMarkdown(editor, s.id)
+      const id = selectedCard()
+      if (id) editMarkdown(editor, id)
+    }
+
+    // a .md file becomes a card; a card saves as a .md file
+    document.getElementById('open').onclick = () => {
+      openMarkdownFile(editor).catch((e) => alert(`Open failed: ${e.message}`))
+    }
+    document.getElementById('save').onclick = () => {
+      const id = selectedCard()
+      if (id) downloadMarkdown(editor.store, id)
     }
   </script>
 </body>

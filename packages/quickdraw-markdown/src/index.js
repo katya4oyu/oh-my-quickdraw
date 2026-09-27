@@ -3,7 +3,7 @@
 // rotates, exports and follows the theme like any other shape.
 // Record: { type: 'markdown', props: { md, w, color? } } — the height follows
 // the content. Corner-resizing changes the width; the text reflows.
-import { registerShapeType, newId, FONTS } from '@quickdrawjs/core'
+import { registerShapeType, newId, FONTS, COLOR_IDS } from '@quickdrawjs/core'
 import { parseMarkdown } from './parse.js'
 import { layoutMarkdown } from './layout.js'
 
@@ -13,6 +13,8 @@ export { layoutMarkdown } from './layout.js'
 export const TYPE = 'markdown'
 const PAD = 14
 const MIN_W = 120
+const MAX_W = 4000
+export const MAX_MD_LENGTH = 100_000
 
 // canvas text measurement; outside a browser (tests, servers) an estimate
 let measureCtx
@@ -84,6 +86,55 @@ export function createMarkdown(store, { x, y, w = 360, md = '# Title\n\nWrite **
   const id = newId()
   store.put({ id, typeName: 'shape', type: TYPE, x, y, rot: 0, z: store.maxZ() + 1, props: { md, w, color: 'black' } })
   return id
+}
+
+// For quickdraw-import's `types` option: { types: { markdown: validateMarkdown } }.
+// Returns an error message, or null when the record is a sound card.
+export function validateMarkdown(shape) {
+  const p = shape.props
+  if (typeof p.md !== 'string') return 'bad props.md'
+  if (p.md.length > MAX_MD_LENGTH) return `props.md is too long (max ${MAX_MD_LENGTH} characters)`
+  if (!Number.isFinite(p.w) || p.w <= 0 || p.w > MAX_W) return 'bad props.w'
+  if (p.color != null && !COLOR_IDS.includes(p.color)) return 'bad props.color'
+  return null
+}
+
+// Asks for a .md (or plain text) file and adds it as a card in the middle of
+// the view, selected. Resolves to the new id, or null when cancelled.
+export function openMarkdownFile(editor) {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,.txt,text/markdown,text/plain'
+    input.onchange = async () => {
+      const file = input.files[0]
+      if (!file) return resolve(null)
+      try {
+        const md = await file.text()
+        if (md.length > MAX_MD_LENGTH) throw new Error(`File is too long (max ${MAX_MD_LENGTH} characters)`)
+        const v = editor.viewportPageBounds()
+        const w = Math.min(420, v.w * 0.85)
+        const id = createMarkdown(editor.store, { x: v.x + (v.w - w) / 2, y: v.y + v.h * 0.15, w, md })
+        if (editor.tool !== 'select') editor.setTool('select')
+        editor.setSelection([id])
+        resolve(id)
+      } catch (e) { reject(e) }
+    }
+    input.oncancel = () => resolve(null)
+    input.click()
+  })
+}
+
+// Saves a card's source as a .md file, named after its first heading.
+export function downloadMarkdown(store, id) {
+  const shape = store.get(id)
+  if (shape?.type !== TYPE) return
+  const heading = shape.props.md.match(/^#{1,6}\s+(.+)$/m)?.[1].replace(/[\\/:*?"<>|]/g, '').trim()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([shape.props.md], { type: 'text/markdown' }))
+  a.download = (heading || 'card').slice(0, 80) + '.md'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000)
 }
 
 // Edits a card's source in a textarea laid over it (outside the board, so the

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { Store, pageBounds, hitShape, FONTS } from '@quickdrawjs/core'
 import { scaleShape } from '../../../vendor/quickdraw/packages/core/src/shapes.js'
-import { parseMarkdown, parseInline, layoutMarkdown, createMarkdown } from '../src/index.js'
+import { parseMarkdown, parseInline, layoutMarkdown, createMarkdown, validateMarkdown, MAX_MD_LENGTH } from '../src/index.js'
+import { exportJSON } from '../../quickdraw-export/src/index.js'
+import { importJSON } from '../../quickdraw-import/src/index.js'
 
 // every character is half the font size wide
 const measure = (font, text) => [...text].length * parseFloat(font.match(/(\d+)px/)[1]) * 0.5
@@ -68,5 +70,33 @@ describe('markdown shapes in the core', () => {
     expect(hitShape(s, 100, 30, 0)).toBe(true)
     expect(scaleShape(s, 2, 3).props.w).toBe(600)
     expect(pageBounds({ ...s, props: { ...s.props, md: '# Hi\n\ntext\n\nmore\n\nmore' } }).h).toBeGreaterThan(b.h)
+  })
+})
+
+describe('JSON files', () => {
+  const editorFor = (store) => ({
+    store, tool: 'select',
+    viewportPageBounds: () => ({ x: 0, y: 0, w: 800, h: 600 }),
+    setTool() {}, setSelection() {},
+  })
+  const card = (props) => ({ id: 'shape:c', typeName: 'shape', type: 'markdown', x: 0, y: 0, rot: 0, z: 1, props: { md: '# a', w: 300, ...props } })
+
+  it('round-trip through export and import when the type is allowed', () => {
+    const src = new Store()
+    createMarkdown(src, { x: 0, y: 0, md: '# Notes\n\n- one' })
+    const data = JSON.parse(JSON.stringify(exportJSON(src)))
+    const dst = new Store()
+    const [id] = importJSON(editorFor(dst), data, { types: { markdown: validateMarkdown } })
+    expect(dst.get(id)).toMatchObject({ type: 'markdown', props: { md: '# Notes\n\n- one' } })
+  })
+
+  it('are rejected without the validator, and with bad cards', () => {
+    const file = (props) => ({ quickdraw: 1, shapes: [card(props)], assets: {} })
+    const opts = { types: { markdown: validateMarkdown } }
+    expect(() => importJSON(editorFor(new Store()), file({}))).toThrow(/unknown shape type/)
+    expect(() => importJSON(editorFor(new Store()), file({ md: 42 }), opts)).toThrow(/props.md/)
+    expect(() => importJSON(editorFor(new Store()), file({ md: 'x'.repeat(MAX_MD_LENGTH + 1) }), opts)).toThrow(/too long/)
+    expect(() => importJSON(editorFor(new Store()), file({ w: Infinity }), opts)).toThrow(/props.w/)
+    expect(() => importJSON(editorFor(new Store()), file({ color: 'url(x)' }), opts)).toThrow(/props.color/)
   })
 })

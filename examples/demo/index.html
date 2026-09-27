@@ -42,6 +42,8 @@
     <button id="frame-export">Export frame</button>
     <button id="md-add">Add Markdown</button>
     <button id="md-edit">Edit Markdown</button>
+    <button id="md-open">Open .md</button>
+    <button id="md-save">Save .md</button>
     <button id="import">Import JSON</button>
     <button id="export">Export JSON</button>
   </div>
@@ -51,7 +53,7 @@
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
     import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
     import { openJSON } from '../../packages/quickdraw-import/src/index.js'
-    import { bindMarkdownEditing, createMarkdown, editMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
+    import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, openMarkdownFile, validateMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
     import { bindFrames, createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -115,14 +117,26 @@
       board.editor.setTool('select')
       board.editor.setSelection([id])
     }
+    const selectedCard = () => {
+      const s = board.editor.store.get([...board.editor.selection][0])
+      if (s?.type !== MARKDOWN) alert('Select a Markdown card first')
+      else return s.id
+    }
     // iOS sends no dblclick on the board, so edit the selected card from here
     document.getElementById('md-edit').onclick = () => {
-      const s = board.editor.store.get([...board.editor.selection][0])
-      if (s?.type !== MARKDOWN) return alert('Select a Markdown card first')
-      editMarkdown(board.editor, s.id)
+      const id = selectedCard()
+      if (id) editMarkdown(board.editor, id)
+    }
+    document.getElementById('md-open').onclick = () => {
+      openMarkdownFile(board.editor).catch((e) => alert(`Open failed: ${e.message}`))
+    }
+    document.getElementById('md-save').onclick = () => {
+      const id = selectedCard()
+      if (id) downloadMarkdown(board.editor.store, id)
     }
     document.getElementById('import').onclick = () => {
-      openJSON(board.editor).catch((e) => alert(`Import failed: ${e.message}`))
+      // Markdown cards are allowed in, checked by their own validator
+      openJSON(board.editor, { types: { [MARKDOWN]: validateMarkdown } }).catch((e) => alert(`Import failed: ${e.message}`))
     }
 
     // transport: the example server's relay, which also persists the board;
