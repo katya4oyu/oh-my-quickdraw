@@ -82,7 +82,16 @@ export function commandText(command: string): string {
 }
 
 /** Connects an app-server to a board agent; resolves once Codex is ready. */
-export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name }: { cwd: string, name: string }) {
+export interface CodexOptions {
+  cwd: string
+  name: string
+  /** a Codex model id (see `codex` / model/list); otherwise the person's Codex default */
+  model?: string
+  /** reasoning effort, such as low, medium, high; otherwise the model's default */
+  effort?: string
+}
+
+export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name, model, effort }: CodexOptions) {
   const ready = server.request('initialize', {
     clientInfo: { name: 'quickdraw', title: 'Quickdraw', version: '0.1.0' },
     capabilities: { experimentalApi: true, requestAttestation: false }, // dynamicTools is experimental
@@ -100,7 +109,7 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     const t = byRequest.get(requestId)!
     const input = [{ type: 'text', text, text_elements: [] }]
     if (t.turnId) await server.request('turn/steer', { threadId: t.threadId, input, expectedTurnId: t.turnId })
-    else await server.request('turn/start', { threadId: t.threadId, input })
+    else await server.request('turn/start', { threadId: t.threadId, input, ...(effort ? { effort } : {}) })
   }
 
   server.onNotification((method, p) => {
@@ -130,7 +139,7 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     if (!requestId) throw new Error('not a board request')
     if (method === 'item/tool/call') {
       try {
-        const text = agent.runTool(requestId, p.tool, p.arguments)
+        const text = await agent.runTool(requestId, p.tool, p.arguments)
         return { success: true, contentItems: [{ type: 'inputText', text }] }
       } catch (e) {
         return { success: false, contentItems: [{ type: 'inputText', text: (e as Error).message }] }
@@ -158,12 +167,17 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
 
   agent.onRequest = async (request) => {
     try {
+      agent.lookAt(request)
       await ready
-      const { thread } = await server.request('thread/start', {
+      const started = await server.request('thread/start', {
         cwd,
+        ...(model ? { model } : {}),
         developerInstructions: instructions(name),
         dynamicTools: agent.tools.map((t) => ({ type: 'function', ...t })),
       })
+      const { thread } = started
+      const used = [started.model, effort ?? started.reasoningEffort].filter(Boolean).join(' · ')
+      if (used) agent.emit(request.id, { type: 'progress', text: used })
       byRequest.set(request.id, { threadId: thread.id, turnId: null })
       requestOf.set(thread.id, request.id)
       await turn(request.id, prompt(request))

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
-import { joinBoard } from '../src/agent/board-agent.ts'
+import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { commandText, startAppServer, runCodex } from '../src/agent/codex.ts'
 import { AGENT, packAgent, unpackAgent } from '../src/protocol.js'
 
@@ -81,4 +81,24 @@ it('shows a shell command as the command it runs', () => {
   expect(commandText("bash -c 'ls'")).toBe('ls')
   expect(commandText('ls -la')).toBe('ls -la')
   expect(commandText('/bin/zsh -lc "' + 'x'.repeat(200) + '"')).toHaveLength(80)
+})
+
+it('puts an operation on the board a piece at a time, ending as the operation would, and undoes as one', async () => {
+  const { Store } = await import('@quickdrawjs/core')
+  const { bindFrames } = await import('quickdraw-frames')
+  const { applySteps, undoDiff } = await import('quickdraw-agent')
+  const steps = [{ do: 'note', text: 'A', ref: 'a' }, { do: 'note', text: 'B', ref: 'b' }, { do: 'arrow', from: '@a', to: '@b' }, { do: 'frame', title: 'F', around: ['@a', '@b'] }]
+  const atOnce = new Store(); bindFrames(atOnce)
+  const live = new Store(); bindFrames(live)
+  const { diff } = applySteps(atOnce, 'Codex', steps)
+  const seen: number[] = []
+  let changes = 0
+  live.listen(() => { changes++ })
+  await putLive(live, diff, atOnce, (x) => seen.push(x), 100)
+  const plain = (s: typeof live) => JSON.stringify(s.all().filter((r) => r.typeName === 'shape').sort((a, b) => (a.id < b.id ? -1 : 1)))
+  expect(plain(live)).toBe(plain(atOnce))
+  expect(changes).toBeGreaterThan(3) // a piece at a time
+  expect(seen.length).toBe(4) // the cursor on each shape (not the frame's title)
+  undoDiff(live, diff)
+  expect(live.all().filter((r) => r.typeName === 'shape')).toEqual([])
 })

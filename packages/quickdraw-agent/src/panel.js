@@ -227,7 +227,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     render()
   }
   function hide() { panel.hidden = true; renderPins() }
-  function open(id) { view = id; show() }
+  function open(id) { view = id; following = id; show() }
 
   function renderList() {
     title.textContent = 'AI'
@@ -386,11 +386,32 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const thread = threads.get(id)
     if (!thread) return
     threads.set(id, updateAgentThread(thread, event))
+    if (event.type === 'op' && id === following) follow(event.diff)
     if (panel.hidden) renderPins()
     else render()
   }
 
+  // Following: the view goes where the agent works on a request asked or
+  // opened here, until the person moves the view themselves.
+  let following = null
+  let panning = 0 // until when camera changes are ours
+  function follow(diff) {
+    const shapes = [...Object.values(diff?.added || {}), ...Object.values(diff?.updated || {}).map(([, to]) => to)]
+      .filter((r) => r.typeName === 'shape' && !r.isFrameTitle)
+    if (!shapes.length) return
+    const bs = shapes.map((s) => pageBounds(s))
+    const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y))
+    const w = Math.max(...bs.map((b) => b.x + b.w)) - x, h = Math.max(...bs.map((b) => b.y + b.h)) - y
+    const v = editor.viewportPageBounds()
+    if (x >= v.x && y >= v.y && x + w <= v.x + v.w && y + h <= v.y + v.h) return // in view
+    const box = container.getBoundingClientRect()
+    const z = Math.min(editor.camera.z, (box.width * 0.8) / w, (box.height * 0.8) / h)
+    panning = Date.now() + 800
+    editor.setCamera({ x: box.width / 2 / z - (x + w / 2), y: box.height / 2 / z - (y + h / 2), z }, { animate: 500 })
+  }
+
   function sendRequest(request) {
+    following = request.id
     threads.set(request.id, { request, events: [], diffs: [], status: 'working' })
     open(request.id)
     Promise.resolve(host.ask(request)).catch((error) => handleEvent({ type: 'error', message: String(error) }, request.id))
@@ -432,6 +453,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
 
   const offHost = host.onEvent((event) => handleEvent(event))
   const offs = ['camera', 'change'].map((name) => editor.on(name, renderPins))
+  offs.push(editor.on('camera', () => { if (Date.now() > panning) following = null })) // the person took the view
   offs.push(editor.on('edit', onEdit))
   offs.push(editor.on('selection', () => {
     if (panel.hidden) return

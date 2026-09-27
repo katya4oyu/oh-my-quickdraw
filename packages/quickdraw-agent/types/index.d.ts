@@ -119,6 +119,7 @@ export interface AgentEditor {
   readonly camera: { x: number, y: number, z: number }
   viewportPageBounds(): AgentViewport
   pageToScreen(x: number, y: number): Point
+  setCamera(camera: { x: number, y: number, z: number }, opts?: { animate?: number }): void
   on(event: string, fn: (...args: unknown[]) => void): () => void
 }
 export interface AgentPanel {
