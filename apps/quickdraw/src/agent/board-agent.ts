@@ -13,7 +13,7 @@ import { bindFrames } from 'quickdraw-frames'
 import { applySteps, BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
-import { loadImage } from './images.ts'
+import { loadImage, splitImage } from './images.ts'
 
 import type { AgentModel } from 'quickdraw-agent'
 
@@ -86,12 +86,16 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
 const point = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }
 const ADD_IMAGE = {
   name: 'add_image',
-  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise.',
+  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
+    + 'With `split`, an image laid out as an even grid (a sprite or sticker sheet) is cut into its cells, which go on the board as separate images in the same grid (each `w` wide, 160 by default), optionally in a new frame titled `frame`.',
   inputSchema: { type: 'object', additionalProperties: false, required: ['image'], properties: {
     image: { type: 'string', description: '"latest", the number of a generated image, or a file path' },
     w: { type: 'number', description: 'shown width' },
     at: { ...point, description: 'page position of the top-left corner' },
-    in: { type: 'string', description: 'a frame id' },
+    in: { type: 'string', description: 'a frame id (not with split)' },
+    split: { type: 'object', additionalProperties: false, required: ['cols', 'rows'], description: 'cut an even grid into its cells',
+      properties: { cols: { type: 'number' }, rows: { type: 'number' }, inset: { type: 'number', description: 'share of each cell to trim at its edges, 0 to 0.2 (for gutters or lines between cells)' } } },
+    frame: { type: 'string', description: 'with split: a title for a frame around the pieces' },
   } },
 }
 
@@ -182,6 +186,18 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const pick = which === 'latest' ? made.at(-1) : /^\d+$/.test(which) ? made[Number(which) - 1] : null
     if ((which === 'latest' || /^\d+$/.test(which)) && !pick) throw new Error(made.length ? `there is no image ${which}; you made ${made.length}` : 'you have not generated an image for this request')
     const file = pick ? pick.file : resolvePath(imageRoots[0], which)
+    if (args.split) {
+      // the cells, laid out as on the sheet, as one operation (one undo)
+      const cells = await splitImage(file, args.split, imageRoots, { transparent: pick?.transparent, inset: args.split.inset })
+      const refs = cells.map((_, i) => `cell${i}`)
+      const steps: object[] = cells.map((img, i) => ({ do: 'image', ref: refs[i], src: img.src, natural: { w: img.w, h: img.h }, w: args.w ?? Math.min(img.w, 160) }))
+      steps.push({ do: 'arrange', ids: refs.map((r) => '@' + r), layout: 'grid', cols: Math.floor(args.split.cols), gap: 16, ...(args.at ? { at: args.at } : {}) })
+      if (args.frame) steps.push({ do: 'frame', title: String(args.frame), around: refs.map((r) => '@' + r) })
+      return (store: StoreType) => {
+        const { op, diff, result } = applySteps(store as never, me.name, steps as never)
+        return { op, diff, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
+      }
+    }
     const img = await loadImage(file, imageRoots, { transparent: pick?.transparent })
     const step = { do: 'image', src: img.src, natural: { w: img.w, h: img.h }, w: args.w, at: args.at, in: args.in }
     return (store: StoreType) => {

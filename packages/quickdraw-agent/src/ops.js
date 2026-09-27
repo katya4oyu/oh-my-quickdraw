@@ -255,11 +255,11 @@ function operations(store, name, op) {
     },
     // lays shapes out in a grid, row or column, from `at` or where they start;
     // a frame counts with its title, so frames in a column do not overlap titles
-    arrange(ids, { layout = 'grid', gap = 24, at } = {}) {
+    arrange(ids, { layout = 'grid', gap = 24, at, cols: across } = {}) {
       const shapes = ids.map(need)
       const bs = shapes.map((s) => withTitle(store, s))
       let x0 = at?.x ?? Math.min(...bs.map((b) => b.x)), y0 = at?.y ?? Math.min(...bs.map((b) => b.y))
-      const cols = layout === 'row' ? shapes.length : layout === 'column' ? 1 : Math.ceil(Math.sqrt(shapes.length))
+      const cols = layout === 'row' ? shapes.length : layout === 'column' ? 1 : across > 0 ? Math.floor(across) : Math.ceil(Math.sqrt(shapes.length))
       let x = x0, y = y0, rowH = 0
       shapes.forEach((s, i) => {
         if (i && i % cols === 0) { x = x0; y += rowH + gap; rowH = 0 }

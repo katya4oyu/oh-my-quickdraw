@@ -11,6 +11,7 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 const MAX_SIDE = 1024
+const CELL_SIDE = 320 // a piece of a split sheet
 const MAX_BYTES = 3_000_000 // as it goes on the board
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
 
@@ -77,4 +78,39 @@ export async function loadImage(file: string, roots: string[], { transparent = f
   const final = imageSize(data) ?? size
   if (data.length > MAX_BYTES) throw new Error(`${file} is too large for the board (${Math.round(data.length / 1e6)} MB); make it smaller first`)
   return { src: `data:${mime};base64,${data.toString('base64')}`, w: final.w, h: final.h }
+}
+
+/**
+ * Cuts an image laid out as an even grid (a sprite or sticker sheet) into its
+ * cells, row by row; `inset` trims that share of each cell's edges (gutters,
+ * lines between cells). Needs `sips` (macOS).
+ */
+export async function splitImage(file: string, grid: { cols: number, rows: number }, roots: string[], { transparent = false, inset = 0 } = {}): Promise<BoardImage[]> {
+  if (!within(file, roots)) throw new Error(`${file} is outside the working directory; copy it in first`)
+  if (process.platform !== 'darwin') throw new Error('splitting an image needs macOS (sips)')
+  const cols = Math.floor(grid.cols), rows = Math.floor(grid.rows)
+  if (!(cols >= 1 && rows >= 1 && cols * rows <= 64 && cols * rows > 1)) throw new Error('split into 2 to 64 cells (cols × rows)')
+  const size = imageSize(await readFile(file))
+  if (!size) throw new Error(`cannot read the size of ${file}`)
+  const cw = Math.floor(size.w / cols), ch = Math.floor(size.h / rows)
+  const i = Math.round(Math.min(0.2, Math.max(0, inset)) * Math.min(cw, ch))
+  const dir = await mkdtemp(join(tmpdir(), 'quickdraw-split-'))
+  try {
+    const cells: BoardImage[] = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const out = join(dir, `cell-${r}-${c}.png`)
+        // sips crops the middle for an offset of 0, 0: start the top-left cell 1 px in
+        const y = Math.max(1, r * ch + i), x = Math.max(1, c * cw + i)
+        const h = ch - 2 * i - (y - (r * ch + i)), w = cw - 2 * i - (x - (c * cw + i))
+        await run('sips', ['-c', String(h), String(w), '--cropOffset', String(y), String(x), file, '--out', out])
+        // a sticker is shown small: 320 px is plenty, and keeps the board light
+        if (Math.max(w, h) > CELL_SIDE) await run('sips', ['-Z', String(CELL_SIDE), out, '--out', out])
+        cells.push(await loadImage(out, [dir], { transparent }))
+      }
+    }
+    return cells
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 }

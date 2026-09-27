@@ -203,3 +203,13 @@ describe('images', () => {
     expect(() => applySteps(store, 'Codex', [{ do: 'image', src: 'https://example.com/x.png', natural: { w: 1, h: 1 } }])).toThrow(/data:image/)
   })
 })
+
+describe('arrange', () => {
+  it('lays a grid out in as many columns as asked', () => {
+    const store = board()
+    const ids = applySteps(store, 'Codex', Array.from({ length: 8 }, (_, i) => ({ do: 'note', text: String(i) }))).result
+    applySteps(store, 'Codex', [{ do: 'arrange', ids, cols: 4, gap: 10, at: { x: 0, y: 0 } }])
+    const xs = new Set(ids.map((id) => store.get(id).x)), ys = new Set(ids.map((id) => store.get(id).y))
+    expect([xs.size, ys.size]).toEqual([4, 2])
+  })
+})

@@ -4,7 +4,8 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { commandText, initCodex, startAppServer, runCodex } from '../src/agent/codex.ts'
-import { imageSize, loadImage, within } from '../src/agent/images.ts'
+import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -91,6 +92,18 @@ describe('quickdraw agent codex', () => {
     expect(image).toMatchObject({ type: 'image', props: { w: 120, h: 120 } })
     expect((board.store.get(image.props.assetId) as any).src).toBe('data:image/png;base64,' + PNG_1x1.toString('base64'))
     await expect(agent.runTool('r1', 'add_image', { image: '2' })).rejects.toThrow(/no image 2/)
+    if (process.platform === 'darwin') { // a sticker sheet, cut into its cells, as a grid in a frame
+      execFileSync('sips', ['-z', '200', '300', join(dir, 'made.png'), '--out', join(dir, 'sheet.png')], { stdio: 'ignore' })
+      agent.generated('r1', join(dir, 'sheet.png'))
+      const cut = JSON.parse(await agent.runTool('r1', 'add_image', { image: 'latest', split: { cols: 3, rows: 2 }, frame: 'Stickers', w: 80 }))
+      const pieces = cut.ids.map((id: string) => board.store.get(id) as any).filter((r: any) => r.type === 'image')
+      expect(pieces).toHaveLength(6)
+      expect(pieces.map((p: any) => p.props.w)).toEqual(Array(6).fill(80))
+      expect(new Set(pieces.map((p: any) => p.x)).size).toBe(3) // three across, two down
+      expect(new Set(pieces.map((p: any) => p.y)).size).toBe(2)
+      const frame = cut.ids.map((id: string) => board.store.get(id) as any).find((r: any) => r.isFrame)
+      expect(pieces.every((p: any) => p.frameId === frame.id)).toBe(true)
+    }
     await expect(agent.runTool('r1', 'add_image', { image: '/etc/hosts' })).rejects.toThrow(/outside the working directory/)
 
     // a follow-up continues the same Codex thread
@@ -142,4 +155,17 @@ it('turns an image file into a data URL of its size', async () => {
   writeFileSync(join(dir, 'a.txt'), 'x')
   expect(await loadImage(join(dir, 'a.png'), [dir])).toEqual({ src: 'data:image/png;base64,' + PNG_1x1.toString('base64'), w: 1, h: 1 })
   await expect(loadImage(join(dir, 'a.txt'), [dir])).rejects.toThrow(/not a PNG/)
+})
+
+it.runIf(process.platform === 'darwin')('cuts an even grid into its cells, row by row', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+  writeFileSync(join(dir, 'one.png'), PNG_1x1)
+  execFileSync('sips', ['-z', '200', '300', join(dir, 'one.png'), '--out', join(dir, 'sheet.png')], { stdio: 'ignore' })
+  const cells = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir], { inset: 0.1 })
+  // 100 × 100, 10 px off each edge (the top-left one starts 1 px in: sips crops the middle at 0, 0)
+  expect(cells.map((c) => [c.w, c.h])).toEqual([[80, 80], [80, 80], [80, 80], [80, 80], [80, 80], [80, 80]])
+  const edge = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir])
+  expect(edge.map((c) => [c.w, c.h])).toEqual([[99, 99], [100, 99], [100, 99], [99, 100], [100, 100], [100, 100]])
+  await expect(splitImage(join(dir, 'sheet.png'), { cols: 1, rows: 1 }, [dir])).rejects.toThrow(/2 to 64/)
+  await expect(splitImage('/etc/hosts', { cols: 2, rows: 2 }, [dir])).rejects.toThrow(/outside/)
 })
