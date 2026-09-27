@@ -5,16 +5,16 @@ import {
 } from '../src/index.js'
 
 describe('resolveEmbedUrl', () => {
-  it('rewrites allowed pages to their embed URLs', () => {
-    expect(resolveEmbedUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toEqual({ src: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', name: 'YouTube' })
-    expect(resolveEmbedUrl('https://youtu.be/dQw4w9WgXcQ?t=3').src).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
-    expect(resolveEmbedUrl('https://vimeo.com/76979871').src).toBe('https://player.vimeo.com/video/76979871')
-    expect(resolveEmbedUrl('https://codepen.io/team/pen/abcDEF').src).toBe('https://codepen.io/team/embed/abcDEF?default-tab=result')
-    expect(resolveEmbedUrl('https://www.figma.com/design/AbC123/Name').src).toMatch(/^https:\/\/www\.figma\.com\/embed\?embed_host=quickdraw&url=https%3A%2F%2F/)
-    expect(resolveEmbedUrl('https://www.google.com/maps/embed?pb=!1m18').name).toBe('Google Maps')
+  it('rewrites allowed pages to their embed URLs', async () => {
+    expect(await resolveEmbedUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toEqual({ src: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', name: 'YouTube' })
+    expect((await resolveEmbedUrl('https://youtu.be/dQw4w9WgXcQ?t=3')).src).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
+    expect((await resolveEmbedUrl('https://vimeo.com/76979871')).src).toBe('https://player.vimeo.com/video/76979871')
+    expect((await resolveEmbedUrl('https://codepen.io/team/pen/abcDEF')).src).toBe('https://codepen.io/team/embed/abcDEF?default-tab=result')
+    expect((await resolveEmbedUrl('https://www.figma.com/design/AbC123/Name')).src).toMatch(/^https:\/\/www\.figma\.com\/embed\?embed_host=quickdraw&url=https%3A%2F%2F/)
+    expect((await resolveEmbedUrl('https://www.google.com/maps/embed?pb=!1m18')).name).toBe('Google Maps')
   })
 
-  it('refuses everything else', () => {
+  it('refuses everything else', async () => {
     for (const url of [
       'http://www.youtube.com/watch?v=dQw4w9WgXcQ', // not https
       'https://evil.example/watch?v=x', // not allowed
@@ -23,13 +23,32 @@ describe('resolveEmbedUrl', () => {
       'https://user:pass@www.youtube.com/watch?v=abc', // credentials
       'javascript:alert(1)', 'data:text/html,<b>x</b>', 'not a url', 42,
       'https://www.google.com/maps/place/Tokyo', // maps, but not an embed URL
-    ]) expect(resolveEmbedUrl(url), String(url)).toBeNull()
+    ]) expect(await resolveEmbedUrl(url), String(url)).toBeNull()
   })
 
-  it('takes custom rules instead of the defaults', () => {
+  it('takes custom rules instead of the defaults', async () => {
     const rules = [{ name: 'Docs', embed: (u) => (u.hostname === 'docs.example.com' ? u.href : null) }]
-    expect(resolveEmbedUrl('https://docs.example.com/a', rules).name).toBe('Docs')
-    expect(resolveEmbedUrl('https://www.youtube.com/watch?v=abc', rules)).toBeNull()
+    expect((await resolveEmbedUrl('https://docs.example.com/a', rules)).name).toBe('Docs')
+    expect(await resolveEmbedUrl('https://www.youtube.com/watch?v=abc', rules)).toBeNull()
+  })
+
+  it('awaits async rules, in order, and treats failures as not allowed', async () => {
+    const allowList = new Set(['wiki.example.com']) // e.g. read from a file or IndexedDB
+    const rules = [
+      { name: 'Broken', embed: async () => { throw new Error('db down') } },
+      { name: 'Store', embed: async (u) => (allowList.has(u.hostname) ? u.href : null) },
+    ]
+    expect(await resolveEmbedUrl('https://wiki.example.com/p', rules)).toEqual({ src: 'https://wiki.example.com/p', name: 'Store' })
+    expect(await resolveEmbedUrl('https://other.example.com/p', rules)).toBeNull()
+    expect(await resolveEmbedUrl('https://x.example/', [{ name: 'Only broken', embed: () => { throw new Error() } }])).toBeNull()
+  })
+
+  it('never lets a rule return a non-https URL, or edit the URL it was given', async () => {
+    const rules = [
+      { name: 'Sneaky', embed: (u) => { u.hostname = 'evil.example'; return 'http://' + u.host } },
+      { name: 'Echo', embed: (u) => u.href },
+    ]
+    expect(await resolveEmbedUrl('https://ok.example/', rules)).toEqual({ src: 'https://ok.example/', name: 'Echo' })
   })
 })
 

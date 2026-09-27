@@ -12,7 +12,8 @@ export const MAX_HTML_LENGTH = 200_000
 
 const ID = /^[\w-]+$/
 
-// rule: { name, embed(url: URL) -> embed URL string | null }
+// rule: { name, embed(url: URL) -> embed URL string | null, or a Promise of one }
+// Async rules can consult a file, IndexedDB or any other store of the app's.
 export const DEFAULT_RULES = [
   {
     name: 'YouTube',
@@ -57,15 +58,18 @@ export const DEFAULT_RULES = [
   },
 ]
 
-// -> { src, name } for an allowed https URL, else null
-export function resolveEmbedUrl(url, rules = DEFAULT_RULES) {
+// -> Promise of { src, name } for an allowed https URL, else of null.
+// Rules are tried in order; the first to return an https URL wins. A rule
+// that throws or rejects counts as not allowing the URL.
+export async function resolveEmbedUrl(url, rules = DEFAULT_RULES) {
   if (typeof url !== 'string' || url.length > MAX_URL_LENGTH) return null
   let u
   try { u = new URL(url) } catch { return null }
   if (u.protocol !== 'https:' || u.username || u.password) return null
   for (const rule of rules) {
-    const src = rule.embed(u)
-    if (src && src.startsWith('https://')) return { src, name: rule.name }
+    let src = null
+    try { src = await rule.embed(new URL(u.href)) } catch {}
+    if (typeof src === 'string' && src.startsWith('https://')) return { src, name: rule.name }
   }
   return null
 }

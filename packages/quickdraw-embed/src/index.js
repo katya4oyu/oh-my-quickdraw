@@ -74,7 +74,7 @@ export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title 
 // Returns { activate(id), deactivate(), run(id), destroy() }.
 export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) {
   const noop = () => {}
-  if (!registerEmbed()) return { activate: noop, deactivate: noop, run: noop, destroy: noop }
+  if (!registerEmbed()) return { activate: noop, deactivate: noop, run: noop, refresh: noop, destroy: noop }
 
   const layer = document.createElement('div')
   Object.assign(layer.style, { position: 'absolute', inset: '0', overflow: 'hidden', pointerEvents: 'none' })
@@ -83,6 +83,7 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
   const live = new Map() // id -> { wrap, key, loads }
   const ran = new Set() // html embeds this viewer chose to run
   const stopped = new Set() // html embeds stopped for navigating
+  const verdicts = new Map() // url -> { r } once the rules have answered; { pending } before
   let activeId = null
   let raf = 0
 
@@ -109,7 +110,9 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
   function content(s) {
     const p = s.props
     if (p.kind === 'url') {
-      const r = resolveEmbedUrl(p.url, rules)
+      const v = verdict(p.url)
+      if (v.pending) return note('Checking…')
+      const r = v.r
       // with allow-same-origin, a page from our own origin could reach into the board
       if (!r || new URL(r.src).origin === location.origin) return note(`Not allowed here: ${hostOf(p.url)}`)
       const f = document.createElement('iframe')
@@ -147,7 +150,30 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
     if (activeId === id) activeId = null
   }
 
-  const keyOf = (s) => [s.props.kind, s.props.url, s.props.html, ran.has(s.id), stopped.has(s.id)].join('\u0000')
+  const keyOf = (s) => [s.props.kind, s.props.url, s.props.html, ran.has(s.id), stopped.has(s.id), s.props.kind === 'url' && !!verdicts.get(s.props.url)?.pending].join('\u0000')
+
+  // asks the rules once per URL; the embed shows "Checking…" until they answer
+  function verdict(url) {
+    let v = verdicts.get(url)
+    if (!v) {
+      verdicts.set(url, v = { pending: true })
+      resolveEmbedUrl(url, rules).then((r) => {
+        if (verdicts.get(url) !== v) return // refreshed meanwhile
+        verdicts.set(url, { r })
+        schedule()
+      })
+    }
+    return v
+  }
+
+  // asks the rules again, e.g. after the app's allow list changed
+  function refresh() {
+    verdicts.clear()
+    for (const [id, cur] of [...live]) {
+      if (editor.store.get(id)?.props.kind === 'url') { cur.wrap.remove(); live.delete(id) }
+    }
+    schedule()
+  }
 
   function place(s, { wrap }, order) {
     const { w, h } = s.props
@@ -215,7 +241,7 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, maxLive = 8 } = {}) 
   schedule()
 
   return {
-    activate, deactivate, run,
+    activate, deactivate, run, refresh,
     destroy() {
       cancelAnimationFrame(raf)
       for (const off of offs) off()

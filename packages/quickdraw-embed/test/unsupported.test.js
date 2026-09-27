@@ -12,11 +12,11 @@ describe('on a core without registerShapeType', () => {
     expect(embed.isEmbedSupported()).toBe(false)
     expect(() => embed.createEmbed(new Store(), { x: 0, y: 0, url: 'https://youtu.be/abc' })).toThrow(/registerShapeType is missing/)
     const c = embed.bindEmbeds({})
-    expect(Object.keys(c).sort()).toEqual(['activate', 'deactivate', 'destroy', 'run'])
+    expect(Object.keys(c).sort()).toEqual(['activate', 'deactivate', 'destroy', 'refresh', 'run'])
   })
 
-  it('still resolves URLs and validates', () => {
-    expect(embed.resolveEmbedUrl('https://youtu.be/abc').name).toBe('YouTube')
+  it('still resolves URLs and validates', async () => {
+    expect((await embed.resolveEmbedUrl('https://youtu.be/abc')).name).toBe('YouTube')
     expect(embed.validateEmbed({ props: { kind: 'html', html: '', w: 100, h: 100 } })).toBeNull()
   })
 })

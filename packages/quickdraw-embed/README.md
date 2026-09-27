@@ -10,6 +10,7 @@ createEmbed(board.editor.store, { x, y, url: 'https://youtu.be/…' })
 createEmbed(board.editor.store, { x, y, kind: 'html', html: '<button>hi</button>' })
 embeds.run(id)        // run inline HTML (the viewer's choice; there is also a Run button)
 embeds.activate(id)   // hand the pointer to the iframe; Escape or a board click takes it back
+embeds.refresh()      // ask the URL rules again, after the app's allow list changed
 
 openJSON(board.editor, { types: { embed: validateEmbed } }) // quickdraw-import
 ```
@@ -30,7 +31,15 @@ Record: `{ type: 'embed', props: { kind: 'url' | 'html', url? | html?, w, h, tit
 A synced or imported record carries a URL or some HTML, never permission: each viewer decides, when rendering, what it may show.
 
 **URLs**
-- https only, and only when a rule allows the page; the rule also rewrites it to the provider's embed URL (YouTube goes to `youtube-nocookie.com`). Pass your own `rules` (`[{ name, embed(url: URL) → embed URL | null }]`) to change the list.
+- https only, and only when a rule allows the page; the rule also rewrites it to the provider's embed URL (YouTube goes to `youtube-nocookie.com`).
+- The app decides with `rules`: `[{ name, embed(url: URL) → embed URL | null }]`, tried in order. `embed` may be async (return a Promise), so it can consult a file, IndexedDB or any store; the embed shows "Checking…" until it answers, and answers are cached per URL until `refresh()`. A rule that throws or rejects does not allow the URL.
+
+  ```js
+  bindEmbeds(editor, { rules: [...DEFAULT_RULES, { name: 'Docs', embed: async (u) => (await allowList()).has(u.hostname) ? u.href : null }] })
+  bindEmbeds(editor, { rules: [] }) // no URL embeds at all
+  ```
+- A URL that is not allowed shows only its hostname ("Not allowed here: host"; the placeholder shows the host or the title). No iframe is created, so the browser never contacts it; its path and query are not shown.
+- The check happens only when rendering, for local, synced and imported records alike; `validateEmbed` (for imports) checks just the record's shape.
 - Sandbox `allow-scripts allow-same-origin allow-popups allow-presentation`: no top navigation. A rule that yields the board's own origin is refused, since `allow-same-origin` would let it reach the board.
 
 **Inline HTML**
