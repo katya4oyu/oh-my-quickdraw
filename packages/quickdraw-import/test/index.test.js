@@ -82,3 +82,23 @@ describe('parseJSON rejects untrusted input', () => {
     expect(store.size).toBe(0)
   })
 })
+
+describe('types from other packages', () => {
+  const custom = (props) => ({ id: 's', typeName: 'shape', type: 'card', x: 0, y: 0, z: 1, props })
+  const file = (props) => ({ quickdraw: 1, shapes: [custom(props)], assets: {} })
+  const types = { card: (s) => (typeof s.props.text === 'string' ? null : 'bad props.text') }
+
+  it('are validated by the given function', () => {
+    expect(parseJSON(file({ text: 'hi' }), { types }).shapes).toHaveLength(1)
+    expect(() => parseJSON(file({ text: 1 }), { types })).toThrow(/bad props.text/)
+  })
+
+  it('still get the common checks, and a throwing validator rejects the file', () => {
+    expect(() => parseJSON({ quickdraw: 1, shapes: [{ ...custom({ text: 'x' }), x: NaN }] }, { types })).toThrow(/position/)
+    expect(() => parseJSON(file({}), { types: { card: () => { throw new Error('boom') } } })).toThrow(/boom/)
+  })
+
+  it('cannot smuggle in a type through the prototype', () => {
+    expect(() => parseJSON({ quickdraw: 1, shapes: [{ ...custom({}), type: 'constructor' }] }, { types: {} })).toThrow(/unknown shape type/)
+  })
+})
