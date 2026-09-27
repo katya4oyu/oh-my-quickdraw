@@ -26,6 +26,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-import`](packages/quickdraw-import) | Validated JSON import | No | — |
 | [`quickdraw-frames`](packages/quickdraw-frames) | Frames: membership, aspect ratios, content export | No | — |
 | [`quickdraw-markdown`](packages/quickdraw-markdown) | Markdown cards drawn on the canvas | **Yes** — `registerShapeType` ([katya4oyu/quickdraw#2](https://github.com/katya4oyu/quickdraw/pull/2)) | — |
+| [`quickdraw-agent`](packages/quickdraw-agent) | Agents read and edit boards: a CLI and an Agent Skill (live through the relay, or a JSON file) | No (Markdown cards need the fork, like `quickdraw-markdown`) | `yjs` (peer, for live boards) |
 | [`quickdraw-toolbar`](packages/quickdraw-toolbar) | Icon toolbar: a rail for adding things, a bar over the selection; the packages ship their items | No | — |
 | [`quickdraw-embed`](packages/quickdraw-embed) | Allowed web pages and sandboxed inline HTML as live iframes; link cards with Open Graph previews | **Yes** — `registerShapeType` | — |
 
