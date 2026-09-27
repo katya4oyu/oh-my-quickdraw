@@ -85,6 +85,8 @@ export type AgentEvent =
   /** `ids`: what it added; a thread not about a shape is pinned to the first. */
   | { type: 'op', requestId: string, op: string, diff: Diff, ids?: string[] }
   | { type: 'done', requestId: string, text?: string }
+  /** A person's follow-up: the host sends it back to every viewer, this one too. */
+  | { type: 'reply', requestId: string, text: string }
   | { type: 'error', requestId: string, message: string }
 export type AgentHostEvent = { type: 'agents', agents?: AgentParticipant[] } | { type: 'event', event: AgentEvent }
 export interface AgentUndoResult { reverted: number, skipped: string[] }

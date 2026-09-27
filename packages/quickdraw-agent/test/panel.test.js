@@ -40,6 +40,7 @@ describe('agent panel request model', () => {
     expect(thread.diffs).toHaveLength(1)
     expect(thread.status).toBe('waiting')
     expect(updateAgentThread(thread, { type: 'done' }).status).toBe('done')
+    expect(updateAgentThread({ ...thread, status: 'done' }, { type: 'reply', text: 'thanks' }).status).toBe('done')
   })
 
   it('pins a thread that is not about a shape to the first shape it adds', () => {

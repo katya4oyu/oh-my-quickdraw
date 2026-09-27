@@ -94,7 +94,8 @@
       },
       reply(requestId, message) {
         if (typeof message === 'string') {
-          emit({ type: 'message', requestId, text: message })
+          emit({ type: 'reply', requestId, text: message })
+          setTimeout(() => emit({ type: 'message', requestId, text: 'This example agent only draws; a real one would answer here.' }), 400)
         } else if ('approval' in message) {
           const resolve = waiting.get(requestId)
           if (resolve) { waiting.delete(requestId); resolve(message.allow) }
