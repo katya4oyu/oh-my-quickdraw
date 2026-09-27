@@ -10,20 +10,21 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { createRequire } from 'node:module'
-import { launchChrome } from './chrome.js'
+import type { BoardRecord, Store } from '@quickdrawjs/core'
+import { launchChrome, type Chrome } from './chrome.ts'
 
 const ORIGIN = 'https://quickdraw.render'
 
 // the files the page may load: each package's directory, by URL prefix
 const require = createRequire(import.meta.url)
-const pkgRoot = (spec) => dirname(dirname(require.resolve(spec)))
-const ROOTS = {
+const pkgRoot = (spec: string) => dirname(dirname(require.resolve(spec)))
+const ROOTS: Record<string, string> = {
   core: pkgRoot('@quickdrawjs/core'),
   frames: pkgRoot('quickdraw-frames'),
   markdown: pkgRoot('quickdraw-markdown'),
   embed: pkgRoot('quickdraw-embed'),
 }
-const TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' }
+const TYPES: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/core/src/quickdraw.css">
@@ -52,7 +53,7 @@ window.ready = true
 </script></body></html>`
 
 // what the page may load (exported for tests): its own HTML, and files inside the package roots
-export async function serve(url) {
+export async function serve(url: string): Promise<{ body: Buffer, type: string } | null> {
   const path = decodeURIComponent(new URL(url).pathname)
   if (path === '/render.html') return { body: Buffer.from(PAGE), type: TYPES['.html'] }
   const [, prefix, ...rest] = path.split('/')
@@ -63,34 +64,52 @@ export async function serve(url) {
   try { return { body: await readFile(file), type: TYPES[extname(file)] } } catch { return null }
 }
 
+export interface RenderOptions {
+  /** the board's records (store.all()) */
+  records: BoardRecord[]
+  /** a frame's contents only */
+  frame?: string
+  /** these shapes only */
+  ids?: string[]
+  background?: boolean
+  scale?: number
+  theme?: 'light' | 'dark'
+}
+
 export class Renderer {
-  constructor({ idleMs = 30_000, maxRenders = 100, chromePath } = {}) {
-    Object.assign(this, { idleMs, maxRenders, chromePath })
-    this.chrome = null
-    this.renders = 0
-    this.queue = Promise.resolve()
-    this.idle = null
+  idleMs: number
+  maxRenders: number
+  chromePath?: string
+  chrome: Chrome | null = null
+  renders = 0
+  queue: Promise<unknown> = Promise.resolve()
+  idle: NodeJS.Timeout | undefined
+
+  constructor({ idleMs = 30_000, maxRenders = 100, chromePath }: { idleMs?: number, maxRenders?: number, chromePath?: string } = {}) {
+    this.idleMs = idleMs
+    this.maxRenders = maxRenders
+    this.chromePath = chromePath
   }
 
   // one render at a time; each in its own context, disposed afterwards
-  render(opts) {
+  render(opts: RenderOptions): Promise<Buffer | null> {
     const run = this.queue.then(() => this.#render(opts))
     this.queue = run.catch(() => {})
     return run
   }
 
-  async #render({ records, frame, ids, background = true, scale = 2, theme = 'light' }) {
+  async #render({ records, frame, ids, background = true, scale = 2, theme = 'light' }: RenderOptions): Promise<Buffer | null> {
     clearTimeout(this.idle)
     if (this.chrome && (this.chrome.closed || this.renders >= this.maxRenders)) await this.#shutdown()
     if (!this.chrome) { this.chrome = await launchChrome({ path: this.chromePath }); this.renders = 0 }
     const chrome = this.chrome
     this.renders++
     const { browserContextId } = await chrome.send('Target.createBrowserContext', { disposeOnDetach: true })
-    let targetId
+    let targetId: string | undefined
     try {
       ;({ targetId } = await chrome.send('Target.createTarget', { url: 'about:blank', browserContextId, width: 1280, height: 800 }))
       const { sessionId } = await chrome.send('Target.attachToTarget', { targetId, flatten: true })
-      const off = chrome.on('Fetch.requestPaused', async ({ requestId, request }, sid) => {
+      const off = chrome.on('Fetch.requestPaused', async ({ requestId, request }: { requestId: string, request: { url: string } }, sid) => {
         if (sid !== sessionId) return
         const hit = request.url.startsWith(ORIGIN + '/') ? await serve(request.url) : null
         const reply = hit
@@ -101,7 +120,7 @@ export class Renderer {
       try {
         await chrome.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }, sessionId)
         await chrome.send('Page.navigate', { url: ORIGIN + '/render.html' }, sessionId)
-        const evaluate = async (expression) => {
+        const evaluate = async (expression: string) => {
           const r = await chrome.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId)
           if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
           return r.result.value
@@ -128,7 +147,7 @@ export class Renderer {
   }
 
   // closes Chrome now (it relaunches on the next render)
-  close() {
+  close(): Promise<void> {
     clearTimeout(this.idle)
     const run = this.queue.then(() => this.#shutdown())
     this.queue = run.catch(() => {})
@@ -137,7 +156,7 @@ export class Renderer {
 }
 
 // PNG bytes for a store: the whole board, some shapes (ids), or a frame's contents
-export async function renderPng(store, opts = {}, renderer) {
+export async function renderPng(store: Store, opts: Omit<RenderOptions, 'records'> = {}, renderer?: Renderer) {
   const own = !renderer
   renderer ??= new Renderer()
   try {

@@ -1,34 +1,38 @@
 # quickdraw-agent
 
-Lets agents read and edit Quickdraw boards: a CLI any shell-using agent can call, an [Agent Skill](skill/SKILL.md) that teaches it, and the operations underneath. No core change; no dependencies beyond the other packages here and `yjs` (for live boards).
+What agents can do on a Quickdraw board, over a core `Store`: read it, change it in undoable operations, and the same as tools for any agent runtime. It runs in browsers and in Node, and knows nothing about servers, transports or which AI is calling. No core change; no dependencies beyond the other packages here.
 
-```sh
-quickdraw-agent read --board ws://localhost:8080/ws
-quickdraw-agent note "Idea" --in FRAME_ID --board ws://localhost:8080/ws --name Claude
-quickdraw-agent apply diagram.json --file board.json
-quickdraw-agent undo --board ws://localhost:8080/ws
+The `quickdraw` command ([`apps/quickdraw`](../../apps/quickdraw)) and its [Agent Skill](../../skills/quickdraw/SKILL.md) are built on it.
+
+```js
+import { BOARD_TOOLS, runOp, undoDiff, installMeasure } from 'quickdraw-agent'
+
+installMeasure() // in Node only: the core measures text with a canvas
+
+const addNote = BOARD_TOOLS.find((t) => t.name === 'add_note')
+const { op, ids, diff } = addNote.run(store, { text: 'Idea', color: 'yellow' }, { name: 'Codex' })
+undoDiff(store, diff) // later: reverts what nobody changed since
 ```
 
-See [skill/SKILL.md](skill/SKILL.md) for every command; install it as a skill (e.g. copy the `skill` folder to `.claude/skills/quickdraw-board/`) so the agent knows how to use the CLI.
+## Tools
 
-## How it works
+`BOARD_TOOLS`: `{ name, description, inputSchema, run(store, args, { name }) }`, the input schema being a JSON Schema. Hand them to any runtime that takes tools.
 
-- **A board is opened the way a browser opens it**: live through the relay of `quickdraw serve` (`apps/quickdraw`) as one more Yjs peer, or from a JSON file. The Store is bound with `bindYjs` and `bindFrames`, and the Markdown and embed types are registered, so frame rules and sync behave as in the app. People watching see the changes and the agent's cursor where it worked.
-- **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown` (an outline to summarize or answer from).
-- **Operations** (`runOp`, `applySteps`): each is one store transaction, all or nothing. What an agent adds carries `agent: { name, op }`; it may move and edit anything but delete only what an agent added. Arrows between shapes keep `link: { from, to }` and follow them when they move in a later operation.
-- **Undo**: each operation's diff goes to `.quickdraw-agent/log.jsonl` (or `$QUICKDRAW_AGENT_LOG`); `undo` reverts what nobody changed since and reports the rest.
-- **Text in Node**: the core measures text with a canvas, which Node lacks; `installMeasure` provides an estimating stand-in so notes and text can be laid out. Browsers still draw with real measurements.
-- **PNG** (`export --format png`, `Renderer`): drawn by the core itself (`exportImage`, `exportFrame`) in a headless Chrome already on the machine — no dependency added.
+| Tool | Does |
+| --- | --- |
+| `read_board` | The board as a Markdown outline (frames, shapes, connections, with ids), or as data |
+| `add_note`, `add_text`, `add_shape`, `add_markdown`, `add_frame`, `add_arrow` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
+| `update_shape`, `move_shape`, `arrange_shapes` | Changes text or color, moves (a frame brings its members), lays out |
+| `delete_shapes` | Only what an agent added |
+| `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`) |
 
-## PNG export and the machine it runs on
+A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `diff` to undo it, show a cursor at `focus`.
 
-- **Out of sight**: `--headless=new`, no window, focus, mouse or keyboard; on macOS it registers as a background-only app (not in the Dock or ⌘Tab).
-- **Separate from the user's Chrome**: a throwaway profile (removed after), no extensions, sync, background networking or keychain.
-- **No ports**: driven over a pipe (`--remote-debugging-pipe`); the page's code is served from disk through DevTools request interception, and every other request is refused.
-- **Reused, without leaks**: one Chrome per `Renderer`; each render gets its own browser context and page, disposed afterwards; Chrome closes after `idleMs` (30 s) idle and restarts every `maxRenders` (100). Over 60 renders its footprint stayed flat (~250–280 MB, measured with `footprint`). A CLI command reuses it for every image it writes (e.g. `--frame all`) and closes it at the end.
-- **Never outlives its process**: Chrome runs in its own process group, and a one-line shell watchdog ends it and removes its profile if the Node process dies without cleaning up (SIGKILL, SIGINT, SIGTERM). Stale profiles older than a day are swept on the next launch.
-- **Smaller**: no GPU process, one renderer process, background features off.
+## Operations
 
-## Not yet
+- **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown`.
+- **Writing** (`runOp`, `applySteps`): each operation is one store transaction, all or nothing. What an agent adds carries `agent: { name, op }`; it may move and edit anything but delete only what an agent added. Arrows between shapes keep `link: { from, to }` and follow them when they move in a later operation.
+- **The diff** compares each record the operation touched, before and after — including what listeners changed in response, such as frame membership — so `undoDiff` reverts the whole operation, and only where nobody has changed things since.
+- **Text in Node**: `installMeasure` provides an estimating stand-in for the canvas the core measures text with, so notes and text can be laid out. Browsers draw with real measurements.
 
-- An MCP server over the same operations.
+Types: [`types/index.d.ts`](types/index.d.ts).

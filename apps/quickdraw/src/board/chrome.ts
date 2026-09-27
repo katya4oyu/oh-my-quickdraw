@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const CANDIDATES = {
+const CANDIDATES: Partial<Record<NodeJS.Platform, string[]>> = {
   darwin: [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
@@ -29,13 +29,13 @@ const CANDIDATES = {
 // Checks once a second that both this process and Chrome are alive; when this
 // one is gone, kills Chrome's process group and removes the profile. Ends by
 // itself once Chrome is gone. POSIX only (Windows: cleanup on normal exit).
-function watch(chromePid, profile) {
+function watch(chromePid: number, profile: string) {
   if (process.platform === 'win32') return
   const script = 'while kill -0 "$1" 2>/dev/null && kill -0 "$2" 2>/dev/null; do sleep 1; done; kill -9 -"$2" 2>/dev/null; rm -rf "$3"'
   spawn('/bin/sh', ['-c', script, 'quickdraw-chrome-watchdog', String(process.pid), String(chromePid), profile], { stdio: 'ignore', detached: true }).unref()
 }
 
-export function findChrome() {
+export function findChrome(): string | null {
   if (process.env.QUICKDRAW_CHROME) return process.env.QUICKDRAW_CHROME
   for (const c of CANDIDATES[process.platform] ?? []) {
     if (c.includes('/') || c.includes('\\')) { if (existsSync(c)) return c; continue }
@@ -70,30 +70,44 @@ const FLAGS = [
   'about:blank',
 ]
 
-// Launches Chrome and resolves to { send(method, params, sessionId), on(event, fn), close() }.
-export async function launchChrome({ path = findChrome() } = {}) {
+// DevTools messages are JSON; their shapes are the protocol's, not typed here
+type Json = any // eslint-disable-line @typescript-eslint/no-explicit-any
+
+export interface Chrome {
+  readonly closed: boolean
+  pid: number
+  profile: string
+  send(method: string, params?: Json, sessionId?: string): Promise<Json>
+  /** returns a function that stops listening */
+  on(event: string, fn: (params: Json, sessionId?: string) => void): () => void
+  /** resolves once Chrome has really exited and its profile is gone */
+  close(): Promise<void>
+}
+
+export async function launchChrome({ path = findChrome() }: { path?: string | null } = {}): Promise<Chrome> {
   if (!path) throw new Error('PNG export needs Chrome, Chromium, Edge or Brave installed (or QUICKDRAW_CHROME set to one)')
   sweepStaleProfiles()
   const profile = mkdtempSync(join(tmpdir(), 'quickdraw-chrome-'))
   // fd 3: our commands to Chrome, fd 4: its replies; stdout/stderr discarded.
   // Its own process group, so the watchdog can end it with its helpers.
   const child = spawn(path, [`--user-data-dir=${profile}`, ...FLAGS], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-  const [, , , toChrome, fromChrome] = child.stdio
+  const toChrome = child.stdio[3] as NodeJS.WritableStream
+  const fromChrome = child.stdio[4] as NodeJS.ReadableStream
 
   let nextId = 1
-  const pending = new Map()
-  const listeners = new Map()
+  const pending = new Map<number, { resolve(v: Json): void, reject(e: Error): void, method: string }>()
+  const listeners = new Map<string, Set<(params: Json, sessionId?: string) => void>>()
   let buffer = ''
   let closed = false
   fromChrome.setEncoding('utf8')
-  fromChrome.on('data', (chunk) => {
+  fromChrome.on('data', (chunk: string) => {
     buffer += chunk
     let end
     while ((end = buffer.indexOf('\0')) >= 0) {
       const msg = JSON.parse(buffer.slice(0, end))
       buffer = buffer.slice(end + 1)
       if (msg.id && pending.has(msg.id)) {
-        const { resolve, reject, method } = pending.get(msg.id)
+        const { resolve, reject, method } = pending.get(msg.id)!
         pending.delete(msg.id)
         msg.error ? reject(new Error(`${method}: ${msg.error.message}`)) : resolve(msg.result)
       } else if (msg.method) {
@@ -108,7 +122,7 @@ export async function launchChrome({ path = findChrome() } = {}) {
     for (const { reject, method } of pending.values()) reject(new Error(`${method}: Chrome closed`))
     pending.clear()
     if (child.exitCode === null && child.signalCode === null) {
-      try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGKILL') } catch {} // with its helpers
+      try { process.kill(process.platform === 'win32' ? child.pid! : -child.pid!, 'SIGKILL') } catch {} // with its helpers
     }
     try { rmSync(profile, { recursive: true, force: true }) } catch {}
     process.off('exit', cleanup)
@@ -116,13 +130,13 @@ export async function launchChrome({ path = findChrome() } = {}) {
   // this process may end any way it likes: Chrome and its profile go with it
   process.on('exit', cleanup)
   child.on('exit', cleanup)
-  const exited = new Promise((ok) => child.once('exit', ok))
+  const exited = new Promise<void>((ok) => child.once('exit', () => ok()))
   await new Promise((ok, fail) => { child.once('spawn', ok); child.once('error', fail) })
-  watch(child.pid, profile)
+  watch(child.pid!, profile)
 
-  const chrome = {
+  const chrome: Chrome = {
     get closed() { return closed },
-    pid: child.pid,
+    pid: child.pid!,
     profile,
     send(method, params = {}, sessionId) {
       if (closed) return Promise.reject(new Error(`${method}: Chrome closed`))
@@ -134,10 +148,9 @@ export async function launchChrome({ path = findChrome() } = {}) {
     },
     on(event, fn) {
       if (!listeners.has(event)) listeners.set(event, new Set())
-      listeners.get(event).add(fn)
-      return () => listeners.get(event).delete(fn)
+      listeners.get(event)!.add(fn)
+      return () => { listeners.get(event)!.delete(fn) }
     },
-    // resolves once Chrome has really exited and its profile is gone
     async close() {
       if (!closed) {
         chrome.send('Browser.close').catch(() => {})

@@ -1,19 +1,19 @@
 {
   "name": "quickdraw-agent",
   "version": "0.1.0",
-  "description": "Lets agents read and edit Quickdraw boards: a CLI, an Agent Skill, and the operations underneath.",
+  "description": "What agents can do on a Quickdraw board: read it, change it in undoable operations, and the same as tools for any agent runtime.",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js"
-  },
-  "bin": {
-    "quickdraw-agent": "./bin/quickdraw-agent.mjs"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
   },
   "files": [
     "src",
-    "bin",
-    "skill",
+    "types",
     "README.md"
   ],
   "scripts": {
@@ -21,17 +21,11 @@
   },
   "dependencies": {
     "quickdraw-embed": "*",
-    "quickdraw-export": "*",
     "quickdraw-frames": "*",
-    "quickdraw-markdown": "*",
-    "quickdraw-yjs": "*"
+    "quickdraw-markdown": "*"
   },
   "peerDependencies": {
-    "@quickdrawjs/core": "*",
-    "yjs": "^13.6.0"
+    "@quickdrawjs/core": "*"
   },
-  "license": "MIT",
-  "devDependencies": {
-    "yjs": "^13.6.33"
-  }
+  "license": "MIT"
 }

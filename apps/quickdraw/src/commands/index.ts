@@ -1,12 +1,16 @@
-// The quickdraw-agent command line. Every command prints JSON (or Markdown
+// The board commands of `quickdraw`. Every command prints JSON (or Markdown
 // for `read`), so an agent can call it from any shell.
 import { parseArgs } from 'node:util'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { openBoard } from './board.js'
-import { applySteps, boardToMarkdown, describeBoard, parseRatio, runOp, undoDiff } from './ops.js'
+import { text as readStream } from 'node:stream/consumers'
+import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
+import { applySteps, boardToMarkdown, describeBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
+import { openBoard } from '../board/open.ts'
 
-export const USAGE = `quickdraw-agent <command> [args] [--board ws://host/ws | --file board.json] [--name Agent]
+export const DEFAULT_BOARD = 'ws://localhost:8795/ws'
+
+export const BOARD_USAGE = `Board commands: [--board ws://host/ws | --file board.json] [--name Agent]
 
 Reading
   read [--format md|json]                 the board as a Markdown outline (default) or data
@@ -32,42 +36,45 @@ History
   log                                       this board's operations, newest last
   undo [OP]                                 the last operation (or OP), where untouched since
 
-The board comes from --board, --file, or $QUICKDRAW_BOARD (a ws:// URL or a file path).`
+The board comes from --board, --file, or $QUICKDRAW_BOARD (a ws:// URL or a file path);
+otherwise the one \`quickdraw serve\` runs here (${DEFAULT_BOARD}).`
 
-const pair = (s, what) => {
+const pair = (s: string | undefined, what: string): [number, number] | undefined => {
   if (s == null) return undefined
   const [a, b] = String(s).split(/[,x]/).map(Number)
   if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error(`bad ${what} "${s}"`)
   return [a, b]
 }
-const point = (s) => { const p = pair(s, 'point'); return p && { x: p[0], y: p[1] } }
+const point = (s: string | undefined) => { const p = pair(s, 'point'); return p && { x: p[0], y: p[1] } }
 
-// the op log sits next to the work: .quickdraw-agent/log.jsonl, one line per operation
-const logFile = () => resolve(process.env.QUICKDRAW_AGENT_LOG || join('.quickdraw-agent', 'log.jsonl'))
-async function readLog(board) {
+interface LogEntry { board: string, op: string, at: string, name: string, command: string, diff?: Diff, undone?: string }
+
+// the op log sits next to the work: .quickdraw/log.jsonl, one line per operation
+const logFile = () => resolve(process.env.QUICKDRAW_LOG || join('.quickdraw', 'log.jsonl'))
+async function readLog(board: string): Promise<LogEntry[]> {
   let text = ''
   try { text = await readFile(logFile(), 'utf8') } catch {}
-  return text.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.board === board)
+  return text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as LogEntry).filter((e) => e.board === board)
 }
-async function log(entry) {
+async function log(entry: LogEntry) {
   await mkdir(resolve(logFile(), '..'), { recursive: true })
   await appendFile(logFile(), JSON.stringify(entry) + '\n')
 }
 
 // PNGs through one headless Chrome, reused for every image of this command
-async function exportPng(store, o) {
+async function exportPng(store: Store, o: Options): Promise<string[]> {
   if (!o.out) throw new Error('export --format png needs --out')
-  const { Renderer } = await import('./render.js')
+  const { Renderer } = await import('../board/render.ts')
   const { isFrame, frameTitle } = await import('quickdraw-frames')
   const renderer = new Renderer()
-  const opts = { background: !o.transparent, scale: o.scale ? Number(o.scale) : 2, theme: o.theme === 'dark' ? 'dark' : 'light' }
+  const opts = { background: !o.transparent, scale: o.scale ? Number(o.scale) : 2, theme: o.theme === 'dark' ? 'dark' as const : 'light' as const }
   const records = store.all()
   try {
     if (o.frame === 'all') {
       const frames = store.shapes().filter(isFrame)
       if (!frames.length) throw new Error('this board has no frames')
       await mkdir(o.out, { recursive: true })
-      const wrote = []
+      const wrote: string[] = []
       for (const f of frames) {
         const name = (frameTitle(store, f.id) || 'frame').replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 60) + '-' + f.id.split(':').pop() + '.png'
         const png = await renderer.render({ ...opts, records, frame: f.id })
@@ -85,30 +92,34 @@ async function exportPng(store, o) {
   }
 }
 
-export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
-  const { values: o, positionals: [cmd, ...args] } = parseArgs({
-    args: argv, allowPositionals: true,
-    options: {
-      board: { type: 'string' }, file: { type: 'string' }, name: { type: 'string', default: 'Agent' },
-      format: { type: 'string' }, out: { type: 'string' }, color: { type: 'string' }, in: { type: 'string' },
-      at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
-      text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
-      gap: { type: 'string' }, line: { type: 'boolean' }, 'md-file': { type: 'string' }, help: { type: 'boolean', short: 'h' },
-      frame: { type: 'string' }, ids: { type: 'string' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
-    },
-  })
-  if (!cmd || o.help || cmd === 'help') return out(USAGE)
+const OPTIONS = {
+  board: { type: 'string' }, file: { type: 'string' }, name: { type: 'string', default: 'Agent' },
+  format: { type: 'string' }, out: { type: 'string' }, color: { type: 'string' }, in: { type: 'string' },
+  at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
+  text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
+  gap: { type: 'string' }, line: { type: 'boolean' }, 'md-file': { type: 'string' }, help: { type: 'boolean', short: 'h' },
+  frame: { type: 'string' }, ids: { type: 'string' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
+} as const
 
-  const target = o.board ?? o.file ?? process.env.QUICKDRAW_BOARD
-  if (!target) throw new Error('which board? pass --board ws://host/ws, --file board.json, or set QUICKDRAW_BOARD')
+type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
+
+export const BOARD_COMMANDS = ['read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'delete', 'apply']
+
+export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
+  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
+  if (!cmd || o.help || cmd === 'help') return out(BOARD_USAGE)
+
+  const target = o.board ?? o.file ?? process.env.QUICKDRAW_BOARD ?? DEFAULT_BOARD
   const live = /^wss?:\/\//.test(target)
   const board = await openBoard(live ? { url: target, name: o.name } : { file: target, name: o.name })
   const boardKey = live ? target : resolve(target)
   try {
     const { store } = board
     const size = pair(o.size, 'size')
-    const common = { color: o.color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
-    let done // { op, diff, result, focus }
+    // strings from the command line: the operations check them
+    const color = o.color as ColorId | undefined
+    const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
+    let done: Operation<unknown>
     switch (cmd) {
       case 'read':
         return out(o.format === 'json' ? JSON.stringify(describeBoard(store), null, 2) : boardToMarkdown(store))
@@ -125,14 +136,15 @@ export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
         const entries = await readLog(boardKey)
         const entry = args[0] ? entries.find((e) => e.op === args[0]) : entries.filter((e) => !e.undone && e.command !== 'undo').at(-1)
         if (!entry) throw new Error(args[0] ? `no operation ${args[0]} on this board` : 'nothing to undo')
+        if (!entry.diff) throw new Error(`${entry.op} cannot be undone`)
         const r = undoDiff(store, entry.diff)
         await log({ board: boardKey, op: 'undo:' + entry.op, at: new Date().toISOString(), name: o.name, command: 'undo', undone: entry.op })
         return out(JSON.stringify({ undone: entry.op, ...r }))
       }
       case 'note': case 'text':
-        done = runOp(store, o.name, (ops) => ops[cmd](args.join(' '), common)); break
+        done = runOp(store, o.name, (ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
       case 'shape':
-        done = runOp(store, o.name, (ops) => ops.shape(args[0], args.slice(1).join(' '), common)); break
+        done = runOp(store, o.name, (ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = runOp(store, o.name, (ops) => ops.markdown(md, common)); break
@@ -140,19 +152,19 @@ export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
       case 'frame':
         done = runOp(store, o.name, (ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
       case 'arrow':
-        done = runOp(store, o.name, (ops) => ops.arrow(args[0], args[1], { color: o.color, line: o.line })); break
+        done = runOp(store, o.name, (ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
       case 'update':
-        done = runOp(store, o.name, (ops) => ops.update(args[0], { text: o.text, color: o.color })); break
+        done = runOp(store, o.name, (ops) => ops.update(args[0], { text: o.text, color })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = runOp(store, o.name, (ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
       }
       case 'arrange':
-        done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
+        done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
       case 'delete':
         done = runOp(store, o.name, (ops) => ops.delete(args)); break
       case 'apply': {
-        const steps = JSON.parse(args[0] === '-' ? await new Response(process.stdin).text() : await readFile(args[0], 'utf8'))
+        const steps = JSON.parse(args[0] === '-' ? await readStream(process.stdin) : await readFile(args[0], 'utf8'))
         done = applySteps(store, o.name, steps); break
       }
       default:
