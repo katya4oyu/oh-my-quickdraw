@@ -3,28 +3,26 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Y from 'yjs'
-import { createExampleServer } from './server.mjs'
+import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
+import { PRESENCE, SV, UPDATE, pack } from '../src/protocol.js'
 
-const UPDATE = 0, SV = 1, PRESENCE = 2
-const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
-
-let apps = []
+let apps: ReturnType<typeof createQuickdrawServer>[] = []
 afterEach(async () => { for (const app of apps) await app.close(); apps = [] })
 
-async function start(opts) {
-  const app = createExampleServer(opts)
+async function start(opts?: ServeOptions) {
+  const app = createQuickdrawServer(opts)
   apps.push(app)
   const { port } = await app.listen(0)
   return `ws://127.0.0.1:${port}/ws`
 }
 
-const open = (u) => new Promise((ok, fail) => {
+const open = (u: string) => new Promise<WebSocket>((ok, fail) => {
   const ws = new WebSocket(u)
   ws.binaryType = 'arraybuffer'
   ws.onopen = () => ok(ws)
   ws.onerror = fail
 })
-const next = (ws) => new Promise((ok) => { ws.onmessage = ({ data }) => ok(new Uint8Array(data)) })
+const next = (ws: WebSocket) => new Promise<Uint8Array>((ok) => { ws.onmessage = ({ data }) => ok(new Uint8Array(data)) })
 
 // an update carrying `count` records of `size` bytes each
 function edit(count = 1, size = 10, doc = new Y.Doc()) {
@@ -34,7 +32,7 @@ function edit(count = 1, size = 10, doc = new Y.Doc()) {
 }
 
 // ask the server for everything and decode it
-async function fetchState(url) {
+async function fetchState(url: string) {
   const ws = await open(url)
   const got = next(ws)
   ws.send(pack(SV, Y.encodeStateVector(new Y.Doc())))
@@ -78,7 +76,7 @@ describe('relay', () => {
     for (let i = 0; i < 5; i++) a.send(pack(UPDATE, edit(1, 10, doc)))
     await fetchState(url) // round trip: every update above has been stored
     a.close()
-    await apps.pop().close()
+    await apps.pop()!.close()
 
     url = await start({ dbPath, compactEvery: 3 })
     expect(Object.keys(await fetchState(url))).toHaveLength(5)
@@ -87,7 +85,7 @@ describe('relay', () => {
   it('relays presence tagged with the sender id, and announces disconnects', async () => {
     const url = await start()
     const [a, b] = await Promise.all([open(url), open(url)])
-    const decode = (m) => { expect(m[0]).toBe(PRESENCE); return JSON.parse(new TextDecoder().decode(m.subarray(1))) }
+    const decode = (m: Uint8Array) => { expect(m[0]).toBe(PRESENCE); return JSON.parse(new TextDecoder().decode(m.subarray(1))) }
     let got = next(b)
     a.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify({ name: 'Mac', x: 1, y: 2 }))))
     const cursor = decode(await got)
@@ -98,9 +96,13 @@ describe('relay', () => {
     b.close()
   })
 
-  it('serves the example page', async () => {
-    const url = await start()
-    const res = await fetch(url.replace('ws:', 'http:').replace('/ws', '/examples/quickdraw-yjs/'))
-    expect(res.status).toBe(200)
+  it('serves the page, the protocol and the packages it imports, and nothing else', async () => {
+    const base = (await start()).replace('ws:', 'http:').replace('/ws', '')
+    for (const path of ['/', '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js']) {
+      expect((await fetch(base + path)).status, path).toBe(200)
+    }
+    for (const path of ['/_/core/package.json', '/_/quickdraw-agent/src/index.js', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
+      expect((await fetch(base + path)).status, path).not.toBe(200)
+    }
   })
 })

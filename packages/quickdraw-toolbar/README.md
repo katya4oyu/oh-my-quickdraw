@@ -41,4 +41,4 @@ Plain objects, so extension packages describe their buttons without depending on
 
 It lives inside the core's `.qd-ui` and reuses its classes (`.qd-actions`, `.qd-tool`, `.qd-popover`, `.qd-menu-item`) and theme variables, so it follows light/dark and hides with the core's UI. Move the rail with `--qdx-rail-right`. Icons are drawn on the core's grid (24px, 2px stroke).
 
-Example: `examples/quickdraw-toolbar` (run `npm run dev` at the workspace root); `examples/demo` uses it with every package.
+Example: `examples/quickdraw-toolbar` (run `npm run examples` at the workspace root); `apps/quickdraw` uses it with every package.

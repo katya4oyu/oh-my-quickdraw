@@ -32,35 +32,20 @@
 
     bindYjs(board.editor.store, ydoc)
 
-    // transport: the example server's relay, which also persists the board;
-    // swap in any Yjs provider. Messages are one type byte + payload:
-    // 0 = update, 1 = state vector (asking the server for what we are missing),
-    // 2 = presence (JSON; the server adds the sender's id).
-    const UPDATE = 0, SV = 1, PRESENCE = 2
-    const pack = (type, data) => { const m = new Uint8Array(data.length + 1); m[0] = type; m.set(data, 1); return m }
-    let ws = null
+    // transport: a BroadcastChannel, so tabs of this page in one browser share a
+    // board with no server. Any transport that carries Yjs updates works the same
+    // way; apps/quickdraw relays them over a WebSocket and persists them.
+    const channel = new BroadcastChannel('quickdraw-yjs-example')
+    const self = crypto.randomUUID()
     ydoc.on('update', (update, origin) => {
-      if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
+      if (origin !== channel) channel.postMessage({ type: 'update', update })
     })
-    function connect() {
-      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
-      ws.binaryType = 'arraybuffer'
-      ws.onopen = () => {
-        // push everything we have (edits made while offline), then ask for the rest
-        ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
-        ws.send(pack(SV, Y.encodeStateVector(ydoc)))
-        sendCursor()
-      }
-      ws.onmessage = ({ data }) => {
-        const m = new Uint8Array(data)
-        if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
-        else if (m[0] === PRESENCE) showCursor(JSON.parse(new TextDecoder().decode(m.subarray(1))))
-      }
-      ws.onclose = () => {
-        for (const id of cursors.keys()) showCursor({ id, gone: true })
-        setTimeout(connect, 1000)
-      }
+    channel.onmessage = ({ data }) => {
+      if (data.type === 'update') Y.applyUpdate(ydoc, data.update, channel)
+      else if (data.type === 'hello') { channel.postMessage({ type: 'update', update: Y.encodeStateAsUpdate(ydoc) }); sendCursor() }
+      else if (data.type === 'presence') showCursor(data)
     }
+    addEventListener('pagehide', () => channel.postMessage({ type: 'presence', id: self, gone: true }))
 
     // live cursors: ours goes out in page coordinates, theirs are drawn over
     // the board and follow the camera
@@ -73,7 +58,7 @@
     }
     let queued = false
     function sendCursor() {
-      if (ws?.readyState === WebSocket.OPEN) ws.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify(me))))
+      channel.postMessage({ type: 'presence', id: self, ...me })
     }
     function moveCursor(p) {
       Object.assign(me, p)
@@ -114,7 +99,7 @@
     editor.on('camera', () => cursors.forEach(place))
     addEventListener('resize', () => cursors.forEach(place))
 
-    connect()
+    channel.postMessage({ type: 'hello' }) // the tabs already open answer with the board
 
     window.board = board
     window.ydoc = ydoc

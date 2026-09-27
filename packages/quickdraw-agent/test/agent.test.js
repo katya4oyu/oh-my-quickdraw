@@ -9,7 +9,7 @@ import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { openBoard, describeBoard, boardToMarkdown, runOp, applySteps, undoDiff } from '../src/index.js'
 import { main } from '../src/cli.js'
-import { createExampleServer } from '../../../examples/quickdraw-yjs/server.mjs'
+import { createQuickdrawServer } from '../../../apps/quickdraw/src/serve/index.ts'
 
 registerMarkdown()
 const board = () => { const s = new Store(); bindFrames(s); return s }
@@ -101,7 +101,7 @@ describe('a live board', () => {
   afterEach(() => app?.close())
 
   it('joins through the relay: peers see the change and the cursor', async () => {
-    app = createExampleServer()
+    app = createQuickdrawServer()
     const { port } = await app.listen(0)
     const url = `ws://127.0.0.1:${port}/ws`
 

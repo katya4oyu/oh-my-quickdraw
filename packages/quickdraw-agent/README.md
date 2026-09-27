@@ -13,7 +13,7 @@ See [skill/SKILL.md](skill/SKILL.md) for every command; install it as a skill (e
 
 ## How it works
 
-- **A board is opened the way a browser opens it**: live through the example server's relay (`examples/quickdraw-yjs/server.mjs`) as one more Yjs peer, or from a JSON file. The Store is bound with `bindYjs` and `bindFrames`, and the Markdown and embed types are registered, so frame rules and sync behave as in the app. People watching see the changes and the agent's cursor where it worked.
+- **A board is opened the way a browser opens it**: live through the relay of `quickdraw serve` (`apps/quickdraw`) as one more Yjs peer, or from a JSON file. The Store is bound with `bindYjs` and `bindFrames`, and the Markdown and embed types are registered, so frame rules and sync behave as in the app. People watching see the changes and the agent's cursor where it worked.
 - **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown` (an outline to summarize or answer from).
 - **Operations** (`runOp`, `applySteps`): each is one store transaction, all or nothing. What an agent adds carries `agent: { name, op }`; it may move and edit anything but delete only what an agent added. Arrows between shapes keep `link: { from, to }` and follow them when they move in a later operation.
 - **Undo**: each operation's diff goes to `.quickdraw-agent/log.jsonl` (or `$QUICKDRAW_AGENT_LOG`); `undo` reverts what nobody changed since and reports the rest.

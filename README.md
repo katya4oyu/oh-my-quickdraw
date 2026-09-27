@@ -13,7 +13,8 @@ A private workspace for optional packages and examples that extend [`katya4oyu/q
 
 - `vendor/quickdraw/`: pinned Git submodule of the `katya4oyu/quickdraw` fork.
 - `packages/*`: reusable extension packages, managed as npm workspaces.
-- `examples/*`: runnable examples, also managed as npm workspaces. Each package has a small example of its own; `examples/demo` puts everything together.
+- `examples/*`: one small example per package, also npm workspaces. Static files only: no example needs a server.
+- `apps/quickdraw`: the app built from all of this — the `quickdraw` command. `quickdraw serve` serves a board with every package, a relay for sync across devices, SQLite persistence and link previews.
 
 Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
 
@@ -34,15 +35,18 @@ Add a package only when a concrete extension or example is ready to be named; th
 
 ## Examples
 
-`npm run dev` starts one server for all examples (static files, plus the Yjs relay with SQLite persistence) and prints their URLs:
+`npm run examples` serves the repository as static files and prints each example's URL:
 
 | Example | Shows |
 | --- | --- |
-| `examples/quickdraw-yjs` | Sync across tabs and devices, persistence, live cursors |
+| `examples/quickdraw-yjs` | Sync across tabs (over a `BroadcastChannel`) and live cursors |
 | `examples/quickdraw-export` | Export the board or the selection as JSON |
 | `examples/quickdraw-import` | Import a JSON file, with validation |
 | `examples/quickdraw-frames` | Frames: add, move with members, export as PNG |
 | `examples/quickdraw-markdown` | Markdown cards drawn on the canvas, edited in place |
-| `examples/quickdraw-embed` | A YouTube (or other allowed) page, a link card, and sandboxed inline HTML; `/preview` proxy for link previews |
+| `examples/quickdraw-embed` | A YouTube (or other allowed) page, a link card (with a made-up preview), and sandboxed inline HTML |
 | `examples/quickdraw-toolbar` | The toolbar with two items of its own |
-| `examples/demo` | All of the above on one synced board, driven by the toolbar |
+
+## App
+
+`npm run dev` runs `quickdraw serve` from [`apps/quickdraw`](apps/quickdraw): every package on one board, synced across devices, kept in `~/.quickdraw`.

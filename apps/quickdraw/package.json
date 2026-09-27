@@ -1,0 +1,31 @@
+{
+  "name": "quickdraw-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The quickdraw command: serves a board with every extension, for people and agents to share.",
+  "type": "module",
+  "bin": {
+    "quickdraw": "./bin/quickdraw.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "dev": "node bin/quickdraw.ts serve",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "quickdraw-embed": "*",
+    "quickdraw-export": "*",
+    "quickdraw-frames": "*",
+    "quickdraw-import": "*",
+    "quickdraw-markdown": "*",
+    "quickdraw-toolbar": "*",
+    "quickdraw-yjs": "*",
+    "yjs": "^13.6.33"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  }
+}
