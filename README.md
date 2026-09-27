@@ -27,4 +27,5 @@ Add a package only when a concrete extension or example is ready to be named; th
 | `examples/quickdraw-export` | Export the board or the selection as JSON |
 | `examples/quickdraw-import` | Import a JSON file, with validation |
 | `examples/quickdraw-frames` | Frames: add, move with members, export as PNG |
+| `examples/quickdraw-markdown` | Markdown cards drawn on the canvas, edited in place |
 | `examples/demo` | All of the above on one synced board |

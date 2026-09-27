@@ -1,0 +1,21 @@
+{
+  "name": "quickdraw-markdown",
+  "version": "0.1.0",
+  "description": "Markdown cards for Quickdraw, drawn on the board's canvas as a custom shape type.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}
