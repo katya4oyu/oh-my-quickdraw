@@ -3,13 +3,15 @@
 // store transaction whose diff is returned, so it can be logged and undone.
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
-import { newId, pageBounds, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
+import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
 import { createFrame, frameTitle, isFrame, renameFrame } from 'quickdraw-frames'
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { TYPE as EMBED } from 'quickdraw-embed'
 import { estimateWidth } from './measure.js'
 
 const GAP = 40
+const PAD = 24 // inside a frame's edges
+const MIN_FIT = 0.3 // smaller than this and notes stop being readable
 const round = (n) => Math.round(n)
 const emptyDiff = () => ({ added: {}, removed: {}, updated: {} })
 const isTitle = (s) => s.isFrameTitle === true || s.id === s.frameId + '-title'
@@ -142,7 +144,8 @@ function operations(store, name, op) {
           if (!taken.some((t) => intersects(r, t, 16))) return { x, y }
         }
       }
-      return { x: fb.x + 24, y: fb.y + fb.h - h - 16 } // full: its bottom-left
+      // full: never grown (its size may be the point, like a 16:9 slide) nor piled up
+      throw new Error(`frame ${inFrame} is full: add without --in (it goes in free space), then fit ${inFrame} ID… shrinks everything to fit`)
     }
     if (!column) {
       const all = store.shapes().filter((s) => s.typeName === 'shape').map(pageBounds)
@@ -241,10 +244,11 @@ function operations(store, name, op) {
       focus = { x: x ?? s.x + dx, y: y ?? s.y + dy }
       return id
     },
-    // lays shapes out in a grid, row or column, from `at` or where they start
+    // lays shapes out in a grid, row or column, from `at` or where they start;
+    // a frame counts with its title, so frames in a column do not overlap titles
     arrange(ids, { layout = 'grid', gap = 24, at } = {}) {
       const shapes = ids.map(need)
-      const bs = shapes.map(pageBounds)
+      const bs = shapes.map((s) => withTitle(store, s))
       let x0 = at?.x ?? Math.min(...bs.map((b) => b.x)), y0 = at?.y ?? Math.min(...bs.map((b) => b.y))
       const cols = layout === 'row' ? shapes.length : layout === 'column' ? 1 : Math.ceil(Math.sqrt(shapes.length))
       let x = x0, y = y0, rowH = 0
@@ -257,6 +261,33 @@ function operations(store, name, op) {
       })
       focus = { x: x0, y: y0 }
       return ids
+    },
+    // Puts what is in a frame, and the shapes named, inside it: shrunk together
+    // (never enlarged) to fit within its edges, keeping how they sit relative to
+    // each other, as a person would. The frame keeps its size.
+    fit(frameId, { ids = [] } = {}) {
+      const f = need(frameId)
+      if (!isFrame(f)) throw new Error(`${frameId} is not a frame`)
+      const named = ids.map(need)
+      for (const s of named) if (isFrame(s)) throw new Error(`${s.id} is a frame: frames do not nest`)
+      const shapes = [...new Map([...store.shapes().filter((s) => s.frameId === f.id && !isTitle(s)), ...named].map((s) => [s.id, s])).values()]
+      if (!shapes.length) return []
+      const bs = shapes.map(pageBounds)
+      const g = { x: Math.min(...bs.map((b) => b.x)), y: Math.min(...bs.map((b) => b.y)) }
+      g.w = Math.max(...bs.map((b) => b.x + b.w)) - g.x
+      g.h = Math.max(...bs.map((b) => b.y + b.h)) - g.y
+      const room = { w: f.props.w - PAD * 2, h: f.props.h - PAD * 2 }
+      const k = Math.min(1, room.w / g.w, room.h / g.h)
+      if (k < MIN_FIT) throw new Error(`too much to fit in ${frameId}: it would take shrinking to ${Math.round(k * 100)}% (at least ${MIN_FIT * 100}%); use a bigger frame, or several`)
+      const x0 = f.x + PAD + (room.w - g.w * k) / 2, y0 = f.y + PAD + (room.h - g.h * k) / 2 // centred
+      shapes.forEach((s, i) => {
+        const scaled = k < 1 ? scaleShape(s, k, k) : s
+        const nb = pageBounds(scaled)
+        const x = x0 + (bs[i].x - g.x) * k, y = y0 + (bs[i].y - g.y) * k
+        store.put({ ...scaled, x: scaled.x + x - nb.x, y: scaled.y + y - nb.y })
+      })
+      focus = { x: f.x, y: f.y }
+      return shapes.map((s) => s.id)
     },
     // only what an agent added; a frame goes with its title, its members stay
     delete(ids) {
@@ -281,6 +312,16 @@ function operations(store, name, op) {
     }
   }
   return { ops, focus: () => focus, reroute }
+}
+
+// a shape's bounds; a frame's include its title above it
+function withTitle(store, s) {
+  const b = pageBounds(s)
+  const t = isFrame(s) && store.get(s.id + '-title')
+  if (!t) return b
+  const tb = pageBounds(t)
+  const x = Math.min(b.x, tb.x), y = Math.min(b.y, tb.y)
+  return { x, y, w: Math.max(b.x + b.w, tb.x + tb.w) - x, h: Math.max(b.y + b.h, tb.y + tb.h) - y }
 }
 
 // the segment between two rects' centres, cut at their edges (plus a gap)
@@ -353,6 +394,7 @@ export function applySteps(store, name, steps) {
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color }); break
         case 'move': out = ops.move(r(s.id), s); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
+        case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break
         default: throw new Error(`step ${i + 1}: unknown "do": ${JSON.stringify(s.do)}`)
       }

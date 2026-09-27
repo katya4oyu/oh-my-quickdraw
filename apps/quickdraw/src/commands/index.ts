@@ -31,7 +31,9 @@ Writing (each command is one operation, undoable as a whole)
   arrow FROM TO [--color C] [--line]
   update ID [--text TEXT] [--color C]
   move ID (--to X,Y | --by DX,DY)
-  arrange ID,ID,… [--layout grid|row|column] [--gap N] [--at X,Y]
+  arrange ID,ID,… [--layout grid|row|column] [--gap N] [--at X,Y]   frames count with their titles
+  fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
+                                          to fit inside it (the frame keeps its size)
   delete ID…                               only shapes an agent added
   apply STEPS.json                          several steps as one operation (see SKILL.md)
 
@@ -108,7 +110,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'delete', 'apply']
+export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
 
 export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
@@ -176,6 +178,8 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
       }
       case 'arrange':
         done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
+      case 'fit':
+        done = runOp(store, o.name, (ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
       case 'delete':
         done = runOp(store, o.name, (ops) => ops.delete(args)); break
       case 'apply': {

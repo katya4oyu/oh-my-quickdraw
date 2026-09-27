@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
-import { runOp } from 'quickdraw-agent'
+import { installMeasure, runOp } from 'quickdraw-agent'
 import { Renderer, serve } from '../src/board/render.ts'
 import { findChrome } from '../src/board/chrome.ts'
 
+installMeasure() // Node has no canvas to measure text with
 const hasChrome = !!findChrome()
 const pngSize = (buf: Buffer) => ({ w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) })
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
@@ -29,7 +30,7 @@ describe.skipIf(!hasChrome)('PNG through a headless Chrome', () => {
     bindFrames(store)
     const { result: [frame] } = runOp(store, 'Claude', (ops) => {
       const f = ops.frame('Plan', { aspect: '16:9', at: { x: 0, y: 0 }, w: 320 })
-      ops.note('Hello', { inFrame: f })
+      ops.fit(f, { ids: [ops.note('Hello')] }) // too big for it: shrunk to fit
       return [f]
     })
     return { store, frame }

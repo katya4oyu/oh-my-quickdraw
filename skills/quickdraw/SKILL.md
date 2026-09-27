@@ -50,6 +50,14 @@ quickdraw arrow FROM_ID TO_ID                         # follows the shapes when 
 
 Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, green, light-green, light-red, red.
 
+## Frames keep their size
+
+A frame never grows by itself: its size may be the point (a 16:9 slide), and a bigger frame would cover its neighbours. Work as a person would:
+
+- **Not sure how big it gets** (usually): build in free space — add without `--in` — then enclose it with `frame --around`, and line frames up with `arrange` (it counts their titles).
+- **The frame's size is given** (it exists, or has an aspect like 16:9): build in free space, then `quickdraw fit FRAME_ID ID,ID,…` — it shrinks the frame's contents and those shapes together, keeping their layout, to fit inside. It never enlarges; if things would get too small to read, it refuses: use a bigger frame, or several.
+- `--in FRAME_ID` is for a few items: when the frame is full it refuses rather than piling them up.
+
 ## Diagrams and bigger changes: `apply`
 
 Write the steps as JSON and apply them as **one** operation (one undo). Name what you add with `ref` and point at it later with `"@ref"`:
@@ -70,7 +78,7 @@ Write the steps as JSON and apply them as **one** operation (one undo). Name wha
 quickdraw apply steps.json      # or: … apply - < steps.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `gap`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
+Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
 
 ## Change and tidy
 
@@ -78,6 +86,7 @@ Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `frame` (
 quickdraw update ID --text "New text" [--color green]   # notes, text, shape labels, Markdown, frame titles
 quickdraw move ID --to X,Y        # or --by DX,DY; moving a frame moves what is in it
 quickdraw arrange ID,ID,ID --layout grid|row|column [--gap 24] [--at X,Y]
+quickdraw fit FRAME_ID [ID,ID,…]  # shrink the frame's contents (and these) together to fit inside it
 quickdraw delete ID …             # only shapes an agent added; people's shapes are refused
 ```
 

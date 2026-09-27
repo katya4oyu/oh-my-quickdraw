@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Store } from '@quickdrawjs/core'
+import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure } from '../src/index.js'
@@ -110,5 +110,80 @@ describe('tools', () => {
     ] })
     expect(ids).toHaveLength(3)
     expect(() => tool('delete_shapes').run(store, { ids: ['shape:nope'] })).toThrow(/no shape/)
+  })
+})
+
+describe('frames keep their size', () => {
+  const inside = (store, id, f) => {
+    const b = pageBounds(store.get(id)), fb = pageBounds(store.get(f))
+    return b.x >= fb.x && b.y >= fb.y && b.x + b.w <= fb.x + fb.w && b.y + b.h <= fb.y + fb.h
+  }
+
+  it('a full frame refuses more, rather than growing or piling up', () => {
+    const store = board()
+    const { result: f } = runOp(store, 'C', (ops) => ops.frame('Small', { at: { x: 0, y: 0 }, w: 480, h: 320 }))
+    let added = 0, refused = null
+    for (let i = 0; i < 10 && !refused; i++) {
+      try { runOp(store, 'C', (ops) => ops.note(`n${i}`, { inFrame: f })); added++ } catch (e) { refused = e }
+    }
+    expect(refused?.message).toMatch(/is full.*fit/)
+    const members = store.shapes().filter((s) => s.frameId === f && s.type === 'note')
+    expect(members).toHaveLength(added)
+    for (const m of members) expect(inside(store, m.id, f), m.id).toBe(true) // none piled at an edge
+    expect(store.get(f).props).toMatchObject({ w: 480, h: 320 })
+  })
+
+  it('fit shrinks the contents and the shapes named together, keeping their layout and the frame', () => {
+    const store = board()
+    const { result: f } = runOp(store, 'C', (ops) => ops.frame('Slide', { at: { x: 0, y: 0 }, w: 480, aspect: '16:9' }))
+    // built in free space: six notes in two columns, far to the right
+    const { result: notes } = applySteps(store, 'C', [0, 1, 2, 3, 4, 5].map((i) => ({ do: 'note', text: `n${i}`, at: { x: 2000 + (i % 2) * 240, y: (i >> 1) * 240 } })))
+    const op = runOp(store, 'C', (ops) => ops.fit(f, { ids: notes }))
+    expect(store.get(f).props).toMatchObject({ w: 480, h: 270 }) // the frame: untouched, 16:9
+    for (const id of notes) {
+      expect(inside(store, id, f), id).toBe(true)
+      expect(store.get(id).frameId).toBe(f)
+      expect(store.get(id).props.scale).toBeLessThan(1)
+    }
+    const [a, b, c] = notes.map((id) => store.get(id))
+    expect(a.x).toBeLessThan(b.x) // same columns and rows as before
+    expect(a.y).toBe(b.y)
+    expect(c.y).toBeGreaterThan(a.y)
+    expect(undoDiff(store, op.diff)).toMatchObject({ skipped: [] })
+    expect(store.get(notes[0])).toMatchObject({ x: 2000, y: 0, props: { scale: 1 } })
+    expect(store.get(notes[0]).frameId).toBeUndefined()
+  })
+
+  it('fit never enlarges, and refuses what would become unreadable', () => {
+    const store = board()
+    const { result: [f, n] } = runOp(store, 'C', (ops) => { const f = ops.frame('Big', { at: { x: 0, y: 0 }, w: 1600, h: 900 }); return [f, ops.note('x', { at: { x: 3000, y: 0 } })] })
+    runOp(store, 'C', (ops) => ops.fit(f, { ids: [n] }))
+    expect(store.get(n).props.scale).toBe(1)
+    const { result: tiny } = runOp(store, 'C', (ops) => ops.frame('Tiny', { at: { x: 0, y: 2000 }, w: 120, h: 80 }))
+    expect(() => runOp(store, 'C', (ops) => ops.fit(tiny, { ids: [n] }))).toThrow(/too much to fit/)
+    expect(store.get(n).frameId).toBe(f)
+  })
+
+  it('fit leaves a neighbouring frame and loose shapes alone', () => {
+    const store = board()
+    store.put(human('shape:h', 'mine', 1100, 0)) // outside both frames
+    const { result: [f, g, m] } = runOp(store, 'C', (ops) => {
+      const f = ops.frame('A', { at: { x: 0, y: 0 }, w: 480, h: 320 })
+      const g = ops.frame('B', { at: { x: 520, y: 0 }, w: 480, h: 320 })
+      return [f, g, ops.note('in B', { inFrame: g })]
+    })
+    const beforeG = store.get(g), beforeM = store.get(m), beforeH = store.get('shape:h')
+    runOp(store, 'C', (ops) => ops.fit(f, { ids: [ops.note('new')] }))
+    expect(store.get(g)).toEqual(beforeG)
+    expect(store.get(m)).toEqual(beforeM)
+    expect(store.get('shape:h')).toEqual(beforeH)
+  })
+
+  it('arrange counts a frame\'s title, so frames in a column do not overlap', () => {
+    const store = board()
+    const { result: [f, g] } = runOp(store, 'C', (ops) => [ops.frame('One', { at: { x: 0, y: 0 } }), ops.frame('Two', { at: { x: 900, y: 0 } })])
+    runOp(store, 'C', (ops) => ops.arrange([f, g], { layout: 'column', gap: 24 }))
+    const titleOfG = pageBounds(store.get(g + '-title')), one = pageBounds(store.get(f))
+    expect(titleOfG.y).toBeGreaterThanOrEqual(one.y + one.h + 24)
   })
 })
