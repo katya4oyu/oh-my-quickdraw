@@ -3,11 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Quickdraw — Yjs example</title>
+  <title>Quickdraw — extensions demo</title>
   <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button, .actions select { pointer-events: auto; }
+    .actions button, .actions select {
+      font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
     .cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 100; font: 600 11px system-ui; }
     .cursor svg { display: block; }
     .cursor span { position: absolute; left: 14px; top: 16px; padding: 1px 6px; border-radius: 6px; color: #fff; white-space: nowrap; }
@@ -15,22 +21,92 @@
   <script type="importmap">
     {
       "imports": {
-        "yjs": "https://esm.sh/yjs@13.6.33"
+        "yjs": "https://esm.sh/yjs@13.6.33",
+        "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js"
       }
     }
   </script>
 </head>
 <body>
   <div id="board"></div>
+  <div class="actions">
+    <select id="aspect" aria-label="Frame aspect ratio">
+      <option value="16:9">16:9</option>
+      <option value="16:10">16:10</option>
+      <option value="4:3">4:3</option>
+      <option value="1:1">1:1</option>
+      <option value="">Free</option>
+    </select>
+    <button id="frame">Add frame</button>
+    <button id="frame-rename">Rename frame</button>
+    <button id="frame-export">Export frame</button>
+    <button id="import">Import JSON</button>
+    <button id="export">Export JSON</button>
+  </div>
   <script type="module">
     import * as Y from 'yjs'
     import { createQuickdraw } from '../../vendor/quickdraw/packages/core/src/index.js'
     import { bindYjs } from '../../packages/quickdraw-yjs/src/index.js'
+    import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
+    import { openJSON } from '../../packages/quickdraw-import/src/index.js'
+    import { bindFrames, createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const ydoc = new Y.Doc()
 
     bindYjs(board.editor.store, ydoc)
+    bindFrames(board.editor.store)
+
+    // the selection when there is one, otherwise the whole board
+    document.getElementById('export').onclick = () => {
+      const { selection } = board.editor
+      downloadJSON(board.editor, { ids: selection.size ? selection : null })
+    }
+    const aspectInput = document.getElementById('aspect')
+    const aspect = () => { const [w, h] = aspectInput.value.split(':').map(Number); return h ? w / h : null }
+    document.getElementById('frame').onclick = () => {
+      const v = board.editor.viewportPageBounds()
+      const a = aspect()
+      const w = Math.min(480, v.w * 0.8, a ? v.h * 0.6 * a : Infinity), h = Math.min(320, v.h * 0.6)
+      const id = createFrame(board.editor.store, { x: v.x + (v.w - w) / 2, y: v.y + (v.h - (a ? w / a : h)) / 2, w, h, aspect: a })
+      board.editor.setTool('select')
+      board.editor.setSelection([id])
+    }
+    // the selected frame, or the frame of the selected shape
+    const selectedFrame = () => {
+      const s = board.editor.store.get([...board.editor.selection][0])
+      return isFrame(s) ? s.id : s?.frameId
+    }
+
+    // picking a ratio with a frame selected applies it to that frame
+    aspectInput.onchange = () => {
+      const frameId = selectedFrame()
+      if (frameId) setFrameAspect(board.editor.store, frameId, aspect())
+    }
+
+    // a prompt, since the core only edits text on double-click, which iOS does not send
+    document.getElementById('frame-rename').onclick = () => {
+      const frameId = selectedFrame()
+      if (!frameId) return alert('Select a frame first')
+      const title = prompt('Frame name', frameTitle(board.editor.store, frameId))
+      if (title != null) renameFrame(board.editor.store, frameId, title)
+    }
+
+    // the frame's contents as a PNG, cut at its edges
+    document.getElementById('frame-export').onclick = async () => {
+      const { store } = board.editor
+      const frameId = selectedFrame()
+      if (!frameId) return alert('Select a frame first')
+      const blob = await exportFrame(board.editor, frameId)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = (frameTitle(store, frameId) || 'frame') + '.png'
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+    }
+    document.getElementById('import').onclick = () => {
+      openJSON(board.editor).catch((e) => alert(`Import failed: ${e.message}`))
+    }
 
     // transport: the example server's relay, which also persists the board;
     // swap in any Yjs provider. Messages are one type byte + payload:

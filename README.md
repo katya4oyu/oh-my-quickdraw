@@ -13,6 +13,18 @@ A private workspace for optional packages and examples that extend [`katya4oyu/q
 
 - `vendor/quickdraw/`: pinned Git submodule of the `katya4oyu/quickdraw` fork.
 - `packages/*`: reusable extension packages, managed as npm workspaces.
-- `examples/*`: runnable examples, also managed as npm workspaces.
+- `examples/*`: runnable examples, also managed as npm workspaces. Each package has a small example of its own; `examples/demo` puts everything together.
 
-The workspace starts intentionally empty. Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
+Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
+
+## Examples
+
+`npm run dev` starts one server for all examples (static files, plus the Yjs relay with SQLite persistence) and prints their URLs:
+
+| Example | Shows |
+| --- | --- |
+| `examples/quickdraw-yjs` | Sync across tabs and devices, persistence, live cursors |
+| `examples/quickdraw-export` | Export the board or the selection as JSON |
+| `examples/quickdraw-import` | Import a JSON file, with validation |
+| `examples/quickdraw-frames` | Frames: add, move with members, export as PNG |
+| `examples/demo` | All of the above on one synced board |

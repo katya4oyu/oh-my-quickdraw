@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — import example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    button {
+      position: fixed; top: 10px; right: 10px; z-index: 50;
+      font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
+  </style>
+  <!-- in your own project, a bundler resolves this from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <button id="import">Import JSON</button>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { openJSON } from '../../packages/quickdraw-import/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+
+    // imported shapes are added, centered and selected; invalid files are rejected whole
+    document.getElementById('import').onclick = () => {
+      openJSON(board.editor).catch((e) => alert(`Import failed: ${e.message}`))
+    }
+  </script>
+</body>
+</html>

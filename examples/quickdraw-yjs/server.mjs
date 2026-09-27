@@ -10,7 +10,7 @@
 // board comes back even when no other peer is online.
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { extname, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
@@ -142,5 +142,7 @@ export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const dbPath = process.env.DB || join(import.meta.dirname, 'board.sqlite')
   const { port } = await createExampleServer({ dbPath }).listen(Number(process.env.PORT || 8080))
-  console.log(`Quickdraw Yjs example: http://localhost:${port}/examples/quickdraw-yjs/ (open in two tabs or devices)`)
+  // every example is served from here; the relay is used by quickdraw-yjs and demo
+  const examples = (await readdir(join(root, 'examples'), { withFileTypes: true })).filter((d) => d.isDirectory())
+  for (const { name } of examples) console.log(`http://localhost:${port}/examples/${name}/`)
 }

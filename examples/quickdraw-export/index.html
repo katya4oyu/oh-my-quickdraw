@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — export example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    button {
+      position: fixed; top: 10px; right: 10px; z-index: 50;
+      font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="board"></div>
+  <button id="export">Export JSON</button>
+  <script type="module">
+    import { createQuickdraw } from '../../vendor/quickdraw/packages/core/src/index.js'
+    import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+
+    // the selection when there is one, otherwise the whole board
+    document.getElementById('export').onclick = () => {
+      const { selection } = board.editor
+      downloadJSON(board.editor, { ids: selection.size ? selection : null })
+    }
+  </script>
+</body>
+</html>

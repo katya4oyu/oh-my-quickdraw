@@ -30,3 +30,5 @@ const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.sto
 ## Not covered
 
 - No clipping, and a frame looks like a plain rectangle: both would need a core drawing hook.
+
+Example: `examples/quickdraw-frames` (run `npm run dev` at the workspace root).
