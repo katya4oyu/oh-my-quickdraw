@@ -44,6 +44,8 @@
     <button id="md-edit">Edit Markdown</button>
     <button id="md-open">Open .md</button>
     <button id="md-save">Save .md</button>
+    <button id="embed-add">Add embed</button>
+    <button id="embed-use">Use embed</button>
     <button id="import">Import JSON</button>
     <button id="export">Export JSON</button>
   </div>
@@ -54,6 +56,7 @@
     import { downloadJSON } from '../../packages/quickdraw-export/src/index.js'
     import { openJSON } from '../../packages/quickdraw-import/src/index.js'
     import { bindMarkdownEditing, createMarkdown, downloadMarkdown, editMarkdown, isMarkdownSupported, openMarkdownFile, validateMarkdown, TYPE as MARKDOWN } from '../../packages/quickdraw-markdown/src/index.js'
+    import { bindEmbeds, createEmbed, isEmbedSupported, validateEmbed, TYPE as EMBED } from '../../packages/quickdraw-embed/src/index.js'
     import { bindFrames, createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from '../../packages/quickdraw-frames/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -62,6 +65,8 @@
     bindYjs(board.editor.store, ydoc)
     bindFrames(board.editor.store)
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
+    const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
+    if (!isEmbedSupported()) for (const id of ['embed-add', 'embed-use']) document.getElementById(id).hidden = true
     // a core without registerShapeType (upstream Quickdraw) cannot draw cards
     if (!isMarkdownSupported()) for (const id of ['md-add', 'md-edit', 'md-open', 'md-save']) document.getElementById(id).hidden = true
 
@@ -136,9 +141,38 @@
       const id = selectedCard()
       if (id) downloadMarkdown(board.editor.store, id)
     }
+    // link previews through the example server's /preview proxy (browsers cannot read
+    // other sites' HTML); the card keeps what it got, so viewers never contact the site
+    async function fetchPreview(url) {
+      const r = await fetch('/preview?url=' + encodeURIComponent(url))
+      if (!r.ok) return null
+      const p = await r.json()
+      if (p.image) p.image = await (await fetch(p.image)).blob() // the package shrinks it
+      return p
+    }
+    // a URL (YouTube, Vimeo, Figma, CodePen, Google Maps embed; other sites become link cards),
+    // or empty for a small HTML sample
+    document.getElementById('embed-add').onclick = () => {
+      const url = prompt('Embed URL (leave empty for an HTML sample)', '')
+      if (url == null) return
+      const v = board.editor.viewportPageBounds()
+      const w = Math.min(480, v.w * 0.9)
+      const at = { x: v.x + (v.w - w) / 2, y: v.y + v.h * 0.15, w, h: w * 9 / 16 }
+      const id = url.trim()
+        ? createEmbed(board.editor.store, { ...at, url: url.trim(), fetchPreview })
+        : createEmbed(board.editor.store, { ...at, kind: 'html', html: '<style>body{font:16px system-ui;display:grid;place-items:center;height:100vh}</style><button onclick="this.textContent=+this.textContent+1">0</button>' })
+      board.editor.setTool('select')
+      board.editor.setSelection([id])
+    }
+    document.getElementById('embed-use').onclick = () => {
+      const s = board.editor.store.get([...board.editor.selection][0])
+      if (s?.type !== EMBED) return alert('Select an embed first')
+      if (s.props.kind === 'html') embeds.run(s.id)
+      embeds.activate(s.id)
+    }
     document.getElementById('import').onclick = () => {
-      // Markdown cards are allowed in, checked by their own validator
-      openJSON(board.editor, { types: { [MARKDOWN]: validateMarkdown } }).catch((e) => alert(`Import failed: ${e.message}`))
+      // Markdown cards and embeds are allowed in, checked by their own validators
+      openJSON(board.editor, { types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }).catch((e) => alert(`Import failed: ${e.message}`))
     }
 
     // transport: the example server's relay, which also persists the board;

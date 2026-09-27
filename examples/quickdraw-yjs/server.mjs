@@ -15,6 +15,7 @@ import { extname, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import * as Y from 'yjs'
+import { handlePreview } from '../quickdraw-embed/preview-proxy.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
@@ -83,6 +84,7 @@ export function createExampleServer({ dbPath = ':memory:', compactEvery = 500 } 
   const broadcast = (from, out) => { for (const peer of clients) if (peer !== from && peer.writable) peer.write(out) }
 
   const server = createServer(async (req, res) => {
+    if (new URL(req.url, 'http://x').pathname === '/preview') return handlePreview(req, res) // link cards (quickdraw-embed)
     const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname))
     const file = join(root, path.endsWith('/') ? path + 'index.html' : path)
     if (!file.startsWith(root)) return res.writeHead(403).end()
