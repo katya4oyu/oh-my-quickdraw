@@ -11,6 +11,9 @@ export const USAGE = `quickdraw-agent <command> [args] [--board ws://host/ws | -
 Reading
   read [--format md|json]                 the board as a Markdown outline (default) or data
   export [--format json|md] [--out PATH]  the board as a quickdraw JSON file, or the outline
+  export --format png --out PATH [--frame ID|all] [--ids ID,…] [--scale 2] [--transparent] [--theme dark]
+                                          an image, drawn by a headless Chrome (needs Chrome installed);
+                                          --frame all writes one PNG per frame into the PATH directory
 
 Writing (each command is one operation, undoable as a whole)
   note TEXT [--color C] [--in FRAME] [--at X,Y]
@@ -51,6 +54,37 @@ async function log(entry) {
   await appendFile(logFile(), JSON.stringify(entry) + '\n')
 }
 
+// PNGs through one headless Chrome, reused for every image of this command
+async function exportPng(store, o) {
+  if (!o.out) throw new Error('export --format png needs --out')
+  const { Renderer } = await import('./render.js')
+  const { isFrame, frameTitle } = await import('quickdraw-frames')
+  const renderer = new Renderer()
+  const opts = { background: !o.transparent, scale: o.scale ? Number(o.scale) : 2, theme: o.theme === 'dark' ? 'dark' : 'light' }
+  const records = store.all()
+  try {
+    if (o.frame === 'all') {
+      const frames = store.shapes().filter(isFrame)
+      if (!frames.length) throw new Error('this board has no frames')
+      await mkdir(o.out, { recursive: true })
+      const wrote = []
+      for (const f of frames) {
+        const name = (frameTitle(store, f.id) || 'frame').replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 60) + '-' + f.id.split(':').pop() + '.png'
+        const png = await renderer.render({ ...opts, records, frame: f.id })
+        if (png) { await writeFile(join(o.out, name), png); wrote.push(join(o.out, name)) }
+      }
+      return wrote
+    }
+    if (o.frame && !isFrame(store.get(o.frame))) throw new Error(`${o.frame} is not a frame`)
+    const png = await renderer.render({ ...opts, records, frame: o.frame, ids: o.ids?.split(',') })
+    if (!png) throw new Error('nothing to draw')
+    await writeFile(o.out, png)
+    return [o.out]
+  } finally {
+    await renderer.close()
+  }
+}
+
 export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({
     args: argv, allowPositionals: true,
@@ -60,6 +94,7 @@ export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
       at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
       text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
       gap: { type: 'string' }, line: { type: 'boolean' }, 'md-file': { type: 'string' }, help: { type: 'boolean', short: 'h' },
+      frame: { type: 'string' }, ids: { type: 'string' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
     },
   })
   if (!cmd || o.help || cmd === 'help') return out(USAGE)
@@ -78,6 +113,7 @@ export async function main(argv, out = (s) => process.stdout.write(s + '\n')) {
       case 'read':
         return out(o.format === 'json' ? JSON.stringify(describeBoard(store), null, 2) : boardToMarkdown(store))
       case 'export': {
+        if (o.format === 'png') return out(JSON.stringify({ wrote: await exportPng(store, o) }))
         const { exportJSON } = await import('quickdraw-export')
         const text = o.format === 'md' ? boardToMarkdown(store) : JSON.stringify(exportJSON(store), null, 2)
         if (o.out) { await writeFile(o.out, text + '\n'); return out(JSON.stringify({ wrote: o.out })) }

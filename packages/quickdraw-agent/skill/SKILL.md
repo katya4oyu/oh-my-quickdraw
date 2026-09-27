@@ -86,9 +86,12 @@ Undo reverts only what nobody changed since, and reports the rest as `skipped`. 
 ```sh
 quickdraw-agent export --out board.json         # a quickdraw JSON file (Import JSON in the app reads it)
 quickdraw-agent export --format md --out board.md
+quickdraw-agent export --format png --out board.png [--theme dark] [--scale 2] [--transparent]
+quickdraw-agent export --format png --frame FRAME_ID --out slide.png   # just the frame's contents
+quickdraw-agent export --format png --frame all --out slides/         # one PNG per frame
 ```
 
-PNG export needs a browser and is not available from the CLI.
+PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out of sight, and is gone when the command ends. Look at the PNG to check a diagram you drew.
 
 ## Good habits
 
