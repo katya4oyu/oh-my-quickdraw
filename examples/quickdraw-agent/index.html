@@ -8,7 +8,6 @@
   <style>
     html, body { margin: 0; height: 100%; }
     #board { position: fixed; inset: 0; }
-    .hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 40; max-width: calc(100% - 24px); padding: 8px 12px; border-radius: 9px; background: #fff; box-shadow: 0 2px 12px #0002; font: 12px system-ui; }
   </style>
   <script type="importmap">
     { "imports": {
@@ -23,10 +22,9 @@
 </head>
 <body>
   <div id="board"></div>
-  <div class="hint">Ask from the AI panel, select a note and tap “Ask AI”, or create a note starting with “@AI …”. Approve one request to see Allow/Deny.</div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { BOARD_TOOLS, createAgentPanel, agentAskTool } from 'quickdraw-agent'
+    import { BOARD_TOOLS, createAgentPanel, agentTools } from 'quickdraw-agent'
     import { createToolbar } from 'quickdraw-toolbar'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -75,19 +73,20 @@
             return
           }
         }
-        const anchor = request.anchor
-        const context = request.context.shapeIds
-        const frame = BOARD_TOOLS.find((tool) => tool.name === 'add_frame')
-        const frameResult = frame.run(editor.store, {
-          title: 'AI: ' + request.text.slice(0, 28),
-          ...(context.length ? { around: context } : { at: { x: anchor.x || 0, y: anchor.y || 0 }, w: 460, h: 300 }),
-        }, { name: agents[0].name })
-        emit({ type: 'op', requestId: request.id, op: frameResult.op, diff: frameResult.diff })
-        const note = BOARD_TOOLS.find((tool) => tool.name === 'add_note')
-        for (const [index, text] of ['Plan the next step', 'Check the result with the team'].entries()) {
-          const result = note.run(editor.store, { text, at: { x: (anchor.x || 0) + 30 + index * 150, y: (anchor.y || 0) + 80 } }, { name: agents[0].name })
-          emit({ type: 'op', requestId: request.id, op: result.op, diff: result.diff })
+        // a frame in free space with two notes in it, then the view follows it
+        const run = (name, args) => {
+          const result = BOARD_TOOLS.find((tool) => tool.name === name).run(editor.store, args, { name: agents[0].name })
+          emit({ type: 'op', requestId: request.id, op: result.op, diff: result.diff, ids: result.ids })
+          return result
         }
+        const frame = run('add_frame', { title: request.text.slice(0, 40), w: 480, h: 280 })
+        const f = editor.store.get(frame.ids[0])
+        for (const [i, text] of ['Plan the next step', 'Check the result with the team'].entries()) {
+          run('add_note', { text, at: { x: f.x + 30 + i * 220, y: f.y + 50 } })
+        }
+        const box = editor.container.getBoundingClientRect()
+        const z = Math.min(1, (box.width - 40) / f.props.w)
+        editor.setCamera({ x: box.width / 2 / z - (f.x + f.props.w / 2), y: box.height / 3 / z - (f.y + f.props.h / 2), z }, { animate: 400 })
         emit({ type: 'message', requestId: request.id, text: `Added a frame and two notes for “${request.text}”.` })
         emit({ type: 'done', requestId: request.id, text: 'Board update complete.' })
         agents[0].status = 'idle'
@@ -112,11 +111,18 @@
     }
 
     const panel = createAgentPanel({ editor, host })
-    createToolbar(editor, { context: [agentAskTool(panel)] })
-    const center = editor.viewportPageBounds()
-    for (const [index, text] of ['Select a note and ask AI', 'Try a committed @AI note'].entries()) {
-      const tool = BOARD_TOOLS.find((item) => item.name === 'add_note')
-      tool.run(editor.store, { text, at: { x: center.x + 150 + index * 230, y: center.y + 180 } }, { name: 'Example' })
+    const ai = agentTools(panel)
+    createToolbar(editor, { rail: ai.rail, context: ai.context })
+
+    // two notes to start from, in view on a phone too (a note is 200 × 200)
+    const v = editor.viewportPageBounds()
+    const narrow = v.w < 520
+    const add = BOARD_TOOLS.find((item) => item.name === 'add_note')
+    for (const [i, text] of ['Select me and tap ✦', 'Or write a note that starts with @AI'].entries()) {
+      const at = narrow
+        ? { x: v.x + v.w / 2 - 100, y: v.y + v.h / 2 - 225 + i * 240 }
+        : { x: v.x + v.w / 2 - 220 + i * 240, y: v.y + v.h / 2 - 100 }
+      add.run(editor.store, { text, at }, { name: 'Example' })
     }
   </script>
 </body>

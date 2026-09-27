@@ -42,6 +42,15 @@ describe('agent panel request model', () => {
     expect(updateAgentThread(thread, { type: 'done' }).status).toBe('done')
   })
 
+  it('pins a thread that is not about a shape to the first shape it adds', () => {
+    let thread = { request: { id: 'r', anchor: { x: 1, y: 2 } }, events: [], diffs: [], status: 'working' }
+    thread = updateAgentThread(thread, { type: 'op', op: 'op:1', diff: { records: [] }, ids: ['frame', 'note'] })
+    thread = updateAgentThread(thread, { type: 'op', op: 'op:2', diff: { records: [] }, ids: ['other'] })
+    expect(thread.request.anchor).toEqual({ x: 1, y: 2, shapeId: 'frame' })
+    const about = updateAgentThread({ request: { id: 's', anchor: { shapeId: 'mine' } }, events: [], diffs: [] }, { type: 'op', op: 'op:3', diff: { records: [] }, ids: ['frame'] })
+    expect(about.request.anchor.shapeId).toBe('mine')
+  })
+
   it('undoes newest operation first and reports only changed records as skipped', () => {
     const store = new Store()
     const first = runOp(store, 'Agent', (ops) => ops.note('first', { at: { x: 0, y: 0 } }))

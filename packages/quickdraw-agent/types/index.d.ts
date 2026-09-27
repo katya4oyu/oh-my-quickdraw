@@ -82,7 +82,8 @@ export interface AgentRequest {
 export type AgentEvent =
   | { type: 'progress' | 'message' | 'question', requestId: string, text: string }
   | { type: 'approval', requestId: string, id: string, text?: string }
-  | { type: 'op', requestId: string, op: string, diff: Diff }
+  /** `ids`: what it added; a thread not about a shape is pinned to the first. */
+  | { type: 'op', requestId: string, op: string, diff: Diff, ids?: string[] }
   | { type: 'done', requestId: string, text?: string }
   | { type: 'error', requestId: string, message: string }
 export type AgentHostEvent = { type: 'agents', agents?: AgentParticipant[] } | { type: 'event', event: AgentEvent }
@@ -115,23 +116,25 @@ export interface AgentPanel {
   openForSelection(shapeIds: string[]): void
   askText(text: string, anchor?: AgentAnchor): AgentRequest
   show(): void
+  hide(): void
+  toggle(): void
+  /** Show one thread. */
+  open(requestId: string): void
   readonly threads: AgentThread[]
   destroy(): void
 }
-/** Add a host-driven participant panel, canvas threads and request pins. */
+/** Add a host-driven panel (in the core's .qd-ui: a card on wide screens, a sheet on phones) and thread pins on the canvas. It starts hidden. */
 export function createAgentPanel(options: {
   editor: AgentEditor
   store?: Store
   container?: HTMLElement
   host: AgentHost
 }): AgentPanel
-/** A quickdraw-toolbar selection item; import this package's item into context. */
-export function agentAskTool(panel: AgentPanel): {
-  id: string
-  title: string
-  icon: string
-  when(shape: object): boolean
-  run(ctx: { editor: AgentEditor, shape: { id: string } }): AgentRequest
+export const AGENT_ICON: string
+/** quickdraw-toolbar items: AI on the rail (toggles the panel), "Ask AI" on the selection bar. */
+export function agentTools(panel: AgentPanel): {
+  rail: { id: string, title: string, icon: string, run(): void }[]
+  context: { id: string, title: string, icon: string, when(shape: object): boolean, run(ctx: { shape: { id: string } }): void }[]
 }
 export function buildAgentRequest(options: {
   id: string
