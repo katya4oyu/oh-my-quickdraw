@@ -1,12 +1,15 @@
 // An image file as a data URL for the board, kept light: the board's document
-// carries it to every device. On macOS `sips` shrinks it to 1024 px at most
-// and turns a large opaque PNG into a JPEG; elsewhere it goes as it is, up to
-// a limit. Only files in the agent's working directory or Codex's generated
-// images are read.
+// carries it to every device. It is shrunk to 1024 px at most, and a large
+// opaque PNG becomes a JPEG; sheets are cut into their cells. The work is done
+// by `sips` on macOS, else by Pillow through `uv` (./image_tool.py); with
+// neither, images go as they are (up to a limit) and sheets cannot be cut.
+// $QUICKDRAW_IMAGE_TOOL (sips, uv or none) chooses. Only files in the agent's
+// working directory or Codex's generated images are read.
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join, relative, resolve, isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
@@ -46,12 +49,31 @@ export function imageSize(b: Buffer): { w: number, h: number } | null {
   return null
 }
 
+type Tool = 'sips' | 'uv' | 'none'
+const PY = fileURLToPath(new URL('./image_tool.py', import.meta.url))
+const has = new Map<string, Promise<boolean>>()
+const available = (command: string) => {
+  if (!has.has(command)) has.set(command, run(command, command === 'sips' ? ['--help'] : ['--version']).then(() => true, () => false))
+  return has.get(command)!
+}
+
+/** what shrinks and cuts images here */
+export async function imageTool(): Promise<Tool> {
+  const asked = process.env.QUICKDRAW_IMAGE_TOOL
+  if (asked === 'sips' || asked === 'uv' || asked === 'none') return asked
+  if (process.platform === 'darwin' && await available('sips')) return 'sips'
+  return (await available('uv')) ? 'uv' : 'none'
+}
+const python = (args: string[]) => run('uv', ['run', '--quiet', '--no-project', '--with', 'pillow', 'python', PY, ...args], { timeout: 120_000 })
+
 async function shrink(file: string, opaque: boolean): Promise<Buffer | null> {
-  if (process.platform !== 'darwin') return null
+  const tool = await imageTool()
+  if (tool === 'none') return null
   const dir = await mkdtemp(join(tmpdir(), 'quickdraw-image-'))
   try {
     const out = join(dir, opaque ? 'image.jpg' : 'image.png')
-    await run('sips', ['-Z', String(MAX_SIDE), ...(opaque ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', '85'] : []), file, '--out', out])
+    if (tool === 'sips') await run('sips', ['-Z', String(MAX_SIDE), ...(opaque ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', '85'] : []), file, '--out', out])
+    else await python(['shrink', file, out, String(MAX_SIDE), opaque ? '1' : '0'])
     return await readFile(out)
   } catch {
     return null
@@ -83,11 +105,12 @@ export async function loadImage(file: string, roots: string[], { transparent = f
 /**
  * Cuts an image laid out as an even grid (a sprite or sticker sheet) into its
  * cells, row by row; `inset` trims that share of each cell's edges (gutters,
- * lines between cells). Needs `sips` (macOS).
+ * lines between cells). Needs `sips` (macOS) or `uv`.
  */
 export async function splitImage(file: string, grid: { cols: number, rows: number }, roots: string[], { transparent = false, inset = 0 } = {}): Promise<BoardImage[]> {
   if (!within(file, roots)) throw new Error(`${file} is outside the working directory; copy it in first`)
-  if (process.platform !== 'darwin') throw new Error('splitting an image needs macOS (sips)')
+  const tool = await imageTool()
+  if (tool === 'none') throw new Error('cutting an image needs sips (macOS) or uv (https://docs.astral.sh/uv/)')
   const cols = Math.floor(grid.cols), rows = Math.floor(grid.rows)
   if (!(cols >= 1 && rows >= 1 && cols * rows <= 64 && cols * rows > 1)) throw new Error('split into 2 to 64 cells (cols × rows)')
   const size = imageSize(await readFile(file))
@@ -96,6 +119,13 @@ export async function splitImage(file: string, grid: { cols: number, rows: numbe
   const i = Math.round(Math.min(0.2, Math.max(0, inset)) * Math.min(cw, ch))
   const dir = await mkdtemp(join(tmpdir(), 'quickdraw-split-'))
   try {
+    if (tool === 'uv') {
+      await python(['split', file, dir, String(cols), String(rows), String(inset), String(CELL_SIDE)])
+      const names = (await readdir(dir)).filter((n) => n.startsWith('cell-'))
+      const order = (n: string) => n.match(/\d+/g)!.map(Number) // cell-R-C.png
+      names.sort((a, b) => order(a)[0] - order(b)[0] || order(a)[1] - order(b)[1])
+      return await Promise.all(names.map((n) => loadImage(join(dir, n), [dir], { transparent })))
+    }
     const cells: BoardImage[] = []
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {

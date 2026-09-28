@@ -157,15 +157,45 @@ it('turns an image file into a data URL of its size', async () => {
   await expect(loadImage(join(dir, 'a.txt'), [dir])).rejects.toThrow(/not a PNG/)
 })
 
-it.runIf(process.platform === 'darwin')('cuts an even grid into its cells, row by row', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+// a 300 × 200 sheet and a 1500 × 1500 picture, made with whatever is here
+function sheets(dir: string) {
   writeFileSync(join(dir, 'one.png'), PNG_1x1)
-  execFileSync('sips', ['-z', '200', '300', join(dir, 'one.png'), '--out', join(dir, 'sheet.png')], { stdio: 'ignore' })
-  const cells = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir], { inset: 0.1 })
-  // 100 × 100, 10 px off each edge (the top-left one starts 1 px in: sips crops the middle at 0, 0)
-  expect(cells.map((c) => [c.w, c.h])).toEqual([[80, 80], [80, 80], [80, 80], [80, 80], [80, 80], [80, 80]])
-  const edge = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir])
-  expect(edge.map((c) => [c.w, c.h])).toEqual([[99, 99], [100, 99], [100, 99], [99, 100], [100, 100], [100, 100]])
-  await expect(splitImage(join(dir, 'sheet.png'), { cols: 1, rows: 1 }, [dir])).rejects.toThrow(/2 to 64/)
-  await expect(splitImage('/etc/hosts', { cols: 2, rows: 2 }, [dir])).rejects.toThrow(/outside/)
+  const make = (h: number, w: number, out: string) => process.platform === 'darwin'
+    ? execFileSync('sips', ['-z', String(h), String(w), join(dir, 'one.png'), '--out', join(dir, out)], { stdio: 'ignore' })
+    : execFileSync('uv', ['run', '--quiet', '--no-project', '--with', 'pillow', 'python', '-c', `from PIL import Image; Image.new('RGBA', (${w}, ${h}), (255, 0, 0, 255)).save('${join(dir, out)}')`])
+  make(200, 300, 'sheet.png')
+  make(1500, 1500, 'big.png')
+}
+const hasUv = (() => { try { execFileSync('uv', ['--version'], { stdio: 'ignore' }); return true } catch { return false } })()
+
+describe.each([
+  ['sips', process.platform === 'darwin'],
+  ['uv', hasUv],
+])('images with %s', (tool, here) => {
+  afterEach(() => { delete process.env.QUICKDRAW_IMAGE_TOOL })
+  it.runIf(here)('cuts an even grid into its cells, row by row, and shrinks what is large', async () => {
+    process.env.QUICKDRAW_IMAGE_TOOL = tool
+    const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+    sheets(dir)
+    const cells = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir], { inset: 0.1 })
+    expect(cells.map((c) => [c.w, c.h])).toEqual(Array(6).fill([80, 80])) // 100 × 100, 10 px off each edge
+    const edge = await splitImage(join(dir, 'sheet.png'), { cols: 3, rows: 2 }, [dir])
+    // sips crops the middle at 0, 0, so the top-left cell starts 1 px in
+    expect(edge.map((c) => [c.w, c.h])).toEqual(tool === 'sips' ? [[99, 99], [100, 99], [100, 99], [99, 100], [100, 100], [100, 100]] : Array(6).fill([100, 100]))
+    const big = await loadImage(join(dir, 'big.png'), [dir])
+    expect([big.w, big.h, big.src.slice(0, 15)]).toEqual([1024, 1024, 'data:image/jpeg'])
+    const clear = await loadImage(join(dir, 'big.png'), [dir], { transparent: true })
+    expect([clear.w, clear.src.slice(0, 14)]).toEqual([1024, 'data:image/png'])
+    await expect(splitImage(join(dir, 'sheet.png'), { cols: 1, rows: 1 }, [dir])).rejects.toThrow(/2 to 64/)
+    await expect(splitImage('/etc/hosts', { cols: 2, rows: 2 }, [dir])).rejects.toThrow(/outside/)
+  }, 120_000)
+})
+
+it('without sips or uv, images go as they are and sheets are not cut', async () => {
+  process.env.QUICKDRAW_IMAGE_TOOL = 'none'
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
+    writeFileSync(join(dir, 'a.png'), PNG_1x1)
+    await expect(splitImage(join(dir, 'a.png'), { cols: 2, rows: 2 }, [dir])).rejects.toThrow(/needs sips \(macOS\) or uv/)
+  } finally { delete process.env.QUICKDRAW_IMAGE_TOOL }
 })
