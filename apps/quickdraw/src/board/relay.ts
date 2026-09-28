@@ -45,7 +45,13 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
         return
       }
       if (m[0] !== UPDATE) return
-      Y.applyUpdate(ydoc, m.subarray(1), 'relay')
+      try { Y.applyUpdate(ydoc, m.subarray(1), 'relay') } catch (e) {
+        // one that cannot be read (from an older server) must not take the agent down
+        if (ready) return void process.stderr.write(`ignored an update that cannot be read: ${(e as Error).message}\n`)
+        clearTimeout(timer)
+        ws.close()
+        return reject(new Error(`the board from ${url} cannot be read: ${(e as Error).message}`))
+      }
       if (ready) return
       // the server answers the state vector first: from here on we are in sync
       ready = true
