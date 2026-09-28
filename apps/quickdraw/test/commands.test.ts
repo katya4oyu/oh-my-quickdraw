@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Y from 'yjs'
@@ -11,6 +12,8 @@ import { main } from '../src/commands/index.ts'
 import { PassThrough } from 'node:stream'
 import { chooseBoard, resolveBoard } from '../src/commands/boards.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
+import { linkPreview, serverOfBoard } from '../src/board/link-preview.ts'
+import { imageSize, smallJpeg } from '../src/agent/images.ts'
 import { PRESENCE, UPDATE, unpackPresence } from '../src/protocol.js'
 
 describe('the CLI on a file board', () => {
@@ -25,6 +28,72 @@ describe('the CLI on a file board', () => {
     expect(JSON.parse(await run('log'))).toHaveLength(1)
     expect(JSON.parse(await run('undo'))).toMatchObject({ reverted: 1 })
     expect(JSON.parse(readFileSync(file, 'utf8')).shapes).toHaveLength(0)
+  })
+})
+
+describe('images, embeds and grids from the CLI', () => {
+  const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  const home = process.cwd()
+  afterEach(() => process.chdir(home))
+
+  it('puts images (whole, or a sheet cut into its cells), embeds, and lays out in columns', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-cli-'))
+    process.chdir(dir) // images are read from the working directory
+    const file = join(dir, 'board.json')
+    process.env.QUICKDRAW_LOG = join(dir, 'log.jsonl')
+    const run = async (...args: string[]) => { let s = ''; await main([...args, '--file', file, '--name', 'Claude'], (o) => { s += o }); return JSON.parse(s) }
+    const shapes = () => JSON.parse(readFileSync(file, 'utf8')).shapes as any[]
+    const get = (id: string) => shapes().find((s) => s.id === id)
+
+    writeFileSync(join(dir, 'dot.png'), PNG_1x1)
+    const { ids: [image] } = await run('image', 'dot.png', '--width', '50')
+    expect(get(image)).toMatchObject({ type: 'image', agent: { name: 'Claude' }, props: { w: 50, h: 50 } })
+    await expect(run('image', '/etc/hosts')).rejects.toThrow(/outside the working directory/)
+
+    const { ids: [page] } = await run('embed', 'https://youtu.be/dQw4w9WgXcQ')
+    const { ids: [card] } = await run('embed', 'https://example.com/a', '--link', '--title', 'An article', '--size', '300x200')
+    writeFileSync(join(dir, 'demo.html'), '<button>hi</button>')
+    const { ids: [html] } = await run('embed', '--html-file', 'demo.html')
+    expect(get(page).props).toMatchObject({ kind: 'url', url: 'https://youtu.be/dQw4w9WgXcQ' })
+    expect(get(card).props).toMatchObject({ kind: 'link', title: 'An article', w: 300, h: 200 })
+    expect(get(card).props.preview).toBeUndefined() // a file board has no server to ask
+    expect(get(html).props).toMatchObject({ kind: 'html', html: '<button>hi</button>' })
+    await expect(run('embed')).rejects.toThrow(/needs a URL/)
+
+    const notes = []
+    for (let i = 0; i < 6; i++) notes.push((await run('note', 'n' + i)).ids[0])
+    await run('arrange', notes.join(','), '--cols', '3', '--at', '0,2000')
+    expect(new Set(notes.map((id) => get(id).y)).size).toBe(2)
+
+    if (process.platform === 'darwin') {
+      execFileSync('sips', ['-z', '200', '200', join(dir, 'dot.png'), '--out', join(dir, 'sheet.png')], { stdio: 'ignore' })
+      const cut = await run('image', 'sheet.png', '--split', '2x2', '--frame', 'Stickers')
+      const pieces = cut.ids.map(get).filter((r: any) => r.type === 'image')
+      expect(pieces).toHaveLength(4)
+      const frame = cut.ids.map(get).find((r: any) => r.isFrame)
+      expect(pieces.every((p: any) => p.frameId === frame.id)).toBe(true)
+    }
+  }, 60_000)
+
+  it('asks the board\'s server for a link card\'s preview, and shrinks its picture to fit the card', async () => {
+    expect(serverOfBoard('ws://127.0.0.1:8795/ws/abc')).toBe('http://127.0.0.1:8795')
+    expect(serverOfBoard('wss://mac.example.ts.net:8795/ws/abc')).toBe('https://mac.example.ts.net:8795')
+    const asked: string[] = []
+    const answer = (body: object, ok = true) => (async (u: string) => { asked.push(u); return { ok, json: async () => body } }) as never
+    expect(await linkPreview('http://h', 'https://example.com/a?b=1', { fetch: answer({ title: 'A', image: 'data:image/png;base64,iVBORw0KGgo=' }) }))
+      .toEqual({ title: 'A', image: 'data:image/png;base64,iVBORw0KGgo=' })
+    expect(asked[0]).toBe('http://h/preview?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1')
+    expect(await linkPreview('http://h', 'https://x', { fetch: answer({ error: 'refused' }, false) })).toBeUndefined()
+    expect(await linkPreview('http://h', 'https://x', { fetch: (async () => { throw new Error('down') }) as never })).toBeUndefined()
+    if (process.platform === 'darwin') { // a picture too big for a card is made small enough
+      const dir = mkdtempSync(join(tmpdir(), 'qd-prev-'))
+      writeFileSync(join(dir, 'dot.png'), PNG_1x1)
+      execFileSync('sips', ['-z', '1200', '1600', join(dir, 'dot.png'), '--out', join(dir, 'big.png')], { stdio: 'ignore' })
+      const small = await smallJpeg('data:image/png;base64,' + readFileSync(join(dir, 'big.png')).toString('base64'), 480)
+      expect(small?.slice(0, 15)).toBe('data:image/jpeg')
+      expect(imageSize(Buffer.from(small!.split(',')[1], 'base64'))).toEqual({ w: 480, h: 360 })
+    }
+    expect(await smallJpeg('https://x/y.png', 480)).toBeNull()
   })
 })
 

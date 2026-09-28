@@ -8,6 +8,8 @@ import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
 import { openBoard } from '../board/open.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
+import { imageSteps } from '../agent/images.ts'
+import { linkPreview, serverOfBoard } from '../board/link-preview.ts'
 
 export const BOARD_USAGE = `Board commands: [--board ID | --file board.json] [--server URL] [--name Agent]
 
@@ -27,11 +29,20 @@ Writing (each command is one operation, undoable as a whole)
   text TEXT [--color C] [--in FRAME] [--at X,Y]
   shape KIND [LABEL] [--color C] [--size WxH] [--in FRAME] [--at X,Y]   KIND: rectangle, ellipse, …
   markdown TEXT | --md-file PATH [--in FRAME] [--at X,Y]
+  embed URL [--link] [--title T] [--size WxH] [--in FRAME] [--at X,Y]
+                                          a page (live from allowed sites: YouTube, Vimeo, Figma,
+                                          CodePen, Google Maps), else a link card; --link: a card
+  embed --html-file PAGE.html [--title T] [--size WxH] [--in FRAME] [--at X,Y]
+                                          a self-contained HTML page, run when a viewer presses Run
+  image FILE [--width N] [--in FRAME] [--at X,Y]
+                                          a PNG, JPEG, GIF or WebP in the working directory
+  image FILE --split COLSxROWS [--inset 0.1] [--width N] [--frame TITLE] [--at X,Y]
+                                          a sheet cut into its cells, laid out as on the sheet
   frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH]
   arrow FROM TO [--color C] [--line]
   update ID [--text TEXT] [--color C]
   move ID (--to X,Y | --by DX,DY)
-  arrange ID,ID,… [--layout grid|row|column] [--gap N] [--at X,Y]   frames count with their titles
+  arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
                                           to fit inside it (the frame keeps its size)
   delete ID…                               only shapes an agent added
@@ -105,12 +116,14 @@ const OPTIONS = {
   at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
   text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
   gap: { type: 'string' }, line: { type: 'boolean' }, 'md-file': { type: 'string' }, help: { type: 'boolean', short: 'h' },
+  cols: { type: 'string' }, link: { type: 'boolean' }, title: { type: 'string' }, 'html-file': { type: 'string' },
+  width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
   frame: { type: 'string' }, ids: { type: 'string' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
+export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
 
 export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
@@ -166,6 +179,23 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = runOp(store, o.name, (ops) => ops.markdown(md, common)); break
       }
+      case 'embed': {
+        const html = o['html-file'] ? await readFile(o['html-file'], 'utf8') : undefined
+        const link = args[0]
+        if (html == null && !link) throw new Error('embed needs a URL, or --html-file PAGE.html')
+        // a card's title and picture, fetched by the server as the page does; a file board has none
+        const preview = html == null && url ? await linkPreview(serverOfBoard(url), link) : undefined
+        done = runOp(store, o.name, (ops) => ops.embed({ url: link, html, link: o.link, title: o.title, preview }, common)); break
+      }
+      case 'image': {
+        if (!args[0]) throw new Error('image needs a file')
+        const grid = pair(o.split, 'grid')
+        const steps = await imageSteps(resolve(args[0]), {
+          w: o.width ? Number(o.width) : undefined, at: point(o.at), in: o.in, frame: o.frame,
+          split: grid && { cols: grid[0], rows: grid[1], inset: o.inset ? Number(o.inset) : undefined },
+        }, [process.cwd()])
+        done = applySteps(store, o.name, steps as never); break
+      }
       case 'frame':
         done = runOp(store, o.name, (ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
       case 'arrow':
@@ -177,7 +207,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         done = runOp(store, o.name, (ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
       }
       case 'arrange':
-        done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
+        done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
       case 'fit':
         done = runOp(store, o.name, (ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
       case 'delete':

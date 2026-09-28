@@ -13,6 +13,8 @@ export interface Operations {
   markdown(md: string, opts?: Placement): string
   /** An image from a data URL of its natural size; `w`: shown width (400 at most by default). */
   image(src: string, natural: { w: number, h: number }, opts?: Placement): string
+  /** A web page (live where allowed, else its link card), a link card (`link`), or inline HTML (runs when a viewer presses Run). */
+  embed(what: { url?: string, html?: string, link?: boolean, title?: string, preview?: EmbedPreview }, opts?: Placement): string
   frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[] }): string
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
   update(id: string, change: { text?: string, color?: ColorId }): string
@@ -34,10 +36,15 @@ export interface Operation<T = unknown> {
 }
 
 /** A step of `applySteps`: `{ do: 'note', text, … }`; `ref` names what it adds, `"@ref"` points at it. */
+/** A link card's preview, as quickdraw-embed stores it (the image an inline data URL). */
+export interface EmbedPreview { title?: string, description?: string, siteName?: string, image?: string }
+
 export interface Step { do: string, ref?: string, [field: string]: unknown }
 
 export interface BoardDescription {
-  frames: { id: string, title: string, aspect?: number, x: number, y: number, w: number, h: number, members: string[] }[]
+  frames: { id: string, title: string, aspect?: number, x: number, y: number, w: number, h: number, members: string[],
+    /** a snapshot of a shared screen (quickdraw-screenshare): when and by whom */
+    snapshot?: { at: number, by: string } }[]
   items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, x: number, y: number, w: number, h: number }[]
   arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string }[]
 }

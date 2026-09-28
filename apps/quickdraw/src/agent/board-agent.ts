@@ -18,9 +18,9 @@ import { join } from 'node:path'
 import { Renderer } from '../board/render.ts'
 import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
-import { loadImage, splitImage } from './images.ts'
+import { imageSteps } from './images.ts'
 
-import type { AgentLimit, AgentModel } from 'quickdraw-agent'
+import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
 export interface Participant {
   id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string
@@ -135,9 +135,11 @@ const ADD_IMAGE = {
 export interface JoinOptions {
   /** where image files may be read from: the working directory first (relative paths are in it) */
   imageRoots?: string[]
+  /** a link card's preview for add_embed (see ../board/link-preview.ts); without it, cards show the link's host */
+  preview?: (url: string) => Promise<EmbedPreview | undefined>
 }
 
-export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()] }: JoinOptions = {}): Promise<BoardAgent> {
+export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()], preview }: JoinOptions = {}): Promise<BoardAgent> {
   if (!board.relay) throw new Error('an agent needs a live board (quickdraw serve), not a file')
   const relay = board.relay
   const approvals = new Map<string, (allow: boolean) => void>()
@@ -186,6 +188,10 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
       const tool = BOARD_TOOLS.find((t) => t.name === name)
       if (!tool) throw new Error(`no tool ${name}`)
+      if (name === 'add_embed' && preview) {
+        const a = (args ?? {}) as Record<string, unknown>
+        if (typeof a.url === 'string' && a.html == null) args = { ...a, preview: await preview(a.url) }
+      }
       if (name === 'read_board') {
         const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
         return typeof result === 'string' ? result : JSON.stringify(result)
@@ -278,23 +284,10 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const pick = which === 'latest' ? made.at(-1) : /^\d+$/.test(which) ? made[Number(which) - 1] : null
     if ((which === 'latest' || /^\d+$/.test(which)) && !pick) throw new Error(made.length ? `there is no image ${which}; you made ${made.length}` : 'you have not generated an image for this request')
     const file = pick ? pick.file : resolvePath(imageRoots[0], which)
-    if (args.split) {
-      // the cells, laid out as on the sheet, as one operation (one undo)
-      const cells = await splitImage(file, args.split, imageRoots, { transparent: pick?.transparent, inset: args.split.inset })
-      const refs = cells.map((_, i) => `cell${i}`)
-      const steps: object[] = cells.map((img, i) => ({ do: 'image', ref: refs[i], src: img.src, natural: { w: img.w, h: img.h }, w: args.w ?? Math.min(img.w, 160) }))
-      steps.push({ do: 'arrange', ids: refs.map((r) => '@' + r), layout: 'grid', cols: Math.floor(args.split.cols), gap: 16, ...(args.at ? { at: args.at } : {}) })
-      if (args.frame) steps.push({ do: 'frame', title: String(args.frame), around: refs.map((r) => '@' + r) })
-      return (store: StoreType) => {
-        const { op, diff, result } = applySteps(store as never, me.name, steps as never)
-        return { op, diff, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
-      }
-    }
-    const img = await loadImage(file, imageRoots, { transparent: pick?.transparent })
-    const step = { do: 'image', src: img.src, natural: { w: img.w, h: img.h }, w: args.w, at: args.at, in: args.in }
+    const steps = await imageSteps(file, args, imageRoots, { transparent: pick?.transparent })
     return (store: StoreType) => {
-      const { op, diff, result } = applySteps(store as never, me.name, [step])
-      return { op, diff, ids: [String((result as unknown[])[0])] }
+      const { op, diff, result } = applySteps(store as never, me.name, steps as never)
+      return { op, diff, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
     }
   }
 

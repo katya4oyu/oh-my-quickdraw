@@ -1,6 +1,6 @@
 ---
 name: quickdraw
-description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards and frames on it, draw diagrams (shapes and arrows), tidy it up, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes or frames, or asks to put something on the board.
+description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), tidy it up, act on the feedback people wrote on snapshots of a shared screen, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames or snapshots, or asks to put something on the board.
 ---
 
 # Quickdraw board
@@ -45,10 +45,36 @@ quickdraw text "Heading"
 quickdraw shape rectangle "Label" [--size 180x100]   # rectangle ellipse triangle diamond hexagon star cloud
 quickdraw markdown --md-file notes.md                # a Markdown card (write the file first; "\n" in quotes is not a newline)
 quickdraw frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses existing shapes
-quickdraw arrow FROM_ID TO_ID                         # follows the shapes when they move in later operations
+quickdraw frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
+quickdraw arrow FROM_ID TO_ID [--line]                # follows the shapes when they move in later operations; --line: no arrowhead
 ```
 
+`--at X,Y` is the top-left corner in board coordinates (`read --format json` gives positions and sizes).
+
 Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, green, light-green, light-red, red.
+
+## Images, videos and web pages
+
+```sh
+quickdraw image shot.png [--width 600] [--in FRAME_ID]           # PNG, JPEG, GIF or WebP from the working directory
+quickdraw image stickers.png --split 4x3 [--frame "Stickers"]    # a sheet cut into its cells, one image each
+quickdraw embed https://youtu.be/…                               # a video, a Figma file, a map: plays live on the board
+quickdraw embed https://example.com/article [--title "…"]        # any other link: a card with its title and picture
+quickdraw embed --html-file demo.html [--size 480x360]           # a small prototype or demo, self-contained
+```
+
+- Images are shrunk to keep the board light (1024 px at most); `--width` is how wide it is shown (400 by default).
+- `--split COLSxROWS` needs an even grid: equal cells, one item in each, nothing crossing the cell edges. `--inset 0.1` trims the edges of each cell (gutters or lines between cells).
+- A URL plays live only from allowed sites (YouTube, Vimeo, Figma, CodePen, Google Maps) and each viewer's browser decides; anything else shows as a link card. `--link` makes a card even for an allowed site.
+- An HTML page runs only when someone on the board presses **Run**, in a sandbox with no network: inline scripts, styles and `data:` images only. Keep it self-contained.
+
+## Snapshots: feedback on an app
+
+When people review an app together they share a screen, and snapshots of it land on the board: frames that `read` shows as `(snapshot of a shared screen; …)`, holding a `(screenshot)`. The notes, pen strokes and arrows people put in a snapshot are their **feedback on the app** — the code in your working directory, not the board.
+
+1. `quickdraw read` to find the snapshots and the notes in them.
+2. Look at each one: `quickdraw export --format png --frame FRAME_ID --out snap.png`, then view the PNG — it shows what a circle or an arrow points at, which text cannot.
+3. Change the code for each point, then say which points you did and which you did not (and why). Do not "answer" on the board unless asked.
 
 ## Frames keep their size
 
@@ -78,14 +104,14 @@ Write the steps as JSON and apply them as **one** operation (one undo). Name wha
 quickdraw apply steps.json      # or: … apply - < steps.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
+Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
 
 ## Change and tidy
 
 ```sh
 quickdraw update ID --text "New text" [--color green]   # notes, text, shape labels, Markdown, frame titles
 quickdraw move ID --to X,Y        # or --by DX,DY; moving a frame moves what is in it
-quickdraw arrange ID,ID,ID --layout grid|row|column [--gap 24] [--at X,Y]
+quickdraw arrange ID,ID,ID --layout grid|row|column [--cols 4] [--gap 24] [--at X,Y]
 quickdraw fit FRAME_ID [ID,ID,…]  # shrink the frame's contents (and these) together to fit inside it
 quickdraw delete ID …             # only shapes an agent added; people's shapes are refused
 ```
@@ -109,9 +135,10 @@ quickdraw export --format md --out board.md
 quickdraw export --format png --out board.png [--theme dark] [--scale 2] [--transparent]
 quickdraw export --format png --frame FRAME_ID --out slide.png   # just the frame's contents
 quickdraw export --format png --frame all --out slides/         # one PNG per frame
+quickdraw export --format png --ids ID,ID --out part.png         # just these shapes
 ```
 
-PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out of sight, and is gone when the command ends. Look at the PNG to check a diagram you drew.
+PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out of sight, and is gone when the command ends. Look at the PNG to check a diagram you drew, or to see what text cannot tell (a screenshot, where a stroke or an arrow points). Embeds show as their placeholder or card, not the live page.
 
 ## Good habits
 

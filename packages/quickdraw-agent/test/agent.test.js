@@ -213,3 +213,60 @@ describe('arrange', () => {
     expect([xs.size, ys.size]).toEqual([4, 2])
   })
 })
+
+describe('embeds', () => {
+  const PREVIEW = { title: 'Quickdraw', siteName: 'GitHub', image: 'data:image/jpeg;base64,/9j/4AAQ' }
+  it('puts a page, a link card or inline HTML in free space, marked, and undoes it', () => {
+    const store = board()
+    store.put(human('shape:h', 'Mine', 0, 0))
+    const { op, diff, result: [page, card, html] } = applySteps(store, 'Codex', [
+      { do: 'embed', url: 'https://youtu.be/dQw4w9WgXcQ' },
+      { do: 'embed', url: 'https://github.com/katya4oyu/quickdraw', link: true, title: 'The fork', preview: PREVIEW },
+      { do: 'embed', html: '<button>hi</button>', w: 200, h: 120 },
+    ])
+    expect(op).toMatch(/^op:/)
+    expect(store.get(page)).toMatchObject({ type: 'embed', agent: { name: 'Codex' }, props: { kind: 'url', url: 'https://youtu.be/dQw4w9WgXcQ', w: 480, h: 270 } })
+    expect(store.get(card).props).toMatchObject({ kind: 'link', title: 'The fork', preview: PREVIEW })
+    expect(store.get(html).props).toMatchObject({ kind: 'html', html: '<button>hi</button>', w: 200, h: 120 })
+    expect(store.get(page).x).toBeGreaterThan(200) // clear of the person's note
+    const md = boardToMarkdown(store)
+    expect(md).toMatch(/\[embed, by Codex\] The fork/)
+    expect(undoDiff(store, diff).reverted).toBe(3)
+    expect(store.shapes().map((s) => s.id)).toEqual(['shape:h'])
+  })
+
+  it('shows a plain http link as a card, and refuses what is not a page', () => {
+    const store = board()
+    const { result: [id] } = applySteps(store, 'Codex', [{ do: 'embed', url: 'http://example.com/' }])
+    expect(store.get(id).props.kind).toBe('link')
+    expect(() => applySteps(store, 'Codex', [{ do: 'embed', url: 'javascript:alert(1)' }])).toThrow(/http\(s\) URL/)
+    expect(() => applySteps(store, 'Codex', [{ do: 'embed' }])).toThrow(/http\(s\) URL/)
+    expect(() => applySteps(store, 'Codex', [{ do: 'embed', html: 'x'.repeat(200_001) }])).toThrow(/too long/)
+    expect(store.shapes()).toHaveLength(1)
+  })
+
+  it('is a board tool too', () => {
+    const store = board()
+    const tool = BOARD_TOOLS.find((t) => t.name === 'add_embed')
+    const { ids: [id] } = tool.run(store, { url: 'https://www.figma.com/file/abc', at: { x: 10, y: 20 } }, { name: 'Codex' })
+    expect(store.get(id)).toMatchObject({ x: 10, y: 20, props: { kind: 'url' } })
+  })
+})
+
+describe('snapshots', () => {
+  it('reads a snapshot frame as one, and its still as a screenshot', () => {
+    const store = board()
+    const { result: [frame, image] } = applySteps(store, 'Ann', [
+      { do: 'frame', title: '10:32 · Ann', at: { x: 0, y: 0 }, w: 600, h: 400 },
+      { do: 'image', src: 'data:image/png;base64,iVBORw0KGgo=', natural: { w: 400, h: 300 }, at: { x: 24, y: 24 } },
+    ])
+    store.update(frame, { snapshot: { at: 5, by: 'Ann', imageId: image } })
+    store.put(human('shape:fb', 'Button is cut off', 450, 100))
+    const d = describeBoard(store)
+    expect(d.frames[0]).toMatchObject({ id: frame, snapshot: { at: 5, by: 'Ann' } })
+    expect(d.items.find((it) => it.id === image).text).toBe('(screenshot)')
+    const md = boardToMarkdown(store)
+    expect(md).toMatch(/## 10:32 · Ann \(snapshot of a shared screen; its notes and marks are feedback; id /)
+    expect(md).toMatch(/Button is cut off/)
+  })
+})

@@ -21,7 +21,7 @@ undoDiff(store, diff) // later: reverts what nobody changed since
 | Tool | Does |
 | --- | --- |
 | `read_board` | The board as a Markdown outline (frames, shapes, connections, with ids), or as data |
-| `add_note`, `add_text`, `add_shape`, `add_markdown`, `add_frame`, `add_arrow` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
+| `add_note`, `add_text`, `add_shape`, `add_markdown`, `add_embed`, `add_frame`, `add_arrow` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
 | `update_shape`, `move_shape`, `arrange_shapes` | Changes text or color, moves (a frame brings its members), lays out |
 | `delete_shapes` | Only what an agent added |
 | `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`) |
@@ -30,7 +30,8 @@ A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `di
 
 ## Operations
 
-- **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown`.
+- **Reading**: `describeBoard` (frames and members, shapes with text and bounds, which shapes arrows connect) and `boardToMarkdown`. A snapshot of a shared screen ([`quickdraw-screenshare`](../quickdraw-screenshare)) reads as one: its frame carries `snapshot: { at, by }`, its still reads as `(screenshot)`.
+- **Embeds**: an `embed` step (`{ do: 'embed', url | html, link?, title?, preview? }`) puts a [`quickdraw-embed`](../quickdraw-embed) page, link card or inline HTML. `preview` is a link card's title and picture, which the runtime fetches first (a page cannot: CORS); a plain `http://` link is always a card.
 - **Images**: an `image` step (`{ do: 'image', src: 'data:image/…', natural: { w, h }, w?, at?, in? }`) adds the image's asset and its shape; a runtime that reads files turns a file into that step.
 - **Writing** (`runOp`, `applySteps`): each operation is one store transaction, all or nothing. What an agent adds carries `agent: { name, op }`; it may move and edit anything but delete only what an agent added. Arrows between shapes keep `link: { from, to }` and follow them when they move in a later operation.
 - **The diff** compares each record the operation touched, before and after — including what listeners changed in response, such as frame membership — so `undoDiff` reverts the whole operation, and only where nobody has changed things since.

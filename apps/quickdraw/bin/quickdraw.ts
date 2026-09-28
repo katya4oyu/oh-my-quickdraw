@@ -63,6 +63,7 @@ if (command === 'serve') {
   const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
   const { openBoard } = await import('../src/board/open.ts')
   const { joinBoard } = await import('../src/agent/board-agent.ts')
+  const { linkPreview, serverOfBoard } = await import('../src/board/link-preview.ts')
   const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
   const { runVoice } = await import('../src/agent/voice.ts')
   const cwd = process.cwd()
@@ -80,7 +81,7 @@ if (command === 'serve') {
     const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
     const remote = values['allow-remote'] === true
     const voice = values['no-voice'] !== true
-    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice }, { imageRoots: [cwd, generatedImages] })
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice }, { imageRoots: [cwd, generatedImages], preview: (link) => linkPreview(serverOfBoard(url), link) })
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
       codex.close()

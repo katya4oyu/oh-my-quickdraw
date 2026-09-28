@@ -6,7 +6,7 @@
 import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
 import { createFrame, frameTitle, isFrame, renameFrame } from 'quickdraw-frames'
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
-import { TYPE as EMBED } from 'quickdraw-embed'
+import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { estimateWidth } from './measure.js'
 
 const GAP = 40
@@ -55,12 +55,15 @@ const byPosition = (a, b) => Math.round(a.y / 40) - Math.round(b.y / 40) || a.x 
 export function describeBoard(store) {
   const shapes = store.shapes().filter((s) => s.typeName === 'shape')
   const solid = shapes.filter((s) => !isLine(s) && !isFrame(s) && !isTitle(s))
+  // a snapshot (quickdraw-screenshare): a frame holding a still of a shared screen
+  const stills = new Set(shapes.filter((f) => isFrame(f) && f.snapshot?.imageId).map((f) => f.snapshot.imageId))
   const frames = shapes.filter(isFrame).map((f) => ({
     id: f.id, title: frameTitle(store, f.id), ...(f.aspect ? { aspect: f.aspect } : {}), ...box(f),
+    ...(typeof f.snapshot?.at === 'number' ? { snapshot: { at: f.snapshot.at, by: f.snapshot.by ?? '' } } : {}),
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s)).map((s) => ({
-    id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: textOf(store, s), ...box(s),
+    id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
     ...(s.agent ? { by: s.agent.name } : {}),
@@ -84,7 +87,8 @@ export function boardToMarkdown(store) {
   }
   const out = ['# Board', '']
   for (const f of frames) {
-    out.push(`## ${f.title || 'Frame'} (frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}; id ${f.id})`, '')
+    const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback' : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
+    out.push(`## ${f.title || 'Frame'} (${kind}; id ${f.id})`, '')
     const members = f.members.map((id) => byId.get(id)).filter(Boolean)
     out.push(...(members.length ? members.map(line) : ['- (empty)']), '')
   }
@@ -199,6 +203,20 @@ function operations(store, name, op) {
       const w = opts.w ?? 360
       const at = opts.at ?? place(w, 240, opts)
       const id = createMarkdown(store, { x: at.x, y: at.y, w, md: String(md) })
+      store.update(id, { agent })
+      focus = at
+      return id
+    },
+    // a web page (live where the viewer's rules allow it, else its link card),
+    // a link card (`link`), or inline HTML (runs when a viewer presses Run)
+    embed({ url, html, link = false, title, preview } = {}, opts = {}) {
+      const kind = html != null ? 'html' : link || /^http:\/\//i.test(String(url)) ? 'link' : 'url' // a page only over https
+      const [w0, h0] = kind === 'html' ? [400, 300] : kind === 'link' ? [320, 260] : [480, 270]
+      const w = opts.w ?? w0, h = opts.h ?? h0
+      const at = opts.at ?? place(w, h, opts)
+      const id = createEmbed(store, { x: at.x, y: at.y, w, h, kind, url: url == null ? undefined : String(url), html: html == null ? undefined : String(html), title, preview })
+      const err = validateEmbed(store.get(id))
+      if (err) throw new Error(`embed: ${err === 'bad props.url' ? 'needs an http(s) URL, or html' : err}`)
       store.update(id, { agent })
       focus = at
       return id
@@ -399,6 +417,7 @@ export function applySteps(store, name, steps) {
         case 'shape': out = ops.shape(s.shape ?? 'rectangle', s.text ?? s.label ?? '', opts(s)); break
         case 'markdown': out = ops.markdown(s.text ?? s.md ?? '', opts(s)); break
         case 'image': out = ops.image(s.src, s.natural, opts(s)); break
+        case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r) }); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color }); break
