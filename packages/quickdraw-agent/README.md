@@ -36,3 +36,22 @@ A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `di
 - **Text in Node**: `installMeasure` provides an estimating stand-in for the canvas the core measures text with, so notes and text can be laid out. Browsers draw with real measurements.
 
 Types: [`types/index.d.ts`](types/index.d.ts).
+
+## Agent panel
+
+`createAgentPanel` adds the human side of agents to an editor. The host injects participants, request/reply transport, events and stored threads; this package does not choose a runtime or persist anything.
+
+```js
+import { createAgentPanel, agentTools } from 'quickdraw-agent'
+import { createToolbar } from 'quickdraw-toolbar'
+
+const panel = createAgentPanel({ editor, host })
+const ai = agentTools(panel)
+createToolbar(editor, { rail: [...ai.rail], context: [...ai.context] })
+```
+
+The panel sends `{ id, to, text, context: { shapeIds, frameIds, viewport }, anchor }` requests. The panel sits in the core's UI, in its look: a card left of the toolbar's rail on wide screens, a sheet from the bottom on phones; it starts hidden, and the rail's AI button (or `panel.toggle()`) opens it. Each thread gets a pin at the top-right corner of the shape it is about. While the panel is open, what is selected (any number of shapes and frames) is what a request is about, shown above the input and set aside with its ×; the selection item opens the panel on one shape; a committed note beginning with `@AI` or `@<agent name>` sends its remaining text with that note as context and anchor. Host events populate pinned threads; `op` event diffs are undone newest-first with `undoDiff`, reporting records changed since the operation. The panel reports the result to the host with `reply(requestId, { undo: { reverted, skipped } })`, so the host can persist the cleared diffs and undo result. `panel.destroy()` removes its UI and subscriptions.
+
+Host shape: `agents()`, `ask(request)`, `reply(requestId, messageOrApprovalOrUndo)`, `threads()`, and `onEvent(fn)`. Undo replies carry `{ undo: { reverted: number, skipped: string[] } }`. Events carry `requestId` and use `progress`, `message`, `question`, `approval`, `op`, `done`, or `error` types, and `reply` for a person's follow-up: the panel does not add it itself, the host sends it back to every viewer.
+
+Example: [`examples/quickdraw-agent`](../../examples/quickdraw-agent).
