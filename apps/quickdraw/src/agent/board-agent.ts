@@ -17,7 +17,11 @@ import { loadImage, splitImage } from './images.ts'
 
 import type { AgentLimit, AgentModel } from 'quickdraw-agent'
 
-export interface Participant { id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string }
+export interface Participant {
+  id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string
+  /** takes requests and approvals from anyone on the board; else only from the computer running quickdraw serve */
+  remote?: boolean
+}
 
 export interface BoardAgent {
   /** set by the runtime: a new request */
@@ -117,6 +121,11 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   let nextApproval = 1
 
   relay.onMessage((m) => {
+    // the server lets only this computer ask, unless `remote`; checked here too
+    if ((m.kind === 'request' || m.kind === 'reply') && !me.remote && m.local !== true) {
+      if (m.kind === 'request' && m.request?.id) emit(m.request.id, { type: 'error', message: `${me.name} takes requests only from the computer running quickdraw serve.` })
+      return
+    }
     if (m.kind === 'request' && m.request?.id) agent.onRequest(m.request)
     else if (m.kind === 'reply' && typeof m.message === 'string') agent.onReply(m.requestId, m.message)
     else if (m.kind === 'reply' && typeof m.message?.approval === 'string') {

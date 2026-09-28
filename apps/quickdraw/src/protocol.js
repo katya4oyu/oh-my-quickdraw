@@ -12,7 +12,9 @@
 //                    event { event }: progress, message, question, approval, op, done, error
 //   from a page      hello (answered with agents and threads), request { request }, reply { requestId, message } (text,
 //                    { approval, allow } or { undo: { reverted, skipped } })
-//   from the server  agents { agents } (and whenever they change), threads { threads }, joined { id } (to an agent),
+//   from the server  you { local } (to a page: on the computer serving, which agents take requests from
+//                    unless started with --allow-remote; request and reply carry `local` to the agent too),
+//                    agents { agents } (and whenever they change), threads { threads }, joined { id } (to an agent),
 //                    thread { thread } (a new one), event { event } (to every page,
 //                    the sender too: a person's reply comes back as a `reply` event);
 //                    to an agent: request { request }, reply { requestId, message }

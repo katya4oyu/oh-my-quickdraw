@@ -9,13 +9,15 @@ const USAGE = `quickdraw <command>
   serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]
         the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
         SQLite persistence (<data>/boards.sqlite), link previews (/preview)
-  agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]
+  agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]
         Codex joins a board, working in this directory (its files, AGENTS.md
         and your Codex settings), and takes requests from the board's AI panel,
         where people choose the model and effort per request; --model and
         --effort (low, medium, high, …) set the defaults there. Without --board,
         at a terminal, it asks which board; the board's AI panel (and its More
-        menu) has this command for that board, to copy
+        menu) has this command for that board, to copy. It takes requests
+        and approvals only from the computer running quickdraw serve;
+        --allow-remote takes them from anyone on the board (through Tailscale…)
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -45,11 +47,11 @@ if (command === 'serve') {
     allowPositionals: true,
     options: {
       board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
-      model: { type: 'string' }, effort: { type: 'string' },
+      model: { type: 'string' }, effort: { type: 'string' }, 'allow-remote': { type: 'boolean' },
     },
   })
   if (positionals[0] !== 'codex') {
-    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]\n')
+    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n')
     process.exit(1)
   }
   const { basename } = await import('node:path')
@@ -70,7 +72,8 @@ if (command === 'serve') {
     const offered = await initCodex(codex, { model: values.model, effort: values.effort })
     const { homedir } = await import('node:os')
     const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
-    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered }, { imageRoots: [cwd, generatedImages] })
+    const remote = values['allow-remote'] === true
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote }, { imageRoots: [cwd, generatedImages] })
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
       codex.close()
@@ -83,6 +86,7 @@ if (command === 'serve') {
     process.on('SIGTERM', () => leave(0))
     await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
+    console.log(remote ? 'Anyone on the board can ask it (--allow-remote).' : 'Only people on the computer running quickdraw serve can ask it (--allow-remote lets anyone on the board).')
   } catch (e) {
     process.stderr.write(JSON.stringify({ error: (e as Error).message }) + '\n')
     process.exit(1)

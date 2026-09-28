@@ -85,6 +85,8 @@ export interface AgentParticipant {
   /** what it runs on, as the agent says: its account ("ChatGPT Pro"), and how much of its usage limits is used */
   account?: string
   limits?: AgentLimit[]
+  /** takes requests from anyone on the board; else only from the computer the board is served from */
+  remote?: boolean
 }
 export interface AgentLimit {
   /** "5h", "Weekly", … */
@@ -139,6 +141,8 @@ export interface AgentHost {
   onEvent(fn: (event: AgentHostEvent | AgentEvent) => void): void | (() => void)
   /** How to bring an agent to this board, shown (with a copy button) while none has joined. */
   join?(): { text?: string, command: string } | undefined
+  /** Why this viewer may not ask this agent or answer its approvals (shown instead of the input); nothing if they may. */
+  cannotAsk?(agent: AgentParticipant): string | undefined
 }
 export interface AgentEditor {
   readonly store: Store

@@ -263,7 +263,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const send = iconButton(ICONS.send, 'Send', 'qda-send')
   send.type = 'submit'
   input.append(prompt, send)
-  foot.append(chip, opts, input)
+  const lock = el('div', 'qda-muted') // why this viewer may not ask
+  foot.append(chip, opts, lock, input)
   panel.append(head, body, foot)
   ;(container.querySelector('.qd-ui') || container).append(panel)
   const pinLayer = el('div', 'qda-pins')
@@ -272,6 +273,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
 
   const getAgents = () => host.agents() || []
   const agentName = (id) => getAgents().find((a) => a.id === id)?.name || 'AI'
+  // why this viewer may not ask an agent (or answer it), as the host says; nothing if they may
+  const whyNot = (id) => { const a = getAgents().find((x) => x.id === id); return a ? host.cannotAsk?.(a) : undefined }
 
   function show() {
     if (panel.hidden && editor.selection.size) { pendingShapeIds = [...editor.selection]; view = null }
@@ -371,7 +374,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
         const card = el('div', 'qda-ask')
         card.append(el('div', '', text || 'The agent asks for approval.'))
         const settled = answered.has(event.id) || i < thread.events.length - 1
-        if (!settled) {
+        const blocked = !settled && whyNot(thread.request.to)
+        if (blocked) card.append(el('div', 'qda-muted', blocked))
+        else if (!settled) {
           const actions = el('div', 'qda-actions')
           for (const [allow, label] of [[true, 'Allow'], [false, 'Deny']]) {
             const b = el('button', 'qda-btn' + (allow ? ' primary' : ''), label)
@@ -437,8 +442,12 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       usage.title = [agent.account, ...agent.limits.map((l) => `${l.name}: ${limitText(l)}`)].filter(Boolean).join('\n')
     }
     opts.hidden = picker.hidden && modelPick.hidden && usage.hidden
-    prompt.placeholder = inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
-    send.disabled = !prompt.value.trim() || (!inThread && !agents.length)
+    const blocked = whyNot(inThread ? threads.get(view).request.to : agent?.id)
+    lock.hidden = !blocked
+    lock.textContent = blocked || ''
+    prompt.disabled = !!blocked
+    prompt.placeholder = blocked ? 'Not from here' : inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
+    send.disabled = !!blocked || !prompt.value.trim() || (!inThread && !agents.length)
   }
 
   // a select's options, rebuilt only when they change (an open picker stays open)
@@ -564,7 +573,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     editingNoteId = null
     const shape = id && store.get(id)
     if (!shape || shape.type !== 'note' || hasAgentThreadForAnchor(id, threads.values())) return
-    const mention = detectAgentMention(shape.props.text, getAgents())
+    const mention = detectAgentMention(shape.props.text, getAgents().filter((a) => !host.cannotAsk?.(a)))
     if (!mention) return
     sendRequest(buildAgentRequest({
       id: crypto.randomUUID(), to: mention.to, text: mention.text, editor, options: optionsFor(mention.to),
@@ -598,7 +607,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   foot.addEventListener('submit', (event) => {
     event.preventDefault()
     const text = prompt.value.trim()
-    if (!text) return
+    if (!text || send.disabled) return
     prompt.value = ''
     prompt.style.height = 'auto'
     if (view && threads.has(view)) host.reply(view, text)

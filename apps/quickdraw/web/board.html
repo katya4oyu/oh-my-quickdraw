@@ -80,6 +80,7 @@
     // the AI panel: agents on this board and requests to them, through the relay
     // (AGENT messages, /protocol.js), which keeps the threads
     let agents = []
+    let here = false // on the computer running quickdraw serve, as the server says
     const panelListeners = new Set()
     const toPanel = (event) => panelListeners.forEach((fn) => fn(event))
     function sendAgent(message) {
@@ -92,16 +93,20 @@
       onEvent(fn) { panelListeners.add(fn); return () => panelListeners.delete(fn) },
       ask: (request) => sendAgent({ kind: 'request', request }),
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
-      join: () => ({ text: 'Run this in the folder Codex should work in:', command: agentCommand() }),
+      // an agent takes requests from the computer running quickdraw serve only, unless started with --allow-remote
+      cannotAsk: (agent) => (agent.remote || here ? undefined : `${agent.name} takes requests only on the computer running quickdraw serve (or start it with --allow-remote).`),
+      join: () => ({ text: here ? 'Run this in the folder Codex should work in:' : 'Run this in the folder Codex should work in (--allow-remote: so you can ask it from here):', command: agentCommand() }),
     } })
     // `quickdraw agent codex` for this board: its id where that is enough (the
-    // default server), else its page URL, which says the server too
+    // default server), else its page URL, which says the server too; from
+    // another computer, with --allow-remote, or it would not take requests from here
     function agentCommand() {
       const local = /^http:\/\/(localhost|127\.0\.0\.1):8795$/.test(location.origin)
-      return `quickdraw agent codex --board ${local ? boardId : location.origin + '/b/' + boardId}`
+      return `quickdraw agent codex --board ${local ? boardId : location.origin + '/b/' + boardId}${here ? '' : ' --allow-remote'}`
     }
     function onAgentMessage(m) {
-      if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
+      if (m.kind === 'you') { here = m.local === true; toPanel({ type: 'agents' }) }
+      else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
       else if (m.kind === 'threads') toPanel({ type: 'threads', threads: m.threads })
       else if (m.kind === 'thread') toPanel({ type: 'thread', thread: m.thread })
       else if (m.kind === 'event') toPanel({ type: 'event', event: m.event })
