@@ -121,6 +121,10 @@ const STYLE = `
 .qda-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--qd-ink-faint)}
 .qda-dot[data-status=working]{background:var(--qda-accent)}.qda-dot[data-status=waiting]{background:var(--qda-wait)}
 .qda-dot[data-status=error]{background:var(--qda-error)}.qda-dot[data-status=done]{background:var(--qd-ink-soft)}
+.qda-join{display:grid;gap:6px;padding:9px 11px;margin-bottom:6px;border-radius:12px;background:var(--qd-seg-bg)}
+.qda-join>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.qda-join code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:all}
+.qda-join code span{display:inline-block;max-width:100%;overflow-wrap:anywhere}
 .qda-empty{padding:18px 4px;text-align:center;color:var(--qd-ink-soft)}
 .qda-row{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;padding:8px 9px;margin:0 -9px;border-radius:10px;cursor:pointer}
 .qda-row:hover{background:var(--qd-hover)}
@@ -270,7 +274,11 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       who.append(row)
     }
     body.append(who)
-    if (!getAgents().length) who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
+    if (!getAgents().length) {
+      who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
+      const join = host.join?.()
+      if (join) body.append(joinBlock(join))
+    }
     const list = [...threads.values()].reverse()
     if (!list.length) {
       body.append(el('div', 'qda-empty', 'Ask here, from ✦ on a selected shape, or write a note that starts with “@AI”.'))
@@ -284,6 +292,26 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       row.addEventListener('click', () => open(thread.request.id))
       body.append(row)
     }
+  }
+
+  // how to bring an agent here: the host's command, to copy into a terminal
+  function joinBlock({ text, command }) {
+    const box = el('div', 'qda-join')
+    const code = el('code') // wrapped between words; a long one (a URL) within itself
+    command.split(' ').forEach((word, i) => code.append(...(i ? [' '] : []), el('span', '', word)))
+    const copy = el('button', 'qda-btn', 'Copy')
+    copy.type = 'button'
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(command)
+        copy.textContent = 'Copied'
+        setTimeout(() => { copy.textContent = 'Copy' }, 1500)
+      } catch { getSelection()?.selectAllChildren(code) } // no clipboard here: selected, to copy by hand
+    })
+    const row = el('div')
+    row.append(el('span', 'qda-muted', text || ''), copy)
+    box.append(row, code)
+    return box
   }
 
   function renderThread(thread) {

@@ -13,7 +13,9 @@ const USAGE = `quickdraw <command>
         Codex joins a board, working in this directory (its files, AGENTS.md
         and your Codex settings), and takes requests from the board's AI panel,
         where people choose the model and effort per request; --model and
-        --effort (low, medium, high, …) set the defaults there
+        --effort (low, medium, high, …) set the defaults there. Without --board,
+        at a terminal, it asks which board; the board's AI panel (and its More
+        menu) has this command for that board, to copy
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -51,7 +53,7 @@ if (command === 'serve') {
     process.exit(1)
   }
   const { basename } = await import('node:path')
-  const { resolveBoard, serverOf } = await import('../src/commands/boards.ts')
+  const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
   const { openBoard } = await import('../src/board/open.ts')
   const { joinBoard } = await import('../src/agent/board-agent.ts')
   const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
@@ -60,7 +62,9 @@ if (command === 'serve') {
   const name = values.name ?? `Codex · ${folder}`
   const id = values.id ?? ('codex-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
   try {
-    const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server))
+    // at a terminal, several boards are a choice; elsewhere (piped, an agent) the command fails and lists them
+    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, 'quickdraw agent codex') : undefined
+    const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
     const board = await openBoard({ url, name })
     const codex = startAppServer(cwd)
     const offered = await initCodex(codex, { model: values.model, effort: values.effort })

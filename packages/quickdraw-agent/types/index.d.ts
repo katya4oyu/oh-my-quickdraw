@@ -127,6 +127,8 @@ export interface AgentHost {
   reply(requestId: string, message: string | { approval: string, allow: boolean } | { undo: AgentUndoResult }): void | Promise<void>
   threads(): AgentThread[]
   onEvent(fn: (event: AgentHostEvent | AgentEvent) => void): void | (() => void)
+  /** How to bring an agent to this board, shown (with a copy button) while none has joined. */
+  join?(): { text?: string, command: string } | undefined
 }
 export interface AgentEditor {
   readonly store: Store

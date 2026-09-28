@@ -92,7 +92,14 @@
       onEvent(fn) { panelListeners.add(fn); return () => panelListeners.delete(fn) },
       ask: (request) => sendAgent({ kind: 'request', request }),
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
+      join: () => ({ text: 'Run this in the folder Codex should work in:', command: agentCommand() }),
     } })
+    // `quickdraw agent codex` for this board: its id where that is enough (the
+    // default server), else its page URL, which says the server too
+    function agentCommand() {
+      const local = /^http:\/\/(localhost|127\.0\.0\.1):8795$/.test(location.origin)
+      return `quickdraw agent codex --board ${local ? boardId : location.origin + '/b/' + boardId}`
+    }
     function onAgentMessage(m) {
       if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
       else if (m.kind === 'threads') toPanel({ type: 'threads', threads: m.threads })
@@ -105,6 +112,7 @@
     const svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
     const ICONS = {
       boards: svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'),
+      terminal: svg('<path d="m4 17 6-5-6-5"/><path d="M12 19h8"/>'),
       rename: svg('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>'),
       versions: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
     }
@@ -123,6 +131,7 @@
           { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
           { id: 'rename', title: 'Rename board…', icon: ICONS.rename, run: renameBoard },
           { id: 'versions', title: 'Versions…', icon: ICONS.versions, run: () => (versions ??= createVersions(boardId, board.editor.container)).open() },
+          { id: 'agent-command', title: 'Copy AI command', icon: ICONS.terminal, run: copyAgentCommand },
           '-',
           // Markdown cards and embeds are allowed in, checked by their own validators
           importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }),
@@ -137,6 +146,11 @@
     let boardTitle = ''
     const showTitle = (b) => { if (b) { boardTitle = b.title; document.title = `${b.title} — Quickdraw` } }
     fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then(showTitle)
+    async function copyAgentCommand() {
+      const command = agentCommand()
+      const copied = await navigator.clipboard.writeText(command).then(() => true, () => false)
+      prompt(copied ? 'Copied. Run it in the folder Codex should work in:' : 'Run this in the folder Codex should work in:', command)
+    }
     async function renameBoard() {
       const title = prompt('Board title', boardTitle)
       if (title == null) return

@@ -33,6 +33,27 @@ cd ~/src/some-project
 quickdraw agent codex --board ID     # "Codex · some-project" joins the board
 ```
 
+### Which board it joins
+
+No need to note the board's id down:
+
+- **Copy it from the board.** While no AI has joined, the board's AI panel (✦ on the right) shows the command for that board, with a Copy button; with an AI already there, "…" → *Copy AI command* copies it. It names the board by its id on this machine's `quickdraw serve` (port 8795), and by its page URL elsewhere (another port, or through `tailscale serve`), which says the server too.
+
+  <img src="docs/agent-join.png" alt="The AI panel of a board no AI has joined: the command quickdraw agent codex --board ID, with a Copy button" width="320">
+
+- **Or choose it at the terminal.** Without `--board`, with several boards on the server, it asks which one:
+
+  ```console
+  $ quickdraw agent codex
+  Which board?
+    1) Plan  (jlge2of3f7)
+    2) Retro  (bfbblsruqg)
+  Number (1-2): 2
+  Next time: quickdraw agent codex --board bfbblsruqg
+  ```
+
+  Only at a terminal: piped or run by another agent, it fails and lists the boards, as the board commands do. With one board it joins that one, and it never makes a board.
+
 Codex joins the board as a participant with a cursor, and the board's AI panel sends it requests. It works in that directory with its files, its `AGENTS.md` and skills, and your own Codex settings (model, sandbox, approvals): asking from the board never gets it more than that. When Codex asks for an approval, the panel shows it to the people on the board.
 
 - It runs `codex app-server` (JSON-RPC over stdio). The board tools of [`quickdraw-agent`](../../packages/quickdraw-agent) go to Codex as client-defined tools (`dynamicTools`, part of app-server's **experimental** API), and run in this process, on its copy of the board: each operation goes to the panel with its diff, so a request can be undone at once, and no board command runs in Codex's sandbox.
@@ -45,7 +66,7 @@ Codex joins the board as a participant with a cursor, and the board's AI panel s
 
 `quickdraw boards | new | read | export | note | text | shape | markdown | frame | arrow | update | move | arrange | delete | apply | log | undo`. They join a board like a browser tab, as one more peer with a cursor, and print JSON.
 
-- **Which board**: `--board` takes an id, the page URL (`https://host/b/<id>`, as the browser shows it) or the relay URL (`ws://host/ws/<id>`); or `$QUICKDRAW_BOARD`; or `--file` for a JSON file. Ids are looked up on `--server` / `$QUICKDRAW_SERVER`, by default this machine's `quickdraw serve`. Without a board, the server's only board is used; with several, the command fails and lists them — it never makes one up. They are built on [`quickdraw-agent`](../../packages/quickdraw-agent)'s operations.
+- **Which board**: `--board` takes an id, the page URL (`https://host/b/<id>`, as the browser shows it) or the relay URL (`ws://host/ws/<id>`); or `$QUICKDRAW_BOARD`; or `--file` for a JSON file. Ids are looked up on `--server` / `$QUICKDRAW_SERVER`, by default this machine's `quickdraw serve`. Without a board, the server's only board is used; with several, the command fails and lists them — it never makes one up. (`quickdraw agent codex` at a terminal asks instead: [Which board it joins](#which-board-it-joins).) They are built on [`quickdraw-agent`](../../packages/quickdraw-agent)'s operations.
 
 - **Undo**: each operation's diff goes to `.quickdraw/log.jsonl` in the working directory (or `$QUICKDRAW_LOG`); `undo` reverts what nobody changed since and reports the rest.
 - **PNG** (`export --format png`): drawn by the core itself in a headless Chrome already on the machine — see below.
