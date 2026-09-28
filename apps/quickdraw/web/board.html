@@ -104,7 +104,7 @@
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
       // an agent takes requests from the computer running quickdraw serve only, unless started with --allow-remote
       cannotAsk: (agent) => (agent.remote || here ? undefined : `${agent.name} takes requests only on the computer running quickdraw serve (or start it with --allow-remote).`),
-      join: () => ({ text: here ? 'Run this in the folder Codex should work in:' : 'Run this in the folder Codex should work in (--allow-remote: so you can ask it from here):', command: agentCommand() }),
+      join: () => ({ text: `Run this in the folder the agent should work in (agent pi instead of agent codex for pi${here ? '' : '; --allow-remote: so you can ask it from here'}):`, command: agentCommand() }),
     } })
     // `quickdraw agent codex` for this board: its id where that is enough (the
     // default server), else its page URL, which says the server too; from
@@ -202,7 +202,7 @@
     async function copyAgentCommand() {
       const command = agentCommand()
       const copied = await navigator.clipboard.writeText(command).then(() => true, () => false)
-      prompt(copied ? 'Copied. Run it in the folder Codex should work in:' : 'Run this in the folder Codex should work in:', command)
+      prompt(copied ? 'Copied. Run it in the folder the agent should work in (agent pi for pi):' : 'Run this in the folder the agent should work in (agent pi for pi):', command)
     }
     async function renameBoard() {
       const title = prompt('Board title', boardTitle)
