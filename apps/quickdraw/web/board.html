@@ -11,6 +11,20 @@
     .cursor { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 100; font: 600 11px system-ui; }
     .cursor svg { display: block; }
     .cursor span { position: absolute; left: 14px; top: 16px; padding: 1px 6px; border-radius: 6px; color: #fff; white-space: nowrap; }
+    /* versions: a list over the board */
+    dialog.versions { width: min(420px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 64px)); padding: 0; border: 1px solid var(--qd-border); border-radius: 16px; background: var(--qd-pop-bg); color: var(--qd-ink-strong); box-shadow: var(--qd-pop-shadow); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+    dialog.versions::backdrop { background: #0003; }
+    .versions header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 8px; }
+    .versions header strong { font-size: 15px; }
+    .versions ul { list-style: none; margin: 0; padding: 0 8px 12px; overflow: auto; max-height: 440px; }
+    .versions li { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 10px; }
+    .versions li:hover { background: var(--qd-hover); }
+    .versions .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .versions .when { color: var(--qd-ink-soft); font-size: 12px; white-space: nowrap; }
+    .versions .auto { color: var(--qd-ink-soft); }
+    .versions button { font: inherit; font-size: 12px; border: 1px solid var(--qd-border); border-radius: 999px; padding: 3px 10px; background: transparent; color: inherit; cursor: pointer; white-space: nowrap; }
+    .versions button.primary { background: var(--qd-on-bg); color: var(--qd-on-ink); border-color: transparent; }
+    .versions .empty { color: var(--qd-ink-soft); padding: 8px; }
   </style>
   <script type="importmap">
     {
@@ -33,7 +47,7 @@
   <div id="board"></div>
   <script type="module">
     import * as Y from 'yjs'
-    import { createQuickdraw } from '@quickdrawjs/core'
+    import { createQuickdraw, pageBounds } from '@quickdrawjs/core'
     import { bindYjs } from 'quickdraw-yjs'
     import { exportTool } from 'quickdraw-export'
     import { importTool } from 'quickdraw-import'
@@ -41,6 +55,7 @@
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
+    import { createVersions } from '/versions.js'
     import { createAgentPanel, agentTools } from 'quickdraw-agent'
     import { UPDATE, SV, PRESENCE, AGENT, pack, packPresence, unpackPresence, packAgent, unpackAgent } from '/protocol.js'
 
@@ -87,6 +102,14 @@
 
     // the right rail puts things on the board; the selection bar acts on the selected one.
     // Markdown and embeds hide themselves on a core without registerShapeType.
+    const svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
+    const ICONS = {
+      boards: svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'),
+      rename: svg('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>'),
+      versions: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>'),
+    }
+    let versions = null // made when first opened
+
     const frames = frameTools()
     const cards = markdownTools()
     const web = embedTools(embeds, { fetchPreview })
@@ -97,6 +120,10 @@
         ...frames.rail, ...cards.rail, ...web.rail,
         '-',
         { id: 'more', title: 'More', icon: MORE_ICON, menu: [
+          { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
+          { id: 'rename', title: 'Rename board…', icon: ICONS.rename, run: renameBoard },
+          { id: 'versions', title: 'Versions…', icon: ICONS.versions, run: () => (versions ??= createVersions(boardId, board.editor.container)).open() },
+          '-',
           // Markdown cards and embeds are allowed in, checked by their own validators
           importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }),
           exportTool(),
@@ -107,7 +134,15 @@
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it
     const boardId = location.pathname.split('/').pop()
-    fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then((b) => { if (b) document.title = `${b.title} — Quickdraw` })
+    let boardTitle = ''
+    const showTitle = (b) => { if (b) { boardTitle = b.title; document.title = `${b.title} — Quickdraw` } }
+    fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then(showTitle)
+    async function renameBoard() {
+      const title = prompt('Board title', boardTitle)
+      if (title == null) return
+      const r = await fetch('/api/boards/' + boardId, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
+      if (r.ok) showTitle(await r.json())
+    }
     let ws = null
     ydoc.on('update', (update, origin) => {
       if (origin !== 'relay' && ws?.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
@@ -189,6 +224,40 @@
     addEventListener('resize', () => cursors.forEach(place))
 
     connect()
+
+    // the list's picture of this board: drawn here once it settles (and when
+    // the page is left), whoever changed it — people or an agent
+    const THUMB = { w: 480, h: 300 }
+    let changed = false, settle = null
+    async function drawThumbnail() {
+      const shapes = editor.store.shapes()
+      if (!shapes.length) return null
+      const bs = shapes.map(pageBounds)
+      const w = Math.max(...bs.map((b) => b.x + b.w)) - Math.min(...bs.map((b) => b.x)) + 96
+      const h = Math.max(...bs.map((b) => b.y + b.h)) - Math.min(...bs.map((b) => b.y)) + 96
+      const png = await editor.exportImage({ background: true, margin: 48, scale: Math.min(1, (2 * THUMB.w) / w, (2 * THUMB.h) / h) })
+      if (!png) return null
+      const img = await createImageBitmap(png)
+      const canvas = Object.assign(document.createElement('canvas'), { width: THUMB.w, height: THUMB.h })
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = editor.theme.background
+      ctx.fillRect(0, 0, THUMB.w, THUMB.h)
+      const k = Math.min(THUMB.w / img.width, THUMB.h / img.height)
+      ctx.drawImage(img, (THUMB.w - img.width * k) / 2, (THUMB.h - img.height * k) / 2, img.width * k, img.height * k)
+      return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    }
+    async function sendThumbnail(leaving = false) {
+      if (!changed) return
+      changed = false
+      const blob = await drawThumbnail().catch(() => null)
+      if (blob) fetch(`/api/boards/${boardId}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: blob, keepalive: leaving }).catch(() => {})
+    }
+    editor.store.listen(() => {
+      changed = true
+      clearTimeout(settle)
+      settle = setTimeout(sendThumbnail, 4000)
+    }, { source: 'all' })
+    addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sendThumbnail(true) })
 
     window.board = board
     window.ydoc = ydoc
