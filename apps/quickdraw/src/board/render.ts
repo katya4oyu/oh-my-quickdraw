@@ -35,12 +35,17 @@ import { createQuickdraw } from '@quickdrawjs/core'
 import { registerMarkdown } from '/markdown/src/index.js'
 import { registerEmbed } from '/embed/src/index.js'
 import { exportFrame } from '/frames/src/index.js'
+import { assetImage } from '/core/src/shapes.js'
 registerMarkdown(); registerEmbed() // embeds draw as their placeholders: no iframes here
 const { editor } = createQuickdraw({ container: document.getElementById('b'), watermark: false })
 window.render = async ({ records, frame, ids, background, scale, theme }) => {
   editor.store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })
   if (theme) editor.setTheme(theme)
   await document.fonts.ready
+  // the core's export draws an image only once its own image cache has it (it
+  // waits on a copy): on a page that has not drawn the board, fill that first
+  const assets = records.filter((r) => r.type === 'image' && r.props?.assetId).map((r) => r.props.assetId)
+  for (let i = 0; i < 200 && !assets.every((id) => assetImage(editor.store, id)); i++) await new Promise((r) => setTimeout(r, 25))
   const blob = frame ? await exportFrame(editor, frame, { scale, background })
     : await editor.exportImage({ ids: ids ? new Set(ids) : null, background, scale })
   if (!blob) return null
