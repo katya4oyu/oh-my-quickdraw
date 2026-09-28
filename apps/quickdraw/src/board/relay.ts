@@ -9,6 +9,8 @@ export interface Relay {
   cursor(x: number | null, y: number | null): void
   /** what the agent is doing, on its cursor and in the row of who is here */
   status(status: 'idle' | 'working' | 'waiting'): void
+  /** what it is doing just now (quickdraw-presence's agentActivity), and on what; null: nothing in particular */
+  activity(kind: string | null, note?: string): void
   /** sends an AGENT message (see ../protocol.js) */
   send(message: object): void
   /** AGENT messages from the server; returns a function that stops listening */
@@ -57,12 +59,17 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
       ready = true
       clearTimeout(timer)
       ydoc.on('update', onUpdate)
-      const me: Presence & { x: number | null, y: number | null, agent: true, agentStatus?: string } = { name, color, x: null, y: null, agent: true }
+      const me: Presence & { x: number | null, y: number | null, agent: true, agentStatus?: string, agentActivity?: string | null, agentNote?: string } = { name, color, x: null, y: null, agent: true }
       const sendPresence = () => { if (ws.readyState === WebSocket.OPEN) ws.send(packPresence(me)) }
       sendPresence() // here, before it points at anything
       resolve({
         cursor(x, y) { Object.assign(me, { x, y }); sendPresence() },
         status(agentStatus) { if (me.agentStatus !== agentStatus) { me.agentStatus = agentStatus; sendPresence() } },
+        activity(kind, note = '') {
+          if (me.agentActivity === kind && me.agentNote === note) return
+          Object.assign(me, { agentActivity: kind, agentNote: note })
+          sendPresence()
+        },
         send(message) { if (ws.readyState === WebSocket.OPEN) ws.send(packAgent(message)) },
         onMessage(fn) { listeners.add(fn); return () => listeners.delete(fn) },
         onClose(fn) { closed = fn },

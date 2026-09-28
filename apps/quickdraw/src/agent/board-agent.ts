@@ -55,6 +55,8 @@ export interface BoardAgent {
   approve(requestId: string, text: string): Promise<boolean>
   /** what the agent is doing overall, shown next to its name */
   status(status: 'idle' | 'working' | 'waiting'): void
+  /** what it is doing just now, by its cursor (quickdraw-presence's agentActivity), and on what; 'done' shows a moment; null: nothing in particular */
+  activity(kind: Activity | null, note?: string): void
   /** what it runs on, shown in the panel: its account and how much of its usage limits is used */
   account(info: { account?: string, limits?: AgentLimit[] }): void
   /** part of the board as a PNG, as drawn (a frame's contents, or some shapes); null when there is nothing */
@@ -66,6 +68,7 @@ export interface BoardAgent {
 }
 
 type Emitted = Omit<AgentEvent, 'requestId'> & Record<string, unknown>
+export type Activity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
@@ -145,6 +148,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const approvals = new Map<string, (allow: boolean) => void>()
   const approvalBase = Date.now().toString(36)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
+  let doneTimer: ReturnType<typeof setTimeout> | undefined
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
   let nextApproval = 1
@@ -174,6 +178,21 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     relay.send({ kind: 'event', event: { ...event, requestId } })
   }
 
+  async function runBoardTool(requestId: string, name: string, args: unknown): Promise<string> {
+    if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
+    const tool = BOARD_TOOLS.find((t) => t.name === name)
+    if (!tool) throw new Error(`no tool ${name}`)
+    if (name === 'add_embed' && preview) {
+      const a = (args ?? {}) as Record<string, unknown>
+      if (typeof a.url === 'string' && a.html == null) args = { ...a, preview: await preview(a.url) }
+    }
+    if (name === 'read_board') {
+      const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
+      return typeof result === 'string' ? result : JSON.stringify(result)
+    }
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name }) as never)
+  }
+
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
@@ -185,18 +204,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return list.length
     },
     async runTool(requestId, name, args) {
-      if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
-      const tool = BOARD_TOOLS.find((t) => t.name === name)
-      if (!tool) throw new Error(`no tool ${name}`)
-      if (name === 'add_embed' && preview) {
-        const a = (args ?? {}) as Record<string, unknown>
-        if (typeof a.url === 'string' && a.html == null) args = { ...a, preview: await preview(a.url) }
-      }
-      if (name === 'read_board') {
-        const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
-        return typeof result === 'string' ? result : JSON.stringify(result)
-      }
-      return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name }) as never)
+      // by its cursor: reading or drawing, then back to thinking
+      agent.activity(name === 'read_board' ? 'reading' : 'drawing')
+      try { return await runBoardTool(requestId, name, args) } finally { agent.activity('thinking') }
     },
     lookAt(request) {
       const shape = request.anchor.shapeId ? board.store.get(request.anchor.shapeId) : undefined
@@ -211,7 +221,13 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     approve(requestId, text) {
       const id = `${approvalBase}:${nextApproval++}`
       emit(requestId, { type: 'approval', id, text })
-      return new Promise((ok) => approvals.set(id, ok))
+      agent.activity('waiting')
+      return new Promise<boolean>((ok) => approvals.set(id, ok)).finally(() => agent.activity('thinking'))
+    },
+    activity(kind, note) {
+      clearTimeout(doneTimer)
+      relay.activity(kind, note)
+      if (kind === 'done') doneTimer = setTimeout(() => relay.activity(null), 2000) // a moment, then nothing
     },
     status(status) {
       relay.send({ kind: 'status', status })

@@ -2,6 +2,8 @@ import type { Editor } from '@quickdrawjs/core'
 
 export type Rect = { x: number, y: number, w: number, h: number }
 export type AgentStatus = 'idle' | 'working' | 'waiting'
+/** what an agent is doing just now, shown by its cursor */
+export type AgentActivity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
 
 /** What a page says about itself; page coordinates, x/y null while off the board. */
 export interface Presence {
@@ -16,6 +18,9 @@ export interface Presence {
   /** set by an agent */
   agent?: boolean
   agentStatus?: AgentStatus
+  agentActivity?: AgentActivity | null
+  /** on what: a search, a command… */
+  agentNote?: string
 }
 export type PresenceMessage = (Partial<Presence> & { id: string | number, gone?: false }) | { id: string | number, gone: true }
 
@@ -30,7 +35,7 @@ export interface PresenceStorage {
   set(key: string, value: unknown): void
 }
 export interface Me { name: string, color: string, status: string }
-export type Peer = Presence & { id: string | number, status: string, agent: boolean, agentStatus: AgentStatus | null, view: Rect | null }
+export type Peer = Presence & { id: string | number, status: string, agent: boolean, agentStatus: AgentStatus | null, agentActivity: AgentActivity | null, agentNote: string, view: Rect | null }
 
 export interface PresenceHandle {
   me(): Me
@@ -59,6 +64,10 @@ export function createPresence(options: {
 }): PresenceHandle
 /** "Ann · reviewing", "Codex · working" */
 export function presenceLabel(p: Partial<Presence> & { name: string }): string
+/** what each activity says, and its sign */
+export const ACTIVITIES: Record<AgentActivity, { text: string, sign: string }>
+/** the sign by an agent's cursor for what it is doing, or '' */
+export function activitySign(p: Partial<Presence>): string
 
 export function edgePoint(box: { w: number, h: number }, p: { x: number, y: number }, margin?: number): { x: number, y: number, angle: number } | null
 export function fitView(box: { w: number, h: number }, view: Rect): { x: number, y: number, z: number }

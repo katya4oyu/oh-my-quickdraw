@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
-import { accountText, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { accountText, activityOf, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
 import { runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
 import { findChrome } from '../src/board/chrome.ts'
@@ -115,6 +115,15 @@ describe('quickdraw agent codex', () => {
     expect(other.events.some((e) => e.type === 'reply' && e.requestId === 'v1')).toBe(true)
   }, 30_000)
 
+  it('shows by the cursor what Codex starts doing, and on what', () => {
+    expect(activityOf({ type: 'reasoning' })).toEqual({ kind: 'thinking' })
+    expect(activityOf({ type: 'webSearch', query: 'tldraw pricing' })).toEqual({ kind: 'searching', note: 'tldraw pricing' })
+    expect(activityOf({ type: 'commandExecution', command: '/bin/zsh -lc "npm test"' })).toEqual({ kind: 'running', note: 'npm test' })
+    expect(activityOf({ type: 'fileChange' })).toEqual({ kind: 'editing' })
+    expect(activityOf({ type: 'imageGeneration' })).toEqual({ kind: 'imaging' })
+    expect(activityOf({ type: 'agentMessage' })).toBeNull()
+  })
+
   it('names the account by its kind and plan, and its usage limits by their windows', () => {
     expect(accountText({ type: 'chatgpt', email: 'a@b.c', planType: 'prolite' })).toBe('ChatGPT Pro Lite')
     expect(accountText({ type: 'chatgpt', planType: 'self_serve_business_usage_based' })).toBe('ChatGPT Self Serve Business Usage Based')
@@ -185,6 +194,12 @@ describe('quickdraw agent codex', () => {
     expect(note).toMatchObject({ type: 'note', props: { text: 'From Codex' }, agent: { name: 'Codex · repo', op: op.op } })
     await person.until(() => person.agents.at(-1)?.[0].status === 'idle')
     await person.until(() => person.presences.at(-1)?.agentStatus === 'idle')
+    // by its cursor, what it did just then: thinks, reads the board, draws, runs a command, waits for the person, is done
+    await person.until(() => person.presences.at(-1)?.agentActivity === 'done')
+    const acts = person.presences.map((p) => p.agentActivity ?? null).filter((a, i, all) => a !== all[i - 1])
+    expect(acts).toEqual([null, 'thinking', 'reading', 'thinking', 'drawing', 'thinking', 'drawing', 'thinking', 'running', 'waiting', 'thinking', 'done'])
+    expect(person.presences.find((p) => p.agentActivity === 'running').agentNote).toBe('ls')
+    await person.until(() => person.presences.at(-1)?.agentActivity === null) // a moment later, nothing in particular
 
     // an image it generated goes on the board with add_image, as one more undoable operation
     const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
