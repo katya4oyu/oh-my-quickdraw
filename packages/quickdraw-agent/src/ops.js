@@ -145,7 +145,11 @@ function operations(store, name, op, { area: startArea } = {}) {
       const f = need(inFrame)
       if (!isFrame(f)) throw new Error(`${inFrame} is not a frame`)
       const fb = pageBounds(f)
-      const taken = store.shapes().filter((s) => s.frameId === f.id && !isTitle(s)).map(pageBounds)
+      // its members, and what lies on it but is not one yet: what this operation
+      // put there (membership follows only once the operation is done)
+      const taken = store.shapes()
+        .filter((s) => s.id !== f.id && !isTitle(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
+        .map(pageBounds)
       for (let y = fb.y + 24; y + h <= fb.y + fb.h - 16; y += 24) {
         for (let x = fb.x + 24; x + w <= fb.x + fb.w - 16; x += 24) {
           const r = { x, y, w, h }
