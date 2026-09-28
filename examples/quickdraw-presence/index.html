@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — presence example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; font: 13px system-ui; }
+    main { position: fixed; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: #999; }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+    section { position: relative; background: #fff; }
+    .board { position: absolute; inset: 0; }
+  </style>
+  <!-- in your own project, a bundler resolves these from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <main>
+    <section><div class="board" id="ann"></div></section>
+    <section><div class="board" id="bo"></div></section>
+  </main>
+  <script type="module">
+    import { createQuickdraw, Store } from '@quickdrawjs/core'
+    import { createPresence } from '../../packages/quickdraw-presence/src/index.js'
+
+    // two people on one board: here they share one Store (an app syncs it, e.g. quickdraw-yjs)
+    const store = new Store()
+    const ann = createQuickdraw({ container: document.getElementById('ann'), store })
+    const bo = createQuickdraw({ container: document.getElementById('bo'), store })
+    const ops = ['Sketch', 'Wireframe', 'Review', 'Ship'].map((text, i) => ({
+      id: 'shape:n' + i, typeName: 'shape', type: 'note', x: i * 700, y: (i % 2) * 500, rot: 0, z: i + 1,
+      props: { text, color: 'yellow', size: 'm', font: 'draw', scale: 1 },
+    }))
+    for (const s of ops) store.put(s)
+
+    // the host: in an app, a relay between pages; here each page's presence goes
+    // straight to the other. Each page keeps its own name (separate storage keys).
+    const inbox = { ann: new Set(), bo: new Set() }
+    const host = (me, other) => ({
+      send: (p) => inbox[other].forEach((fn) => fn({ ...p, id: me })),
+      onMessage(fn) { inbox[me].add(fn); return () => inbox[me].delete(fn) },
+    })
+    createPresence({ editor: ann.editor, host: host('ann', 'bo'), key: 'presence-example-ann', defaults: { name: 'Ann', color: '#e03131' } })
+    createPresence({ editor: bo.editor, host: host('bo', 'ann'), key: 'presence-example-bo', defaults: { name: 'Bo', color: '#1971c2' } })
+
+    // an agent going from note to note, as `quickdraw agent codex` does on a real board:
+    // follow it from the row at the top (✦), or find it by the arrow at the edge
+    let step = 0
+    setInterval(() => {
+      const s = ops[step++ % ops.length]
+      const agentStatus = step % 5 === 0 ? 'waiting' : step % 5 === 4 ? 'idle' : 'working'
+      const p = { id: 'codex', name: 'Codex', color: '#0c8599', agent: true, agentStatus, x: s.x + 100, y: s.y + 100 }
+      for (const fns of Object.values(inbox)) fns.forEach((fn) => fn(p))
+    }, 1800)
+  </script>
+</body>
+</html>

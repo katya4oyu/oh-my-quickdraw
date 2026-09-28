@@ -27,7 +27,7 @@ import { accept, BINARY, CLOSE, frame, parse, PING, PONG } from './websocket.ts'
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -170,6 +170,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   let nextId = 1
   const presence = (id: number, data: object) => frame(BINARY, Buffer.concat([Buffer.from([PRESENCE]), Buffer.from(JSON.stringify({ ...data, id }))]))
   const broadcast = (room: Set<Duplex>, from: Duplex, out: Buffer) => { for (const peer of room) if (peer !== from && peer.writable) peer.write(out) }
+  const presences = new Map<Duplex, Buffer>() // each connection's latest, in memory only: for those who come later
 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
@@ -325,6 +326,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     const peers = room
     peers.add(socket)
     const id = nextId++
+    for (const peer of peers) { const p = presences.get(peer); if (p) socket.write(p) } // who is here already
     let buf: Buffer = Buffer.alloc(0)
     socket.on('data', (chunk: Buffer) => {
       let frames
@@ -340,7 +342,10 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
           boards.append(board, payload.subarray(1))
           broadcast(peers, socket, frame(BINARY, payload))
         } else if (payload[0] === PRESENCE) {
-          try { broadcast(peers, socket, presence(id, JSON.parse(payload.subarray(1).toString()))) } catch {}
+          let out
+          try { out = presence(id, JSON.parse(payload.subarray(1).toString())) } catch { continue }
+          presences.set(socket, out)
+          broadcast(peers, socket, out)
         } else if (payload[0] === LIVE) {
           onLiveFrame(board, peers, socket, payload)
         } else if (payload[0] === SHARE) {
@@ -356,6 +361,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     })
     function drop() {
       if (!peers.delete(socket)) return
+      presences.delete(socket)
       broadcast(peers, socket, presence(id, { gone: true }))
       if (sharers.get(board!)?.socket === socket) { sharers.delete(board!); announceSharing(board!, peers) }
       const agent = agentOf.get(socket)

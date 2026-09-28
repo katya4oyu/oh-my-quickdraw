@@ -58,7 +58,8 @@ describe('a live board', () => {
     ws.close()
 
     expect((peer.get(id) as { props: { text: string } } | undefined)?.props.text).toBe('from the agent')
-    expect(presence.find((p) => p.name === 'Claude')).toMatchObject({ x: 10, y: 20 })
+    expect(presence[0]).toMatchObject({ name: 'Claude', agent: true, x: null, y: null }) // here as soon as it joins, as an agent
+    expect(presence.find((p) => p.name === 'Claude' && p.x != null)).toMatchObject({ x: 10, y: 20 })
 
     // and a second agent session sees what the first wrote (the server kept it)
     const again = await openBoard({ url })

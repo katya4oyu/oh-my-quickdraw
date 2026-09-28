@@ -1,0 +1,26 @@
+{
+  "name": "quickdraw-presence",
+  "version": "0.1.0",
+  "description": "Who is on a Quickdraw board: live cursors with names, colours and a status, a row of people and agents, following someone's view, and arrows at the edge for those out of sight.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}
