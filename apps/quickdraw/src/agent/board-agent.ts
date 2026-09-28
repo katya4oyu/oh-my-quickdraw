@@ -15,7 +15,7 @@ import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
 import { loadImage, splitImage } from './images.ts'
 
-import type { AgentModel } from 'quickdraw-agent'
+import type { AgentLimit, AgentModel } from 'quickdraw-agent'
 
 export interface Participant { id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string }
 
@@ -38,6 +38,8 @@ export interface BoardAgent {
   approve(requestId: string, text: string): Promise<boolean>
   /** what the agent is doing overall, shown next to its name */
   status(status: 'idle' | 'working' | 'waiting'): void
+  /** what it runs on, shown in the panel: its account and how much of its usage limits is used */
+  account(info: { account?: string, limits?: AgentLimit[] }): void
   /** leaves the board */
   close(): Promise<void>
 }
@@ -167,6 +169,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       // the cursor stays a moment after the work, so people see where it ended
       if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
     },
+    account: ({ account, limits }) => relay.send({ kind: 'account', account, limits }),
     close: () => { clearTimeout(hideTimer); return board.close() },
   }
 

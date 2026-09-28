@@ -82,6 +82,16 @@ export interface AgentParticipant {
   models?: AgentModel[]
   model?: string
   effort?: string
+  /** what it runs on, as the agent says: its account ("ChatGPT Pro"), and how much of its usage limits is used */
+  account?: string
+  limits?: AgentLimit[]
+}
+export interface AgentLimit {
+  /** "5h", "Weekly", … */
+  name: string
+  usedPercent: number
+  /** when it starts again, in ms since the epoch */
+  resetsAt?: number
 }
 export interface AgentViewport { x: number, y: number, w: number, h: number }
 export interface AgentAnchor { shapeId?: string, x?: number, y?: number }
@@ -175,6 +185,10 @@ export function buildAgentRequest(options: {
   anchor?: AgentAnchor
 }): AgentRequest
 /** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults; undefined for an agent that offers none. */
+/** "9% · resets in 6d": how much of a usage limit is used, and when it starts again */
+export function limitText(limit: AgentLimit, now?: number): string
+/** how close to a limit: 'full' at 100%, 'high' from 80%, else '' */
+export function limitLevel(limit: AgentLimit): '' | 'high' | 'full'
 export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread

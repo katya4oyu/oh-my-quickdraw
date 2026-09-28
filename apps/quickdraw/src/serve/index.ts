@@ -213,6 +213,17 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     } else if (m.kind === 'status' && agent && ['idle', 'working', 'waiting'].includes(m.status)) {
       agent.status = m.status
       announce(room)
+    } else if (m.kind === 'account' && agent) {
+      // what it runs on, as it says: shown in the panel, never checked
+      const limits = Array.isArray(m.limits) ? m.limits.slice(0, 8).flatMap((l: any) =>
+        str(l?.name, 40) && Number.isFinite(l.usedPercent)
+          ? [{ name: l.name, usedPercent: Math.min(100, Math.max(0, l.usedPercent)), ...(Number.isFinite(l.resetsAt) ? { resetsAt: l.resetsAt } : {}) }]
+          : []) : []
+      if (str(m.account, 100)) agent.account = m.account
+      else delete agent.account
+      if (limits.length) agent.limits = limits
+      else delete agent.limits
+      announce(room)
     } else if (m.kind === 'event' && agent && AGENT_EVENTS.has(m.event?.type)) {
       // only about a request to this agent, on this board
       const t = threads.get(m.event.requestId)
