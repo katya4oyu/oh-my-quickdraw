@@ -67,11 +67,19 @@ export function updateAgentThread(thread, event) {
   if (event.type === 'op' && event.ids?.length && !thread.request?.anchor?.shapeId) {
     next.request = { ...thread.request, anchor: { ...thread.request.anchor, shapeId: event.ids[0] } }
   }
+  // where it works (the agent's, or where a person moved it); its title stays
+  if (event.type === 'area' && event.area) next.area = { ...event.area, ...(event.title ?? thread.area?.title ? { title: event.title ?? thread.area.title } : {}) }
   if (event.type === 'done' || event.type === 'error') next.status = event.type
   else if (event.type === 'approval' || event.type === 'question') next.status = 'waiting'
   else if (event.type === 'progress' || event.type === 'op') next.status = 'working'
   // a message or a person's reply leaves it as it was: a word after `done` does not reopen it
   return next
+}
+
+/** A work area dragged by `dx`, `dy` (board units): moved by its label, or resized by its corner (never below a note's size). */
+export function dragArea(area, handle, dx, dy) {
+  if (handle === 'move') return { ...area, x: Math.round(area.x + dx), y: Math.round(area.y + dy) }
+  return { ...area, w: Math.round(Math.max(240, area.w + dx)), h: Math.round(Math.max(240, area.h + dy)) }
 }
 
 /** Undo a request newest-first, preserving partial-conflict details. */
@@ -175,6 +183,16 @@ const STYLE = `
 .qda-send{background:var(--qd-on-bg)!important;color:var(--qd-on-ink)!important;border-radius:50%!important;width:30px!important;height:30px!important}
 .qda-send:disabled{opacity:.3}
 .qda-pins{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:30}
+/* a request's work area: seen by everyone, drawn in by anyone (its inside lets the pointer through); moved by its label, resized by its corner */
+.qda-area{position:absolute;box-sizing:border-box;border:2px dashed var(--qda-accent);border-radius:14px;background:color-mix(in srgb,var(--qda-accent) 5%,transparent)}
+.qda-area[data-status=waiting]{border-color:var(--qda-wait)}
+.qda-area-label{position:absolute;left:-2px;top:-30px;max-width:calc(100% - 20px);display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:999px;
+  background:var(--qda-accent);color:#fff;font:600 12px/16px system-ui,-apple-system,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:grab;touch-action:none;box-shadow:var(--qd-bar-shadow)}
+.qda-area[data-status=waiting] .qda-area-label{background:var(--qda-wait)}
+.qda-area-label svg{width:12px;height:12px;flex:none}
+.qda-area-label span{overflow:hidden;text-overflow:ellipsis}
+.qda-area-grip{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:4px;background:var(--qd-pop-bg);border:2px solid var(--qda-accent);pointer-events:auto;cursor:nwse-resize;touch-action:none;box-sizing:border-box}
+.qda-area.dragging .qda-area-label{cursor:grabbing}
 .qda-pin{position:absolute;width:24px;height:24px;padding:0;margin:-12px 0 0 -12px;border-radius:50%;border:2px solid var(--qd-pop-bg);
   display:grid;place-items:center;background:var(--qd-on-bg);color:var(--qd-on-ink);box-shadow:var(--qd-bar-shadow);pointer-events:auto;cursor:pointer}
 .qda-pin svg{width:13px;height:13px}
@@ -280,6 +298,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const pinLayer = el('div', 'qda-pins')
   container.append(pinLayer)
   const pins = new Map()
+  const areas = new Map() // request id -> its work area's element
 
   const getAgents = () => host.agents() || []
   const agentName = (id) => getAgents().find((a) => a.id === id)?.name || 'AI'
@@ -500,8 +519,68 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     if (thread) body.scrollTop = body.scrollHeight
   }
 
+  // a work area while its request is under way
+  function renderArea(id, thread) {
+    let box = areas.get(id)
+    const status = threadStatus(thread)
+    const show = thread.area && (status === 'working' || status === 'waiting')
+    if (!show) { box?.remove(); areas.delete(id); return }
+    if (!box) {
+      box = el('div', 'qda-area')
+      const label = el('div', 'qda-area-label')
+      label.innerHTML = AGENT_ICON
+      label.append(el('span'))
+      const grip = el('div', 'qda-area-grip')
+      grip.title = 'Resize'
+      label.title = 'Move where it works'
+      for (const [handle, node] of [['move', label], ['resize', grip]]) {
+        node.addEventListener('pointerdown', (e) => startDrag(e, id, handle, box))
+      }
+      box.append(label, grip)
+      pinLayer.prepend(box) // under the pins
+      areas.set(id, box)
+    }
+    const a = dragging?.id === id ? dragging.area : thread.area
+    const p = editor.pageToScreen(a.x, a.y), q = editor.pageToScreen(a.x + a.w, a.y + a.h)
+    Object.assign(box.style, { left: `${p.x}px`, top: `${p.y}px`, width: `${q.x - p.x}px`, height: `${q.y - p.y}px` })
+    box.dataset.status = status
+    box.querySelector('.qda-area-label span').textContent = `${agentName(thread.request.to)} · ${a.title || thread.request.text || 'working'}`
+  }
+  let dragging = null // { id, handle, area, from: { x, y }, start }
+  function startDrag(e, id, handle, box) {
+    const thread = threads.get(id)
+    if (!thread?.area || e.button > 0) return
+    e.preventDefault()
+    e.stopPropagation() // not a board gesture
+    e.target.setPointerCapture?.(e.pointerId)
+    dragging = { id, handle, area: thread.area, start: thread.area, from: { x: e.clientX, y: e.clientY } }
+    box.classList.add('dragging')
+    const move = (ev) => {
+      const z = editor.camera.z
+      dragging.area = dragArea(dragging.start, handle, (ev.clientX - dragging.from.x) / z, (ev.clientY - dragging.from.y) / z)
+      renderArea(id, threads.get(id))
+    }
+    const up = () => {
+      removeEventListener('pointermove', move)
+      removeEventListener('pointerup', up)
+      removeEventListener('pointercancel', up)
+      box.classList.remove('dragging')
+      const { area, start } = dragging
+      dragging = null
+      if (area.x === start.x && area.y === start.y && area.w === start.w && area.h === start.h) return
+      // here at once; the host tells the agent and everyone else
+      threads.set(id, updateAgentThread(threads.get(id), { type: 'area', requestId: id, area, by: 'person' }))
+      renderArea(id, threads.get(id))
+      host.reply(id, { area: { x: area.x, y: area.y, w: area.w, h: area.h } })
+    }
+    addEventListener('pointermove', move)
+    addEventListener('pointerup', up)
+    addEventListener('pointercancel', up)
+  }
+
   function renderPins() {
     for (const [id, thread] of threads) {
+      renderArea(id, thread)
       let pin = pins.get(id)
       if (!pin) {
         pin = el('button', 'qda-pin')
@@ -542,6 +621,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     if (!thread) return
     threads.set(id, updateAgentThread(thread, event))
     if (event.type === 'op' && id === following) follow(event.diff)
+    if (event.type === 'area' && event.by !== 'person' && id === following) showBox({ ...event.area, y: event.area.y - 40, h: event.area.h + 40 }) // where it will work
     if (panel.hidden) renderPins()
     else render()
   }
@@ -556,7 +636,10 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     if (!shapes.length) return
     const bs = shapes.map((s) => pageBounds(s))
     const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y))
-    const w = Math.max(...bs.map((b) => b.x + b.w)) - x, h = Math.max(...bs.map((b) => b.y + b.h)) - y
+    showBox({ x, y, w: Math.max(...bs.map((b) => b.x + b.w)) - x, h: Math.max(...bs.map((b) => b.y + b.h)) - y })
+  }
+  // the view takes in a box (with its label above it), unless it is in view already
+  function showBox({ x, y, w, h }) {
     const v = editor.viewportPageBounds()
     if (x >= v.x && y >= v.y && x + w <= v.x + v.w && y + h <= v.y + v.h) return // in view
     const box = container.getBoundingClientRect()

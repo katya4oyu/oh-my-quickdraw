@@ -45,6 +45,22 @@ function putTitle(store, frame, text) {
   })
 }
 
+/**
+ * Free space for a w×h box with room `above` it for a frame's title, clear of
+ * every shape (frame titles too) by `gap`: at `prefer` (its top-left) if free,
+ * else the free spot nearest to it, else right of everything.
+ */
+export function freeSpot(store, w, h, prefer, { gap = 80, above = 40, step = 80, rings = 30 } = {}) {
+  const all = store.shapes().map(pageBounds)
+  const near = (a, b) => a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y
+  const clear = (x, y) => !all.some((b) => near({ x, y: y - above, w, h: h + above }, b))
+  const spots = []
+  for (let i = -rings; i <= rings; i++) for (let j = -rings; j <= rings; j++) spots.push([i * i + j * j, prefer.x + i * step, prefer.y + j * step])
+  spots.sort((a, b) => a[0] - b[0])
+  for (const [, x, y] of spots) if (clear(x, y)) return { x: Math.round(x), y: Math.round(y) }
+  return { x: Math.round(Math.max(...all.map((b) => b.x + b.w)) + gap), y: Math.round(prefer.y) }
+}
+
 export const frameTitle = (store, frameId) => store.get(frameId + '-title')?.props.text ?? ''
 
 // sets the title text; recreates the title above the frame if it was deleted

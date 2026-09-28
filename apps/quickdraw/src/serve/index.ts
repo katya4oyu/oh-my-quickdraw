@@ -191,7 +191,10 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     if (threads.append(event.requestId, event)) toPages(room, { kind: 'event', event })
   }
   const str = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max
-  const AGENT_EVENTS = new Set(['progress', 'message', 'question', 'approval', 'op', 'done', 'error'])
+  const AGENT_EVENTS = new Set(['progress', 'message', 'question', 'approval', 'op', 'area', 'done', 'error'])
+  // a work area on the board: page coordinates, not absurd
+  const rect = (a: any) => a && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite(a[k]) && Math.abs(a[k]) < 1e7) && a.w >= 40 && a.h >= 40
+    ? { x: a.x, y: a.y, w: a.w, h: a.h } : null
   // voice conversations (a request with a WebRTC offer): the page that asked, by request.
   // Their offer and answer go between it and the agent only, and are never stored.
   const talking = new Map<string, { page: Duplex, agent: Duplex }>()
@@ -308,7 +311,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       if (t?.board !== board) return
       const { message } = m
       const to = [...room].find((s) => agentOf.get(s)?.id === t.thread.request.to)
-      const answering = str(message, 20_000) || (message && str(message.approval, 200))
+      // moving its work area directs the agent too
+      const answering = str(message, 20_000) || (message && str(message.approval, 200)) || !!rect(message?.area)
       if (answering && !mayAsk(socket, to && agentOf.get(to))) {
         return send(socket, { kind: 'event', event: { type: 'error', requestId: m.requestId, message: onlyHere(agentOf.get(to!)!) } })
       }
@@ -317,6 +321,11 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         if (to) send(to, { kind: 'reply', requestId: m.requestId, message, local: local.has(socket) })
       } else if (message && str(message.approval, 200) && typeof message.allow === 'boolean') {
         if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow }, local: local.has(socket) })
+      } else if (rect(message?.area)) {
+        // everyone sees it moved at once; the agent builds there from its next step
+        const area = rect(message.area)!
+        record(room, { type: 'area', requestId: m.requestId, area, by: 'person' })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { area }, local: local.has(socket) })
       } else if (message?.undo && Number.isInteger(message.undo.reverted) && Array.isArray(message.undo.skipped)) {
         record(room, { type: 'undo', requestId: m.requestId, reverted: message.undo.reverted, skipped: message.undo.skipped.filter((s: unknown) => str(s, 200)) })
       }

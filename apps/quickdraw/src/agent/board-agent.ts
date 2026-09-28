@@ -10,7 +10,7 @@
 // board a piece at a time with the cursor on each — one undo, as before.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
-import { applySteps, BOARD_TOOLS, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { applySteps, BOARD_TOOLS, freeSpot, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import { snapshotFeedback } from 'quickdraw-screenshare'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -68,7 +68,9 @@ export interface BoardAgent {
 }
 
 type Emitted = Omit<AgentEvent, 'requestId'> & Record<string, unknown>
-export type Activity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
+type Rect = { x: number, y: number, w: number, h: number }
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
@@ -120,6 +122,20 @@ const LOOK_AT = {
   } },
 }
 
+const CLAIM_AREA = {
+  name: 'claim_area',
+  description: 'Marks out where you will work, before you draw anything bigger than a note or two, so people see where it will be: they work around it, or move it, or draw in it with you. '
+    + 'Give a rough size for what you will make (a note is 200 × 200; it grows downwards when full); it goes in free space by what the request is about. '
+    + 'Give `x`, `y` (its top-left) when the request says where, like under something. From then on, what you add without `at` or `in` goes in it, and it grows to take in what you put beside it. Call it again to change its size.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['w', 'h'], properties: {
+    w: { type: 'number', description: 'width, in board units' },
+    h: { type: 'number', description: 'height, in board units' },
+    title: { type: 'string', description: 'what you are making, in a few words, shown on the area' },
+    x: { type: 'number', description: 'left edge, when the request says where (else it finds free space)' },
+    y: { type: 'number', description: 'top edge, when the request says where' },
+  } },
+}
+
 const ADD_IMAGE = {
   name: 'add_image',
   description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
@@ -149,6 +165,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const approvalBase = Date.now().toString(36)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let doneTimer: ReturnType<typeof setTimeout> | undefined
+  const requests = new Map<string, AgentRequest>()
+  // per request: its work area, and what was in it after its last step (to tell what people did since)
+  const work = new Map<string, { area: Rect, title?: string, seen: Map<string, string>, moved?: boolean }>()
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
   let nextApproval = 1
@@ -164,7 +183,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     if (m.kind === 'request' && m.request?.id && typeof m.sdp === 'string') {
       if (agent.onVoice) agent.onVoice(m.request, m.sdp)
       else agent.voice(m.request.id, { end: `${me.name} does not talk.` })
-    } else if (m.kind === 'request' && m.request?.id) agent.onRequest(m.request)
+    } else if (m.kind === 'request' && m.request?.id) { requests.set(m.request.id, m.request); agent.onRequest(m.request) }
+    else if (m.kind === 'reply' && m.message?.area && typeof m.requestId === 'string') moveArea(m.requestId, m.message.area)
     else if (m.kind === 'voice' && m.stop === true && typeof m.requestId === 'string') agent.onVoiceStop?.(m.requestId)
     else if (m.kind === 'reply' && typeof m.message === 'string') agent.onReply(m.requestId, m.message)
     else if (m.kind === 'reply' && typeof m.message?.approval === 'string') {
@@ -178,7 +198,13 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     relay.send({ kind: 'event', event: { ...event, requestId } })
   }
 
+  // what the model gets back from a tool, with what people did in its work area since its last step
   async function runBoardTool(requestId: string, name: string, args: unknown): Promise<string> {
+    if (name === 'claim_area') return claimArea(requestId, (args ?? {}) as { w?: number, h?: number, title?: string })
+    const heard = peopleSince(requestId)
+    return (await boardTool(requestId, name, args)) + heard
+  }
+  async function boardTool(requestId: string, name: string, args: unknown): Promise<string> {
     if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
     const tool = BOARD_TOOLS.find((t) => t.name === name)
     if (!tool) throw new Error(`no tool ${name}`)
@@ -190,13 +216,79 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
       return typeof result === 'string' ? result : JSON.stringify(result)
     }
-    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name }) as never)
+    const area = work.get(requestId)?.area
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area }) as never)
+  }
+
+  // ---- a request's work area: where it draws, which people see, move and draw in ----
+  const snapshot = (area: Rect) => new Map(board.store.shapes()
+    .filter((s) => isShape(s as BoardRecord) && overlaps(pageBounds(s as never), area))
+    .map((s) => [s.id, JSON.stringify([s.type, Math.round(s.x), Math.round(s.y), textOf(board.store as never, s as never)])]))
+  function claimArea(requestId: string, { w = 800, h = 500, title, x, y }: { w?: number, h?: number, title?: string, x?: number, y?: number }) {
+    w = Math.min(4000, Math.max(200, Number(w) || 800)); h = Math.min(4000, Math.max(200, Number(h) || 500))
+    const had = work.get(requestId)
+    let at: { x: number, y: number }
+    if (Number.isFinite(x) && Number.isFinite(y)) at = { x: Math.round(x!), y: Math.round(y!) } // where the request says
+    else if (had) at = had.area
+    else {
+      // beside what the request is about, else mid-view
+      const request = requests.get(requestId)
+      const about = (request?.context.shapeIds ?? []).map((id) => board.store.get(id)).filter((s) => s?.typeName === 'shape').map((s) => pageBounds(s as never))
+      const v = request?.context.viewport ?? { x: 0, y: 0, w: 0, h: 0 }
+      const prefer = about.length
+        ? { x: Math.max(...about.map((b) => b.x + b.w)) + 120, y: Math.min(...about.map((b) => b.y)) }
+        : { x: v.x + (v.w - w) / 2, y: v.y + (v.h - h) / 2 }
+      at = freeSpot(board.store as never, w, h, prefer)
+    }
+    const area = { x: at.x, y: at.y, w, h }
+    const name = title ?? had?.title
+    work.set(requestId, { area, title: name, seen: snapshot(area) })
+    emit(requestId, { type: 'area', area, ...(name ? { title: name } : {}) })
+    holdCursor()
+    board.cursor(area.x + area.w / 2, area.y + area.h / 2)
+    return JSON.stringify({ area, note: 'What you add without `at` or `in` now goes in this area. People see it, and may move it or draw in it with you.' })
+  }
+  // an area grown to hold these shapes too (and a frame's title above them)
+  function takeIn(area: Rect, recs: BoardRecord[]): Rect {
+    const PAD = 24
+    const bs = recs.filter((r) => isShape(r)).map((r) => pageBounds(r as never))
+    if (!bs.length) return area
+    const x = Math.min(area.x, ...bs.map((b) => b.x - PAD)), y = Math.min(area.y, ...bs.map((b) => b.y - PAD - 20))
+    const right = Math.max(area.x + area.w, ...bs.map((b) => b.x + b.w + PAD)), bottom = Math.max(area.y + area.h, ...bs.map((b) => b.y + b.h + PAD))
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(right - x), h: Math.round(bottom - y) }
+  }
+  function moveArea(requestId: string, area: Rect) {
+    const w = work.get(requestId)
+    if (!w) return
+    // told once, at its next step; what is already there is not news
+    work.set(requestId, { ...w, area, seen: snapshot(area), moved: true })
+  }
+  function peopleSince(requestId: string): string {
+    const w = work.get(requestId)
+    if (!w) return ''
+    const lines: string[] = []
+    if (w.moved) lines.push(`People moved your work area to x ${Math.round(w.area.x)}, y ${Math.round(w.area.y)} (${Math.round(w.area.w)} × ${Math.round(w.area.h)}): build there.`)
+    const now = snapshot(w.area)
+    const said = (id: string) => {
+      const s = board.store.get(id) as any
+      const text = s ? String(textOf(board.store as never, s) ?? '').split('\n')[0].slice(0, 60) : ''
+      return `${s?.type ?? 'shape'}${text ? ` "${text}"` : ''} (${id})`
+    }
+    const added = [...now.keys()].filter((id) => !w.seen.has(id))
+    const changed = [...now.keys()].filter((id) => w.seen.has(id) && w.seen.get(id) !== now.get(id))
+    const gone = [...w.seen.keys()].filter((id) => !now.has(id))
+    if (added.length) lines.push(`People added ${added.slice(0, 8).map(said).join(', ')}${added.length > 8 ? ` and ${added.length - 8} more` : ''}.`)
+    if (changed.length) lines.push(`People changed ${changed.slice(0, 8).map(said).join(', ')}.`)
+    if (gone.length) lines.push(`People removed or moved out ${gone.slice(0, 8).join(', ')}.`)
+    work.set(requestId, { ...w, seen: now, moved: false })
+    if (!lines.length) return ''
+    return `\n\nIn your work area since your last step: ${lines.join(' ')} Keep what they did and build with it; do not move or change it unless asked.`
   }
 
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -285,13 +377,19 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   }
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
-  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[] }) {
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect }) {
     const copy = copyOf(board.store)
     const r = make(copy)
     holdCursor()
+    const w = work.get(requestId)
+    // the area grows to take in what it added (when full, or put beside it): people see so before it lands
+    const next = w && takeIn(r.area ?? w.area, Object.values(r.diff.added) as BoardRecord[])
+    const grew = w && next && (next.x !== w.area.x || next.y !== w.area.y || next.w !== w.area.w || next.h !== w.area.h)
+    if (grew) { w.area = next!; emit(requestId, { type: 'area', area: w.area, ...(w.title ? { title: w.title } : {}) }) }
     emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids: r.ids }) // first, so the panel can take the view there
     await putLive(board.store, r.diff, copy, board.cursor)
-    return JSON.stringify({ op: r.op, ids: r.ids })
+    if (w) w.seen = snapshot(w.area) // its own work is not news
+    return JSON.stringify({ op: r.op, ids: r.ids, ...(grew ? { area: w!.area } : {}) })
   }
 
   async function imageStep(requestId: string, args: Record<string, any>) {
@@ -302,8 +400,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const file = pick ? pick.file : resolvePath(imageRoots[0], which)
     const steps = await imageSteps(file, args, imageRoots, { transparent: pick?.transparent })
     return (store: StoreType) => {
-      const { op, diff, result } = applySteps(store as never, me.name, steps as never)
-      return { op, diff, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
+      const { op, diff, result, area } = applySteps(store as never, me.name, steps as never, { area: work.get(requestId)?.area })
+      return { op, diff, area, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
     }
   }
 

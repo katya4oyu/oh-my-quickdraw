@@ -4,7 +4,8 @@
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
 import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
-import { createFrame, frameTitle, isFrame, renameFrame } from 'quickdraw-frames'
+import { createFrame, frameTitle, freeSpot, isFrame, renameFrame } from 'quickdraw-frames'
+export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { estimateWidth } from './measure.js'
@@ -122,11 +123,14 @@ function checkColor(color) {
   return color
 }
 
-// The operations, bound to one op: what it adds is marked with it.
-function operations(store, name, op) {
+// The operations, bound to one op: what it adds is marked with it. `area`: a
+// work area ({ x, y, w, h }) where what is added without a place goes; it
+// grows downwards (unlike a frame) when full, see area().
+function operations(store, name, op, { area: startArea } = {}) {
   const agent = { name, op }
   let column = null // where this op's unplaced shapes stack: { x, y, w, count }
   let focus = null
+  const area = startArea ? { ...startArea } : null
 
   const need = (id) => {
     const s = store.get(id)
@@ -151,6 +155,7 @@ function operations(store, name, op) {
       // full: never grown (its size may be the point, like a 16:9 slide) nor piled up
       throw new Error(`frame ${inFrame} is full: add without --in (it goes in free space), then fit ${inFrame} ID… shrinks everything to fit`)
     }
+    if (area) return inArea(w, h)
     if (!column) {
       const all = store.shapes().filter((s) => s.typeName === 'shape').map(pageBounds)
       const right = all.length ? Math.max(...all.map((b) => b.x + b.w)) + GAP * 2 : 0
@@ -162,6 +167,23 @@ function operations(store, name, op) {
     column.y += h + GAP
     column.w = Math.max(column.w, w)
     column.count++
+    return at
+  }
+
+  // a free spot in the work area, row by row; when there is none, the area grows
+  // down (and wide enough) and it goes in the new room
+  function inArea(w, h) {
+    const PAD = 24, TOP = 44 // room for a frame's title
+    const taken = store.shapes().filter((s) => !isTitle(s)).map((s) => withTitle(store, s)).filter((b) => intersects(b, area))
+    for (let y = area.y + TOP; y + h <= area.y + area.h - PAD; y += 24) {
+      for (let x = area.x + PAD; x + w <= area.x + area.w - PAD; x += 24) {
+        if (!taken.some((t) => intersects({ x, y: y - TOP + PAD, w, h: h + TOP - PAD }, t, 16))) return { x, y }
+      }
+    }
+    const bottom = Math.max(area.y + area.h - PAD, ...taken.map((t) => t.y + t.h + 16))
+    const at = { x: area.x + PAD, y: bottom + TOP - PAD + 16 }
+    area.w = Math.max(area.w, w + PAD * 2)
+    area.h = at.y + h + PAD - area.y
     return at
   }
 
@@ -338,7 +360,7 @@ function operations(store, name, op) {
       }
     }
   }
-  return { ops, focus: () => focus, reroute }
+  return { ops, focus: () => focus, reroute, area: () => area }
 }
 
 // a shape's bounds; a frame's include its title above it
@@ -369,9 +391,9 @@ function route(store, [ra, rb]) {
 // The diff compares each touched record before and after, rather than composing
 // the diffs as they are emitted: a listener that edits in response (frame
 // membership) emits its diff before the one that caused it, out of order.
-export function runOp(store, name, fn) {
+export function runOp(store, name, fn, { area } = {}) {
   const op = 'op:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  const { ops, focus, reroute } = operations(store, name, op)
+  const { ops, focus, reroute, area: grown } = operations(store, name, op, { area })
   const before = new Map(store.all().map((r) => [r.id, r]))
   const touched = new Set()
   const off = store.listen((d) => {
@@ -397,13 +419,13 @@ export function runOp(store, name, fn) {
       throw e
     }
   } finally { off() }
-  return { op, diff: since(), result, focus: focus() }
+  return { op, diff: since(), result, focus: focus(), ...(area ? { area: grown() } : {}) }
 }
 
 // Runs a list of steps as one operation. Steps may name what they add
 // (`ref: 'a'`) and point at it later as '@a'.
 // [{ do: 'note', text, color?, in?, ref? }, { do: 'arrow', from: '@a', to: '@b' }, …]
-export function applySteps(store, name, steps) {
+export function applySteps(store, name, steps, { area } = {}) {
   if (!Array.isArray(steps)) throw new Error('steps must be an array')
   return runOp(store, name, (ops) => {
     const refs = {}
@@ -430,7 +452,7 @@ export function applySteps(store, name, steps) {
       if (s.ref) refs[s.ref] = out
       return out
     })
-  })
+  }, { area })
 }
 
 // ---- undo ------------------------------------------------------------------------

@@ -3,12 +3,13 @@
 Excalidraw-style frames for Quickdraw (one level, no nesting), built from plain records — no core change, no dependencies beyond `@quickdrawjs/core` (a peer).
 
 ```js
-import { bindFrames, createFrame, frameShapeIds } from 'quickdraw-frames'
+import { bindFrames, createFrame, frameShapeIds, freeSpot } from 'quickdraw-frames'
 
 bindFrames(board.editor.store)                        // once, before editing
 const id = createFrame(board.editor.store, { x, y, w, h, title: 'Plan' })
 renameFrame(board.editor.store, id, 'Ideas')          // frameTitle(store, id) reads it back
 const png = await board.editor.exportImage({ ids: frameShapeIds(board.editor.store, id) })
+const at = freeSpot(board.editor.store, 800, 500, { x, y })  // room for a new frame (and its title) by x, y, clear of what is there
 ```
 
 ## Model
