@@ -14,17 +14,10 @@ import { edgePoint, fitView, centreOn, wellInside, initials } from './geometry.j
 
 export const COLORS = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#9c36b5', '#0c8599']
 const AGENT_STATUS = { working: 'working', waiting: 'waiting for you', idle: 'idle' }
-// what an agent is doing just now: what its label says, and the sign by its cursor
+// what an agent is doing just now: what its label says (its cursor's motion shows it too)
 export const ACTIVITIES = {
-  thinking: { text: 'thinking', sign: '🤔' },
-  reading: { text: 'reading the board', sign: '👀' },
-  searching: { text: 'searching the web', sign: '🔍' },
-  running: { text: 'running a command', sign: '⚙️' },
-  editing: { text: 'editing files', sign: '📝' },
-  imaging: { text: 'making an image', sign: '🎨' },
-  drawing: { text: 'drawing', sign: '✏️' },
-  waiting: { text: 'waiting for you', sign: '✋' },
-  done: { text: 'done', sign: '✓' },
+  thinking: 'thinking', reading: 'reading the board', searching: 'searching the web', running: 'running a command',
+  editing: 'editing files', imaging: 'making an image', drawing: 'drawing', waiting: 'waiting for you', done: 'done',
 }
 
 const STYLE = `
@@ -34,23 +27,21 @@ const STYLE = `
 .qdp-cursor svg{display:block}
 .qdp-cursor span,.qdp-edge span{position:absolute;padding:1px 6px;border-radius:6px;color:#fff;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .qdp-cursor span{left:14px;top:16px}
-/* an agent's sign, and how its cursor moves while it thinks, reads or waits */
-.qdp-cursor i{position:absolute;left:14px;top:-20px;min-width:14px;padding:3px 4px;border-radius:10px;text-align:center;font:normal 13px/14px system-ui,sans-serif;
-  background:var(--qd-pop-bg,#fff);border:1.5px solid var(--qdp-color,#868e96);box-shadow:0 1px 4px rgba(0,0,0,.18)}
-.qdp-cursor i:empty{display:none}
+/* how an agent's cursor moves for what it is doing: it mulls in a small circle, sweeps
+   as it reads, glances about as it searches, nods while busy, bobs while it waits
+   for you, and gives a little hop when done; drawing is its own movement */
 .qdp-cursor[data-act=thinking] svg{animation:qdp-mull 2.4s linear infinite}
-.qdp-cursor[data-act=thinking] i{animation:qdp-breathe 2.4s ease-in-out infinite}
 .qdp-cursor[data-act=reading] svg{animation:qdp-scan 1.8s ease-in-out infinite}
-.qdp-cursor[data-act=searching] i,.qdp-cursor[data-act=imaging] i{animation:qdp-breathe 1.2s ease-in-out infinite}
-.qdp-cursor[data-act=running] i{animation:qdp-spin 2s linear infinite}
-.qdp-cursor[data-act=waiting] i{transform-origin:50% 90%;animation:qdp-wave 1s ease-in-out infinite}
-.qdp-cursor[data-act=done] i{color:#2f9e44;font-weight:700;animation:qdp-pop 400ms cubic-bezier(.2,.9,.3,1.4)}
+.qdp-cursor[data-act=searching] svg{animation:qdp-glance 1.1s ease-in-out infinite}
+.qdp-cursor[data-act=running] svg,.qdp-cursor[data-act=editing] svg,.qdp-cursor[data-act=imaging] svg{animation:qdp-nod .9s ease-in-out infinite}
+.qdp-cursor[data-act=waiting] svg{animation:qdp-bob 1.4s ease-in-out infinite}
+.qdp-cursor[data-act=done] svg{animation:qdp-hop 500ms cubic-bezier(.2,.9,.3,1.4)}
 @keyframes qdp-mull{from{transform:rotate(0) translateX(3px) rotate(0)}to{transform:rotate(360deg) translateX(3px) rotate(-360deg)}}
 @keyframes qdp-scan{0%,100%{transform:translate(0,0)}25%{transform:translate(22px,2px)}50%{transform:translate(0,8px)}75%{transform:translate(22px,10px)}}
-@keyframes qdp-breathe{50%{transform:scale(1.2)}}
-@keyframes qdp-spin{to{transform:rotate(360deg)}}
-@keyframes qdp-wave{25%{transform:rotate(-18deg)}75%{transform:rotate(18deg)}}
-@keyframes qdp-pop{from{transform:scale(0)}}
+@keyframes qdp-glance{0%,100%{transform:translateX(0)}30%{transform:translateX(-7px)}70%{transform:translateX(7px)}}
+@keyframes qdp-nod{50%{transform:translateY(3px)}}
+@keyframes qdp-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes qdp-hop{40%{transform:translateY(-10px) scale(1.15)}}
 .qdp-edge{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif}
 .qdp-edge i{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-sizing:border-box}
 .qdp-edge b{position:absolute;left:-4px;top:-4px;width:8px;height:8px;clip-path:polygon(0 0,100% 50%,0 100%)}
@@ -67,7 +58,7 @@ const STYLE = `
 .qdp-av .dot[data-status=working]{background:#2f9e44;animation:qdp-pulse 1.2s ease-in-out infinite}
 .qdp-av .dot[data-status=waiting]{background:#f08c00}
 @keyframes qdp-pulse{50%{opacity:.35}}
-@media (prefers-reduced-motion:reduce){.qdp-av .dot,.qdp-cursor svg,.qdp-cursor i{animation:none!important}.qdp-cursor{transition:none}}
+@media (prefers-reduced-motion:reduce){.qdp-av .dot,.qdp-cursor svg{animation:none!important}.qdp-cursor{transition:none}}
 .qdp-follow{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 12px;border-radius:999px;color:#fff;font:600 12px system-ui,-apple-system,sans-serif;pointer-events:auto;box-shadow:var(--qd-bar-shadow)}
 .qdp-follow button{all:unset;cursor:pointer;padding:2px 10px;border-radius:999px;background:rgba(255,255,255,.25)}
 .qdp-follow button:hover{background:rgba(255,255,255,.4)}
@@ -98,11 +89,9 @@ const localStore = {
 /** What someone's label says: their name, and their status or what the agent is doing (and on what). */
 export function presenceLabel(p) {
   const act = p.agent && ACTIVITIES[p.agentActivity]
-  const status = act ? act.text + (p.agentNote ? `: ${p.agentNote}` : '') : p.agent ? AGENT_STATUS[p.agentStatus] : p.status
+  const status = act ? act + (p.agentNote ? `: ${p.agentNote}` : '') : p.agent ? AGENT_STATUS[p.agentStatus] : p.status
   return status ? `${p.name} · ${status}` : p.name
 }
-/** The sign by an agent's cursor for what it is doing, or '' */
-export const activitySign = (p) => (p.agent && ACTIVITIES[p.agentActivity]?.sign) || ''
 
 /** Live presence over a board; the host carries it (see above). */
 export function createPresence({ editor, container = editor.container, host, defaults = {}, storage = localStore, key = 'quickdraw-presence' }) {
@@ -169,7 +158,7 @@ export function createPresence({ editor, container = editor.container, host, def
     }
     if (!p) {
       const cursor = el('div', 'qdp-cursor')
-      cursor.innerHTML = ARROW + '<i></i><span></span>'
+      cursor.innerHTML = ARROW + '<span></span>'
       const edge = el('button', 'qdp-edge')
       edge.append(el('i'), el('b'), el('span'))
       edge.onclick = () => jumpTo(m.id)
@@ -181,14 +170,10 @@ export function createPresence({ editor, container = editor.container, host, def
       x: m.x ?? null, y: m.y ?? null, view: m.view || null, agent: !!m.agent, agentStatus: m.agentStatus || null,
       agentActivity: ACTIVITIES[m.agentActivity] ? m.agentActivity : null, agentNote: String(m.agentNote ?? '').slice(0, 80),
     })
-    // the sign, and its motion; set only when it changes, so an animation is not restarted
+    // its motion; set only when it changes, so an animation is not restarted
     const act = p.agentActivity || ''
-    if (p.cursor.dataset.act !== act) {
-      p.cursor.dataset.act = act
-      p.cursor.querySelector('i').textContent = activitySign(p)
-    }
+    if (p.cursor.dataset.act !== act) p.cursor.dataset.act = act
     p.cursor.querySelector('path').setAttribute('fill', p.color)
-    p.cursor.style.setProperty('--qdp-color', p.color) // the sign's bubble
     const label = presenceLabel(p)
     for (const span of [p.cursor.querySelector('span'), p.edge.querySelector('span')]) {
       span.textContent = label

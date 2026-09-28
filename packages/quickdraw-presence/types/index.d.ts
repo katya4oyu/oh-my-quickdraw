@@ -64,10 +64,8 @@ export function createPresence(options: {
 }): PresenceHandle
 /** "Ann · reviewing", "Codex · working" */
 export function presenceLabel(p: Partial<Presence> & { name: string }): string
-/** what each activity says, and its sign */
-export const ACTIVITIES: Record<AgentActivity, { text: string, sign: string }>
-/** the sign by an agent's cursor for what it is doing, or '' */
-export function activitySign(p: Partial<Presence>): string
+/** what each activity says on the label */
+export const ACTIVITIES: Record<AgentActivity, string>
 
 export function edgePoint(box: { w: number, h: number }, p: { x: number, y: number }, margin?: number): { x: number, y: number, angle: number } | null
 export function fitView(box: { w: number, h: number }, view: Rect): { x: number, y: number, z: number }

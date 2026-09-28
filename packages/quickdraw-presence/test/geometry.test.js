@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { edgePoint, fitView, centreOn, wellInside, initials } from '../src/geometry.js'
-import { presenceLabel, activitySign } from '../src/presence.js'
+import { presenceLabel } from '../src/presence.js'
 
 const box = { w: 800, h: 600 }
 
@@ -65,7 +65,5 @@ describe('labels', () => {
     expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'thinking' })).toBe('Codex · thinking')
     expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'nonsense' })).toBe('Codex · working')
     expect(presenceLabel({ name: 'Ann', agentActivity: 'thinking' })).toBe('Ann') // only agents
-    expect(activitySign({ agent: true, agentActivity: 'waiting' })).toBe('✋')
-    expect(activitySign({ agent: true })).toBe('')
   })
 })
