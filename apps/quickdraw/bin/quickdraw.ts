@@ -10,6 +10,7 @@ const USAGE = `quickdraw <command>
         the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
         SQLite persistence (<data>/boards.sqlite), link previews (/preview)
   agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]
+              [--voice NAME] [--voice-model M] [--no-voice]
         Codex joins a board, working in this directory (its files, AGENTS.md
         and your Codex settings), and takes requests from the board's AI panel,
         where people choose the model and effort per request; --model and
@@ -17,7 +18,10 @@ const USAGE = `quickdraw <command>
         at a terminal, it asks which board; the board's AI panel (and its More
         menu) has this command for that board, to copy. It takes requests
         and approvals only from the computer running quickdraw serve;
-        --allow-remote takes them from anyone on the board (through Tailscale…)
+        --allow-remote takes them from anyone on the board (through Tailscale…).
+        People can also talk with it (the microphone in the board's AI tools):
+        a voice model (--voice-model, gpt-live-1-codex by default) talks and
+        hands the work to Codex; --voice picks its voice, --no-voice turns it off
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -48,10 +52,11 @@ if (command === 'serve') {
     options: {
       board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
       model: { type: 'string' }, effort: { type: 'string' }, 'allow-remote': { type: 'boolean' },
+      voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' },
     },
   })
   if (positionals[0] !== 'codex') {
-    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n')
+    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote] [--voice NAME] [--voice-model M] [--no-voice]\n')
     process.exit(1)
   }
   const { basename } = await import('node:path')
@@ -59,6 +64,7 @@ if (command === 'serve') {
   const { openBoard } = await import('../src/board/open.ts')
   const { joinBoard } = await import('../src/agent/board-agent.ts')
   const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
+  const { runVoice } = await import('../src/agent/voice.ts')
   const cwd = process.cwd()
   const folder = basename(cwd)
   const name = values.name ?? `Codex · ${folder}`
@@ -73,7 +79,8 @@ if (command === 'serve') {
     const { homedir } = await import('node:os')
     const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
     const remote = values['allow-remote'] === true
-    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote }, { imageRoots: [cwd, generatedImages] })
+    const voice = values['no-voice'] !== true
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice }, { imageRoots: [cwd, generatedImages] })
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
       codex.close()
@@ -84,7 +91,8 @@ if (command === 'serve') {
     board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
     process.on('SIGINT', () => leave(0))
     process.on('SIGTERM', () => leave(0))
-    await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
+    const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
+    if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: values.voice })
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
     console.log(remote ? 'Anyone on the board can ask it (--allow-remote).' : 'Only people on the computer running quickdraw serve can ask it (--allow-remote lets anyone on the board).')
   } catch (e) {

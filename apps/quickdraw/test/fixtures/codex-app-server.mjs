@@ -1,6 +1,7 @@
 // A stand-in for `codex app-server` (stdio JSON-RPC): for each turn it says
 // something, calls the board tools it was given, asks to run a command, and
-// answers — or, for a follow-up, just answers.
+// answers — or, for a follow-up, just answers. A realtime conversation answers
+// the offer, hears a request, hands it to a turn that adds a note, and says so.
 import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
 
@@ -30,6 +31,27 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     tools = m.params.dynamicTools.map((t) => t.name)
     process.stderr.write(`cwd=${m.params.cwd} tools=${tools.length} instructions=${m.params.developerInstructions.length}\n`)
     return out({ id: m.id, result: { thread: { id: `thread-${++threads}` }, model: m.params.model ?? 'fast', reasoningEffort: null } })
+  }
+  if (m.method === 'thread/realtime/start') {
+    const { threadId, transport, version, outputModality } = m.params
+    process.stderr.write(`realtime ${transport.type} ${version} ${outputModality} offer=${transport.sdp}\n`)
+    out({ id: m.id, result: {} })
+    out({ method: 'thread/realtime/started', params: { threadId, realtimeSessionId: 'rt-1', version } })
+    out({ method: 'thread/realtime/sdp', params: { threadId, sdp: 'v=answer' } })
+    await new Promise((r) => setTimeout(r, 50)) // the page sets the answer; the person talks
+    const said = (role, text) => out({ method: 'thread/realtime/item/completed', params: { threadId, item: { id: `seg-${role}`, realtimeSessionId: 'rt-1', type: 'transcriptSegment', role, text } } })
+    said('user', ' Put a note that says hi. ')
+    const turnId = `turn-${++turns}`
+    out({ method: 'turn/started', params: { threadId, turn: { id: turnId, status: 'inProgress' } } })
+    const note = await ask('item/tool/call', { threadId, turnId, callId: 'v1', tool: 'add_note', arguments: { text: 'hi' } })
+    out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', phase: 'final_answer', text: `Added it (${note.success}).` } } })
+    out({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed', error: null } } })
+    said('assistant', 'Done, it says hi.')
+    return
+  }
+  if (m.method === 'thread/realtime/stop') {
+    out({ id: m.id, result: {} })
+    return out({ method: 'thread/realtime/closed', params: { threadId: m.params.threadId, reason: 'requested' } })
   }
   if (m.method === 'turn/start') {
     const threadId = m.params.threadId, turnId = `turn-${++turns}`, text = m.params.input[0].text

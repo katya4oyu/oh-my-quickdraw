@@ -25,6 +25,7 @@
     "quickdraw-presence": "*",
     "quickdraw-screenshare": "*",
     "quickdraw-toolbar": "*",
+    "quickdraw-voice": "*",
     "quickdraw-yjs": "*",
     "yjs": "^13.6.33"
   },

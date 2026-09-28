@@ -386,6 +386,52 @@ describe('agents', () => {
     for (const ws of [page, remote, open2]) ws.close()
   })
 
+  it('connects a call between the page that asks to talk and an agent that talks, and nobody else', async () => {
+    const { url, page, agent, pageIn, agentIn } = await setup()
+    // an agent that does not talk is not asked
+    page.send(packAgent({ kind: 'request', request: request('mute'), sdp: 'v=offer' }))
+    expect(await pageIn.take('voice')).toEqual({ kind: 'voice', requestId: 'mute', end: 'That agent does not talk.' })
+    expect(agentIn.has('request')).toBe(false)
+
+    const talker = await open(url)
+    const talkerIn = agentInbox(talker)
+    talker.send(packAgent({ kind: 'join', agent: { id: 'talker', name: 'Talker', voice: true } }))
+    await talkerIn.take('joined')
+    let listed
+    while (!(listed = (await pageIn.take('agents')).agents.find((a: any) => a.id === 'talker')));
+    expect(listed).toMatchObject({ voice: true })
+    const other = await open(url)
+    const otherIn = agentInbox(other)
+    other.send(packAgent({ kind: 'hello' }))
+    await otherIn.take('threads')
+
+    page.send(packAgent({ kind: 'request', request: request('call', 'talker'), sdp: 'v=offer' }))
+    expect(await talkerIn.take('request')).toMatchObject({ request: { id: 'call', voice: true }, sdp: 'v=offer', local: true })
+    const { thread } = await otherIn.take('thread')
+    expect(thread.request.voice).toBe(true)
+    expect(JSON.stringify(thread)).not.toContain('v=offer') // the offer is not kept
+    // the answer to the page that asked only; what the person said, to every page
+    talker.send(packAgent({ kind: 'voice', requestId: 'call', sdp: 'v=answer' }))
+    expect(await pageIn.take('voice')).toEqual({ kind: 'voice', requestId: 'call', sdp: 'v=answer' })
+    talker.send(packAgent({ kind: 'event', event: { type: 'reply', requestId: 'call', text: 'Sort these' } }))
+    expect((await otherIn.take('event')).event).toEqual({ type: 'reply', requestId: 'call', text: 'Sort these' })
+    expect(otherIn.has('voice')).toBe(false)
+    // an agent's `reply` outside a call is not kept
+    agent.send(packAgent({ kind: 'event', event: { type: 'reply', requestId: 'mute', text: 'x' } }))
+    // someone else cannot hang up; the page that talks can, and closing it does too
+    other.send(packAgent({ kind: 'voice', requestId: 'call', stop: true }))
+    page.send(packAgent({ kind: 'voice', requestId: 'call', stop: true }))
+    expect(await talkerIn.take('voice')).toEqual({ kind: 'voice', requestId: 'call', stop: true })
+    expect(talkerIn.has('voice')).toBe(false)
+    page.close()
+    expect(await talkerIn.take('voice')).toEqual({ kind: 'voice', requestId: 'call', stop: true })
+    talker.send(packAgent({ kind: 'voice', requestId: 'call', end: 'requested' })) // too late: the call is gone
+    talker.send(packAgent({ kind: 'event', event: { type: 'done', requestId: 'call' } }))
+    expect((await otherIn.take('event')).event.type).toBe('done')
+    expect(otherIn.has('event')).toBe(false) // not the stray reply
+    for (const ws of [agent, talker, other]) ws.close()
+  })
+
   it('knows a connection from this computer from a proxied one, another site, or a DNS name that points here', () => {
     const req = (headers: Record<string, string>, remoteAddress = '127.0.0.1') => ({ headers, socket: { remoteAddress } })
     expect(isLocal(req({ host: '127.0.0.1:8795' }))).toBe(true) // the CLI: no Origin

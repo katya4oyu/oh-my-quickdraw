@@ -87,6 +87,8 @@ export interface AgentParticipant {
   limits?: AgentLimit[]
   /** takes requests from anyone on the board; else only from the computer the board is served from */
   remote?: boolean
+  /** people can talk with it: a request to talk carries a WebRTC offer (see apps/quickdraw's protocol) */
+  voice?: boolean
 }
 export interface AgentLimit {
   /** "5h", "Weekly", … */
@@ -107,6 +109,8 @@ export interface AgentRequest {
   anchor: AgentAnchor
   /** chosen in the panel, for an agent that offers models */
   options?: { model?: string, effort?: string }
+  /** a spoken conversation, not a written request: its thread is what was said, and what was done */
+  voice?: boolean
 }
 export type AgentEvent =
   | { type: 'progress' | 'message' | 'question', requestId: string, text: string }
