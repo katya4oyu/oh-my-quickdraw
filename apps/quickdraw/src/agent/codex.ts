@@ -12,7 +12,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { AgentLimit, AgentRequest } from 'quickdraw-agent'
-import type { BoardAgent } from './board-agent.ts'
+import type { Activity, BoardAgent } from './board-agent.ts'
 import { instructions } from './instructions.ts'
 
 type Json = any
@@ -81,6 +81,18 @@ export function commandText(command: string): string {
   const inner = command.match(/^\S*\/?(?:zsh|bash|sh) -l?c (.*)$/s)?.[1]
   const text = inner ? inner.replace(/^(["'])([\s\S]*)\1$/, '$2') : command
   return clip(text.replace(/\s+/g, ' ').trim(), 80)
+}
+
+/** what an item Codex starts shows by the cursor (see BoardAgent.activity), and on what; null: nothing new */
+export function activityOf(item: Json): { kind: Activity, note?: string } | null {
+  switch (item?.type) {
+    case 'reasoning': return { kind: 'thinking' }
+    case 'webSearch': return { kind: 'searching', ...(item.query ? { note: clip(String(item.query), 60) } : {}) }
+    case 'commandExecution': return { kind: 'running', ...(item.command ? { note: commandText(String(item.command)).slice(0, 60) } : {}) }
+    case 'fileChange': return { kind: 'editing' }
+    case 'imageGeneration': return { kind: 'imaging' }
+    default: return null
+  }
 }
 
 /** Starts the conversation with app-server: the models it offers (for the panel), and the person's defaults */
@@ -180,41 +192,45 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     const requestId = requestOf.get(p?.threadId)
     if (!requestId) return
     const t = byRequest.get(requestId)!
-    if (method === 'turn/started') { t.turnId = p.turn.id; updateStatus() }
+    if (method === 'turn/started') { t.turnId = p.turn.id; updateStatus(); agent.activity('thinking') }
     else if (method === 'turn/completed') {
       t.turnId = null
       const { status, error } = p.turn
       if (status === 'failed') agent.emit(requestId, { type: 'error', message: error?.message ?? 'Codex stopped with an error.' })
       else if (!t.voice) agent.emit(requestId, { type: 'done', ...(status === 'interrupted' ? { text: 'Stopped.' } : {}) })
       updateStatus()
+      if (![...byRequest.values()].some((r) => r.turnId)) agent.activity(status === 'completed' ? 'done' : null)
     } else if (method === 'item/started') {
       const item = p.item
       if (item.type === 'commandExecution') agent.emit(requestId, { type: 'progress', text: `Running ${commandText(item.command)}` })
       else if (item.type === 'webSearch' && item.query) agent.emit(requestId, { type: 'progress', text: `Searching the web: ${clip(item.query)}` })
       else if (item.type === 'fileChange') agent.emit(requestId, { type: 'progress', text: 'Editing files' })
-    } else if (method === 'item/started' && p.item.type === 'imageGeneration') {
-      agent.emit(requestId, { type: 'progress', text: 'Generating an image…' })
+      else if (item.type === 'imageGeneration') agent.emit(requestId, { type: 'progress', text: 'Generating an image…' })
+      const act = activityOf(item)
+      if (act) agent.activity(act.kind, act.note)
     } else if (method === 'item/completed' && p.item.type === 'imageGeneration' && p.item.savedPath) {
       // add_image puts it on the board, where the model says
       const n = agent.generated(requestId, p.item.savedPath, { transparent: p.item.transparentBackground === true })
       agent.emit(requestId, { type: 'progress', text: `Generated image ${n}` })
+      agent.activity('thinking')
     } else if (method === 'item/completed' && p.item.type === 'agentMessage' && p.item.text) {
       // commentary while it works is progress; the final answer is its reply
       agent.emit(requestId, { type: p.item.phase === 'commentary' || t.voice ? 'progress' : 'message', text: p.item.text })
-    }
+    } else if (method === 'item/completed' && activityOf(p.item)) agent.activity('thinking') // back from a search, a command…
   })
 
   server.onRequest(async (method, p) => {
     const requestId = requestOf.get(p?.threadId)
     if (!requestId) throw new Error('not a board request')
     if (method === 'item/tool/call' && p.tool === 'look_at') { // a picture, not text
+      agent.activity('reading')
       try {
         const png = await agent.picture(p.arguments ?? {})
         if (!png) return { success: false, contentItems: [{ type: 'inputText', text: 'Nothing to draw there.' }] }
         return { success: true, contentItems: [{ type: 'inputImage', imageUrl: `data:image/png;base64,${png.toString('base64')}` }] }
       } catch (e) {
         return { success: false, contentItems: [{ type: 'inputText', text: `Could not draw it: ${(e as Error).message}` }] }
-      }
+      } finally { agent.activity('thinking') }
     }
     if (method === 'item/tool/call') {
       try {

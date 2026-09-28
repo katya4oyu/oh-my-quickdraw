@@ -60,5 +60,10 @@ describe('labels', () => {
     expect(presenceLabel({ name: 'Ann', status: 'away' })).toBe('Ann · away')
     expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', status: 'x' })).toBe('Codex · working')
     expect(presenceLabel({ name: 'Codex', agent: true })).toBe('Codex')
+    // what it is doing just now wins over its status, with what on
+    expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'searching', agentNote: 'tldraw pricing' })).toBe('Codex · searching the web: tldraw pricing')
+    expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'thinking' })).toBe('Codex · thinking')
+    expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'nonsense' })).toBe('Codex · working')
+    expect(presenceLabel({ name: 'Ann', agentActivity: 'thinking' })).toBe('Ann') // only agents
   })
 })

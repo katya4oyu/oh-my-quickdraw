@@ -32,7 +32,7 @@ const host = {
 }
 ```
 
-The host gives each sender an `id`. An agent says `{ agent: true, agentStatus: 'working' | 'waiting' | 'idle' }` in its presence. A page that joins late should hear everyone's latest presence (`apps/quickdraw`'s relay keeps them in memory for that).
+The host gives each sender an `id`. An agent says `{ agent: true, agentStatus: 'working' | 'waiting' | 'idle' }` in its presence, and what it is doing just now as `agentActivity` — `thinking`, `reading`, `searching`, `running`, `editing`, `imaging`, `drawing`, `waiting` or `done` — with `agentNote` saying on what (a search, a command). Its cursor then moves a little, with no icons: it mulls in a small circle while thinking, sweeps while reading, glances about while searching, nods while busy, bobs while it waits for you, and hops when done; nothing moves with reduced motion. The label says it too: "Codex · searching the web: tldraw pricing". A page that joins late should hear everyone's latest presence (`apps/quickdraw`'s relay keeps them in memory for that).
 
 `defaults` apply until the person sets their own. `storage` (`{ get(key), set(key, value) }`, localStorage by default) and `key` say where they are kept.
 
