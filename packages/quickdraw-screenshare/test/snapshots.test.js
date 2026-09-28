@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { Store } from '@quickdrawjs/core'
-import { frameShapeIds } from 'quickdraw-frames'
+import { Store, pageBounds } from '@quickdrawjs/core'
+import { createFrame, frameShapeIds } from 'quickdraw-frames'
 import { installMeasure } from 'quickdraw-agent'
 import { placeSnapshot, snapshotFeedback, pendingFeedback, markSent, snapshots } from '../src/snapshots.js'
 
@@ -37,6 +37,31 @@ describe('snapshots', () => {
     expect(editor.store.get(b.imageId).props.w).toBe(400) // never enlarged
     expect(snapshots(editor.store).map((f) => f.id)).toEqual([a.frameId, b.frameId])
     expect(() => placeSnapshot(editor, { src: 'https://x/y.png', w: 1, h: 1 })).toThrow(TypeError)
+  })
+
+  it('never lands on what is there: the nearest free spot to mid-view, not taking in the notes under it', () => {
+    const editor = board()
+    const { store } = editor
+    const n = note(store, undefined, 700, 400, 'Already here') // mid-view
+    const { frameId } = placeSnapshot(editor, { src: PNG, w: 1920, h: 1080 }, { at: 1 })
+    const f = pageBounds(store.get(frameId)), b = pageBounds(store.get(n))
+    const apart = f.x > b.x + b.w || f.x + f.w < b.x || f.y - 34 > b.y + b.h || f.y + f.h < b.y // title included
+    expect(apart).toBe(true)
+    expect(store.get(n).frameId).toBeUndefined()
+    expect(snapshotFeedback(store, frameId).shapeIds).toEqual([])
+  })
+
+  it('goes on along the row, past a frame in the way, leaving what is in it alone', () => {
+    const editor = board()
+    const { store } = editor
+    const a = store.get(placeSnapshot(editor, { src: PNG, w: 800, h: 600 }, { at: 1 }).frameId)
+    const other = createFrame(store, { x: a.x + a.props.w + 80, y: a.y, w: 400, h: 300, title: 'Ideas' })
+    const n = note(store, other, a.x + a.props.w + 180, a.y + 50, 'Mine')
+    const b = store.get(placeSnapshot(editor, { src: PNG, w: 800, h: 600 }, { at: 2 }).frameId)
+    expect(b.y).toBe(a.y)
+    expect(b.x).toBeGreaterThanOrEqual(store.get(other).x + 400 + 80)
+    expect(store.get(n).frameId).toBe(other)
+    expect([...frameShapeIds(store, other)].sort()).toEqual([other, other + '-title', n].sort())
   })
 
   it('counts what people put on a snapshot, until it is sent; then only what changes after', () => {

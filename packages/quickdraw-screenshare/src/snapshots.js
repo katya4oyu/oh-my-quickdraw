@@ -2,12 +2,15 @@
 // whatever people draw or write in it — the feedback. A snapshot is marked on
 // its frame record (`snapshot: { at, by, imageId, sent? }`), so it travels with
 // the board: synced, saved, exported, like any shape.
-import { newId } from '@quickdrawjs/core'
+import { newId, pageBounds } from '@quickdrawjs/core'
 import { createFrame, frameTitle, isFrame } from 'quickdraw-frames'
 
 const GAP = 80
 const PAD = 24 // around the image, inside the frame
 const NOTES = 240 // room on the right for notes
+const TITLE = 34 // the frame's title sits this far above it
+const STEP = 80 // how finely free space is looked for around the view
+const RINGS = 30 // how far (in steps) before giving up and going right of everything
 
 export const isSnapshot = (rec) => isFrame(rec) && typeof rec.snapshot?.at === 'number'
 
@@ -15,8 +18,9 @@ export const isSnapshot = (rec) => isFrame(rec) && typeof rec.snapshot?.at === '
 export const snapshots = (store) => store.shapes().filter(isSnapshot).sort((a, b) => a.snapshot.at - b.snapshot.at)
 
 /**
- * Puts a still on the board in a frame of its own: right of the last snapshot,
- * or in the middle of the view. `image`: `{ src: 'data:image/…', w, h }` (its
+ * Puts a still on the board in a frame of its own, clear of what is there:
+ * right of the last snapshot, on its row, or as near the middle of the view as
+ * there is room. `image`: `{ src: 'data:image/…', w, h }` (its
  * natural size). Returns the frame's and the image's ids.
  */
 export function placeSnapshot(editor, image, { title, by = '', at = Date.now(), width = 720 } = {}) {
@@ -27,12 +31,7 @@ export function placeSnapshot(editor, image, { title, by = '', at = Date.now(), 
   const w = Math.min(width, image.w), h = (w * image.h) / image.w
   const fw = w + PAD * 2 + NOTES, fh = h + PAD * 2
   const last = snapshots(store).at(-1)
-  let x, y
-  if (last) { x = last.x + last.props.w + GAP; y = last.y }
-  else {
-    const v = editor.viewportPageBounds()
-    x = v.x + (v.w - fw) / 2; y = v.y + (v.h - fh) / 2
-  }
+  const { x, y } = last ? nextInRow(store, fw, fh, last) : nearView(store, fw, fh, editor.viewportPageBounds())
   const assetId = newId('asset'), imageId = newId()
   let frameId
   store.transact(() => {
@@ -42,6 +41,37 @@ export function placeSnapshot(editor, image, { title, by = '', at = Date.now(), 
     store.update(frameId, { snapshot: { at, by, imageId } })
   })
   return { frameId, imageId }
+}
+
+// Free space for a snapshot, so it never lands on what is there: a frame takes
+// in the shapes under it (their notes would become its feedback), and frames
+// that overlap confuse which one a shape belongs to.
+const overlaps = (a, b) => a.x < b.x + b.w + GAP && a.x + a.w + GAP > b.x && a.y < b.y + b.h + GAP && a.y + a.h + GAP > b.y
+// the frame at (x, y) with its title above
+const area = (x, y, w, h) => ({ x, y: y - TITLE, w, h: h + TITLE })
+const taken = (store) => store.shapes().map(pageBounds)
+
+// right of the last snapshot, on its row; past whatever is in the way
+function nextInRow(store, w, h, last) {
+  const all = taken(store)
+  let x = last.x + last.props.w + GAP
+  for (;;) {
+    const box = area(x, last.y, w, h)
+    const hit = all.filter((b) => overlaps(box, b))
+    if (!hit.length) return { x, y: last.y }
+    x = Math.max(...hit.map((b) => b.x + b.w)) + GAP
+  }
+}
+
+// the first: mid-view if free, else the free spot nearest to it, else right of everything
+function nearView(store, w, h, v) {
+  const all = taken(store)
+  const x0 = v.x + (v.w - w) / 2, y0 = v.y + (v.h - h) / 2
+  const spots = []
+  for (let i = -RINGS; i <= RINGS; i++) for (let j = -RINGS; j <= RINGS; j++) spots.push([i * i + j * j, x0 + i * STEP, y0 + j * STEP])
+  spots.sort((a, b) => a[0] - b[0])
+  for (const [, x, y] of spots) if (!all.some((b) => overlaps(area(x, y, w, h), b))) return { x, y }
+  return { x: Math.max(...all.map((b) => b.x + b.w)) + GAP, y: y0 }
 }
 
 // a short, stable fingerprint of what is written in a snapshot
