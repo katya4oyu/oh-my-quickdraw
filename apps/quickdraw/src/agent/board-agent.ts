@@ -37,6 +37,8 @@ export interface BoardAgent {
   onReply(requestId: string, text: string): void
   /** set by a runtime that talks (./voice.ts): a request to talk, with the page's WebRTC offer */
   onVoice?(request: AgentRequest, sdp: string): void
+  /** set by the runtime: a person asked it to stop working on a request */
+  onStop?(requestId: string): void
   /** set by a runtime that talks: the person hung up */
   onVoiceStop?(requestId: string): void
   /** to the page that asked to talk: the WebRTC answer, or that the conversation ended (and why) */
@@ -161,7 +163,7 @@ export interface JoinOptions {
 export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()], preview }: JoinOptions = {}): Promise<BoardAgent> {
   if (!board.relay) throw new Error('an agent needs a live board (quickdraw serve), not a file')
   const relay = board.relay
-  const approvals = new Map<string, (allow: boolean) => void>()
+  const approvals = new Map<string, { requestId: string, resolve: (allow: boolean) => void }>()
   const approvalBase = Date.now().toString(36)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let doneTimer: ReturnType<typeof setTimeout> | undefined
@@ -183,14 +185,22 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     if (m.kind === 'request' && m.request?.id && typeof m.sdp === 'string') {
       if (agent.onVoice) agent.onVoice(m.request, m.sdp)
       else agent.voice(m.request.id, { end: `${me.name} does not talk.` })
-    } else if (m.kind === 'request' && m.request?.id) { requests.set(m.request.id, m.request); agent.onRequest(m.request) }
-    else if (m.kind === 'reply' && m.message?.area && typeof m.requestId === 'string') moveArea(m.requestId, m.message.area)
+    } else if (m.kind === 'request' && m.request?.id) {
+      requests.set(m.request.id, m.request)
+      if (m.request.context?.area) markedOut(m.request.id, m.request.context.area)
+      agent.onRequest(m.request)
+    } else if (m.kind === 'reply' && m.message?.area && typeof m.requestId === 'string') moveArea(m.requestId, m.message.area)
+    else if (m.kind === 'reply' && m.message?.stop === true && typeof m.requestId === 'string') {
+      // what it waits on is declined: stopping answers it
+      for (const [id, a] of approvals) if (a.requestId === m.requestId) { approvals.delete(id); a.resolve(false) }
+      agent.onStop?.(m.requestId)
+    }
     else if (m.kind === 'voice' && m.stop === true && typeof m.requestId === 'string') agent.onVoiceStop?.(m.requestId)
     else if (m.kind === 'reply' && typeof m.message === 'string') agent.onReply(m.requestId, m.message)
     else if (m.kind === 'reply' && typeof m.message?.approval === 'string') {
-      const resolve = approvals.get(m.message.approval)
+      const pending = approvals.get(m.message.approval)
       approvals.delete(m.message.approval)
-      resolve?.(m.message.allow === true)
+      pending?.resolve(m.message.allow === true)
     }
   })
 
@@ -257,6 +267,13 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const right = Math.max(area.x + area.w, ...bs.map((b) => b.x + b.w + PAD)), bottom = Math.max(area.y + area.h, ...bs.map((b) => b.y + b.h + PAD))
     return { x: Math.round(x), y: Math.round(y), w: Math.round(right - x), h: Math.round(bottom - y) }
   }
+  // a person marked out where it should work: that is its work area from the start
+  function markedOut(requestId: string, a: Rect) {
+    if (![a.x, a.y, a.w, a.h].every(Number.isFinite) || a.w < 40 || a.h < 40) return
+    const area = { x: a.x, y: a.y, w: a.w, h: a.h }
+    work.set(requestId, { area, seen: snapshot(area) })
+    emit(requestId, { type: 'area', area })
+  }
   function moveArea(requestId: string, area: Rect) {
     const w = work.get(requestId)
     if (!w) return
@@ -314,7 +331,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const id = `${approvalBase}:${nextApproval++}`
       emit(requestId, { type: 'approval', id, text })
       agent.activity('waiting')
-      return new Promise<boolean>((ok) => approvals.set(id, ok)).finally(() => agent.activity('thinking'))
+      return new Promise<boolean>((resolve) => approvals.set(id, { requestId, resolve })).finally(() => agent.activity('thinking'))
     },
     activity(kind, note) {
       clearTimeout(doneTimer)

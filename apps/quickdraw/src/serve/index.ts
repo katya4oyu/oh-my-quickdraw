@@ -292,6 +292,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       // feedback it carries (snapshot frames): ids only, a few
       const fb = request.context?.feedback
       if (fb !== undefined && !(Array.isArray(fb) && fb.length <= 12 && fb.every((id) => str(id, 100)))) delete request.context.feedback
+      // where it should work, marked out on the board: a sound box, or nothing
+      if (request.context?.area !== undefined) {
+        const area = rect(request.context.area)
+        if (area) request.context.area = area
+        else delete request.context.area
+      }
       const target = [...room].find((s) => agentOf.get(s)?.id === request.to)
       const agentTo = target && agentOf.get(target)
       if (!mayAsk(socket, agentTo)) return send(socket, { kind: 'event', event: { type: 'error', requestId: request.id, message: onlyHere(agentTo!) } })
@@ -312,7 +318,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       const { message } = m
       const to = [...room].find((s) => agentOf.get(s)?.id === t.thread.request.to)
       // moving its work area directs the agent too
-      const answering = str(message, 20_000) || (message && str(message.approval, 200)) || !!rect(message?.area)
+      const answering = str(message, 20_000) || (message && str(message.approval, 200)) || !!rect(message?.area) || message?.stop === true
       if (answering && !mayAsk(socket, to && agentOf.get(to))) {
         return send(socket, { kind: 'event', event: { type: 'error', requestId: m.requestId, message: onlyHere(agentOf.get(to!)!) } })
       }
@@ -321,6 +327,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         if (to) send(to, { kind: 'reply', requestId: m.requestId, message, local: local.has(socket) })
       } else if (message && str(message.approval, 200) && typeof message.allow === 'boolean') {
         if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow }, local: local.has(socket) })
+      } else if (message?.stop === true) {
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { stop: true }, local: local.has(socket) })
       } else if (rect(message?.area)) {
         // everyone sees it moved at once; the agent builds there from its next step
         const area = rect(message.area)!

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor, dragArea } from '../src/panel.js'
+import { undoAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor, dragArea, pendingApproval, markedArea } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -117,5 +117,19 @@ describe('agent panel request model', () => {
     expect(dragArea(a, 'move', 100.4, -50)).toEqual({ x: 110, y: -30, w: 800, h: 500, title: 'Flow' })
     expect(dragArea(a, 'resize', 200, 100)).toEqual({ x: 10, y: 20, w: 1000, h: 600, title: 'Flow' })
     expect(dragArea(a, 'resize', -2000, -2000)).toMatchObject({ w: 240, h: 240 }) // never smaller than that
+  })
+
+  it('asks for work in an area marked out on the board, and answers what it waits on', () => {
+    // dragged either way, it is the same box; too small to work in is nothing
+    expect(markedArea({ x: 500, y: 400 }, { x: 100, y: 100.4 })).toEqual({ x: 100, y: 100, w: 400, h: 300 })
+    expect(markedArea({ x: 0, y: 0 }, { x: 60, y: 400 })).toBeNull()
+    const request = buildAgentRequest({ id: 'a', to: 'board', text: 'Draw it here', editor, area: { x: 100, y: 100, w: 400, h: 300 } })
+    expect(request.context.area).toEqual({ x: 100, y: 100, w: 400, h: 300 })
+    expect(buildAgentRequest({ id: 'b', to: 'board', text: 'x', editor }).context).not.toHaveProperty('area')
+    // the approval it waits on: the last event, until answered (here or by its next step)
+    const asking = { request, events: [{ type: 'progress', text: 'x' }, { type: 'approval', id: 'p1', text: 'Run ls' }], diffs: [], status: 'waiting' }
+    expect(pendingApproval(asking)?.id).toBe('p1')
+    expect(pendingApproval(asking, new Set(['p1']))).toBeNull()
+    expect(pendingApproval({ ...asking, events: [...asking.events, { type: 'progress', text: 'ran it' }] })).toBeNull()
   })
 })

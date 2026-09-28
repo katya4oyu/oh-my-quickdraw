@@ -2,10 +2,10 @@ import { pageBounds } from '@quickdrawjs/core'
 import { textOf, undoDiff } from './ops.js'
 
 /** Build the common request shape from a panel, selection, or committed note. */
-export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameIds = [], anchor = {}, options }) {
+export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameIds = [], anchor = {}, options, area }) {
   return {
     id, to, text: String(text).trim(),
-    context: { shapeIds: [...shapeIds], frameIds: [...frameIds], viewport: { ...editor.viewportPageBounds() } },
+    context: { shapeIds: [...shapeIds], frameIds: [...frameIds], viewport: { ...editor.viewportPageBounds() }, ...(area ? { area: { ...area } } : {}) },
     anchor: { ...anchor },
     ...(options ? { options: { ...options } } : {}),
   }
@@ -76,6 +76,18 @@ export function updateAgentThread(thread, event) {
   return next
 }
 
+/** The approval a thread waits on (its last event, not answered here yet), or null. */
+export function pendingApproval(thread, answered = new Set()) {
+  const last = thread.events?.at(-1)
+  return last?.type === 'approval' && !answered.has(last.id) ? last : null
+}
+
+/** A box dragged out on the board, from one corner to the other (page points), or null when too small to work in. */
+export function markedArea(a, b, min = 120) {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y)
+  return w >= min && h >= min ? { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) } : null
+}
+
 /** A work area dragged by `dx`, `dy` (board units): moved by its label, or resized by its corner (never below a note's size). */
 export function dragArea(area, handle, dx, dy) {
   if (handle === 'move') return { ...area, x: Math.round(area.x + dx), y: Math.round(area.y + dy) }
@@ -106,6 +118,8 @@ const ICONS = {
   send: svg('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
   back: svg('<path d="m15 18-6-6 6-6"/>'),
   close: svg('<path d="M18 6 6 18M6 6l12 12"/>'),
+  area: svg('<path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/>'),
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
 }
 
 const el = (tag, cls, text) => {
@@ -176,23 +190,37 @@ const STYLE = `
 .qda-fb{display:flex;flex-wrap:wrap;gap:4px}
 .qda-fb .qda-chip{background:color-mix(in srgb,var(--qda-accent) 14%,transparent)}
 .qda-chip .qd-tool{width:22px;height:22px}.qda-chip .qd-tool svg{width:13px;height:13px}
-.qda-input{display:flex;align-items:flex-end;gap:6px;padding:4px 4px 4px 10px;border-radius:14px;background:var(--qd-seg-bg)}
+.qda-input{display:flex;align-items:flex-end;gap:6px;padding:4px;border-radius:14px;background:var(--qd-seg-bg)}
 .qda-input textarea{flex:1;border:0;outline:0;background:transparent;color:inherit;resize:none;font:16px/1.35 system-ui,-apple-system,sans-serif;padding:4px 0;max-height:120px}
 .qda-opts{display:flex;flex-wrap:wrap;gap:4px}
 .qda-opts select{font:inherit;font-size:12px;border:1px solid var(--qd-border);border-radius:999px;padding:3px 8px;background:transparent;color:var(--qd-ink);max-width:170px}
 .qda-send{background:var(--qd-on-bg)!important;color:var(--qd-on-ink)!important;border-radius:50%!important;width:30px!important;height:30px!important}
 .qda-send:disabled{opacity:.3}
+.qda-mark{width:30px!important;height:30px!important;color:var(--qd-ink-soft)}
+.qda-mark.on{color:var(--qda-accent)}
 .qda-pins{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:30}
 /* a request's work area: seen by everyone, drawn in by anyone (its inside lets the pointer through); moved by its label, resized by its corner */
 .qda-area{position:absolute;box-sizing:border-box;border:2px dashed var(--qda-accent);border-radius:14px;background:color-mix(in srgb,var(--qda-accent) 5%,transparent)}
 .qda-area[data-status=waiting]{border-color:var(--qda-wait)}
-.qda-area-label{position:absolute;left:-2px;top:-30px;max-width:calc(100% - 20px);display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:999px;
+.qda-area-head{position:absolute;left:-2px;top:-30px;display:flex;gap:4px;max-width:calc(100% + 4px)}
+.qda-area-label{min-width:0;display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:999px;
   background:var(--qda-accent);color:#fff;font:600 12px/16px system-ui,-apple-system,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:grab;touch-action:none;box-shadow:var(--qd-bar-shadow)}
 .qda-area[data-status=waiting] .qda-area-label{background:var(--qda-wait)}
 .qda-area-label svg{width:12px;height:12px;flex:none}
 .qda-area-label span{overflow:hidden;text-overflow:ellipsis}
 .qda-area-grip{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:4px;background:var(--qd-pop-bg);border:2px solid var(--qda-accent);pointer-events:auto;cursor:nwse-resize;touch-action:none;box-sizing:border-box}
 .qda-area.dragging .qda-area-label{cursor:grabbing}
+.qda-area-tools{display:flex;gap:4px;pointer-events:auto;flex:none}
+.qda-area-tools button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:4px;height:22px;padding:0 9px 0 7px;border-radius:999px;cursor:pointer;
+  background:var(--qd-pop-bg);border:1px solid var(--qd-border);color:var(--qd-ink-strong);font:600 12px system-ui,-apple-system,sans-serif;box-shadow:var(--qd-bar-shadow)}
+.qda-area-tools button:hover{background:var(--qd-hover)}
+.qda-area-tools svg{width:11px;height:11px}
+.qda-area-ask{position:absolute;left:-2px;top:0;transform:translateY(calc(-100% - 36px));max-width:320px;display:grid;gap:8px;padding:9px 11px;border-radius:12px;pointer-events:auto;
+  background:var(--qd-pop-bg);border:1px solid var(--qda-wait);box-shadow:var(--qd-pop-shadow);color:var(--qd-ink-strong);font:13px/1.4 system-ui,-apple-system,sans-serif}
+.qda-area-ask[hidden]{display:none}
+.qda-pick{position:absolute;inset:0;z-index:40;cursor:crosshair;pointer-events:auto;touch-action:none}
+.qda-pick-hint{position:absolute;left:50%;top:calc(58px + env(safe-area-inset-top));transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:var(--qd-on-bg);color:var(--qd-on-ink);font:600 12px system-ui,-apple-system,sans-serif;pointer-events:none;white-space:nowrap}
+.qda-pick-box,.qda-marked{position:absolute;box-sizing:border-box;border:2px dashed var(--qd-ink-soft);border-radius:14px;background:color-mix(in srgb,var(--qd-ink-soft) 6%,transparent);pointer-events:none}
 .qda-pin{position:absolute;width:24px;height:24px;padding:0;margin:-12px 0 0 -12px;border-radius:50%;border:2px solid var(--qd-pop-bg);
   display:grid;place-items:center;background:var(--qd-on-bg);color:var(--qd-on-ink);box-shadow:var(--qd-bar-shadow);pointer-events:auto;cursor:pointer}
 .qda-pin svg{width:13px;height:13px}
@@ -245,6 +273,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const answered = new Set() // approvals answered here, until the agent moves on
   let view = null // null: the list; else the open thread's id
   let pendingShapeIds = null // the selection a request will be about
+  let pendingArea = null // where it should work, marked out on the board
   let editingNoteId = null
   // the model and effort chosen per agent, remembered on this device
   const CHOICES = 'quickdraw-agent:choices'
@@ -273,6 +302,10 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const chipText = el('span')
   const chipClear = iconButton(ICONS.close, 'Not about the selection')
   chip.append(chipText, chipClear)
+  const areaChip = el('div', 'qda-chip') // where it should work, marked out on the board
+  const areaChipText = el('span')
+  const areaClear = iconButton(ICONS.close, 'Anywhere')
+  areaChip.append(areaChipText, areaClear)
   const input = el('div', 'qda-input')
   const prompt = el('textarea')
   prompt.rows = 1
@@ -288,9 +321,10 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   opts.append(picker, modelPick, effortPick, usage)
   const send = iconButton(ICONS.send, 'Send', 'qda-send')
   send.type = 'submit'
-  input.append(prompt, send)
+  const mark = iconButton(ICONS.area, 'Mark out where it should work', 'qda-mark')
+  input.append(mark, prompt, send)
   const lock = el('div', 'qda-muted') // why this viewer may not ask
-  foot.append(fbRow, chip, opts, lock, input)
+  foot.append(fbRow, chip, areaChip, opts, lock, input)
   panel.append(head, body, foot)
   // what is done here is not for the board: its shortcuts (keys on the container), its paste, its wheel
   for (const type of ['keydown', 'keyup', 'paste', 'wheel']) panel.addEventListener(type, (e) => e.stopPropagation())
@@ -405,25 +439,21 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
         const settled = answered.has(event.id) || i < thread.events.length - 1
         const blocked = !settled && whyNot(thread.request.to)
         if (blocked) card.append(el('div', 'qda-muted', blocked))
-        else if (!settled) {
-          const actions = el('div', 'qda-actions')
-          for (const [allow, label] of [[true, 'Allow'], [false, 'Deny']]) {
-            const b = el('button', 'qda-btn' + (allow ? ' primary' : ''), label)
-            b.type = 'button'
-            b.addEventListener('click', () => {
-              answered.add(event.id)
-              host.reply(thread.request.id, { approval: event.id, allow })
-              render()
-            })
-            actions.append(b)
-          }
-          card.append(actions)
-        } else card.append(el('div', 'qda-muted', 'Answered'))
+        else if (!settled) card.append(approvalButtons(thread, event))
+        else card.append(el('div', 'qda-muted', 'Answered'))
         body.append(card)
       } else if (event.type === 'error') body.append(el('div', 'qda-note error', text || 'Something went wrong.'))
       else if (text) body.append(el('div', 'qda-note', text))
     })
     flushChanges()
+    if ((thread.status === 'working' || thread.status === 'waiting') && !whyNot(thread.request.to) && !thread.request.voice) {
+      const actions = el('div', 'qda-actions')
+      const b = el('button', 'qda-btn', 'Stop')
+      b.type = 'button'
+      b.addEventListener('click', () => stop(thread.request.id))
+      actions.append(b)
+      body.append(actions)
+    }
     if (thread.undoResult) {
       const { reverted, skipped } = thread.undoResult
       body.append(el('div', 'qda-note', `Undone: ${plural(reverted, 'change')} reverted${skipped.length ? `, ${skipped.length} kept (changed since)` : ''}.`))
@@ -452,6 +482,10 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const selected = (pendingShapeIds || []).map((id) => store.get(id)).filter(Boolean)
     chip.hidden = inThread || !selected.length
     if (selected.length) chipText.textContent = about(store, selected)
+    areaChip.hidden = inThread || !pendingArea
+    if (pendingArea) areaChipText.textContent = `In the area you marked out (${pendingArea.w} × ${pendingArea.h})`
+    mark.hidden = !!inThread
+    mark.classList.toggle('on', !!pendingArea)
     picker.hidden = inThread || agents.length < 2
     fill(picker, agents.map((a) => [a.id, a.name]))
     // the model and effort, for an agent that offers them
@@ -527,16 +561,28 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     if (!show) { box?.remove(); areas.delete(id); return }
     if (!box) {
       box = el('div', 'qda-area')
+      const head = el('div', 'qda-area-head')
       const label = el('div', 'qda-area-label')
       label.innerHTML = AGENT_ICON
       label.append(el('span'))
+      const tools = el('div', 'qda-area-tools')
+      const stopBtn = el('button', '', 'Stop')
+      stopBtn.type = 'button'
+      stopBtn.insertAdjacentHTML('afterbegin', ICONS.stop)
+      stopBtn.title = 'Stop it'
+      stopBtn.addEventListener('pointerdown', (e) => e.stopPropagation()) // not a board gesture
+      stopBtn.addEventListener('click', (e) => { e.stopPropagation(); stop(id) })
+      tools.append(stopBtn)
+      head.append(label, tools)
+      const ask = el('div', 'qda-area-ask') // its approval, answered right here
+      ask.addEventListener('pointerdown', (e) => e.stopPropagation())
       const grip = el('div', 'qda-area-grip')
       grip.title = 'Resize'
       label.title = 'Move where it works'
       for (const [handle, node] of [['move', label], ['resize', grip]]) {
         node.addEventListener('pointerdown', (e) => startDrag(e, id, handle, box))
       }
-      box.append(label, grip)
+      box.append(head, ask, grip)
       pinLayer.prepend(box) // under the pins
       areas.set(id, box)
     }
@@ -545,6 +591,43 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     Object.assign(box.style, { left: `${p.x}px`, top: `${p.y}px`, width: `${q.x - p.x}px`, height: `${q.y - p.y}px` })
     box.dataset.status = status
     box.querySelector('.qda-area-label span').textContent = `${agentName(thread.request.to)} · ${a.title || thread.request.text || 'working'}`
+    box.querySelector('.qda-area-tools').hidden = !!whyNot(thread.request.to)
+    renderAsk(box.querySelector('.qda-area-ask'), thread)
+  }
+  // an approval it waits on, with its answers (the same as in the thread)
+  function renderAsk(card, thread) {
+    const pending = pendingApproval(thread, answered)
+    const blocked = pending && whyNot(thread.request.to)
+    card.hidden = !pending
+    if (!pending) return
+    const key = pending.id + (blocked ? ':blocked' : '')
+    if (card.dataset.key === key) return // as it is: kept, so a click lands
+    card.dataset.key = key
+    card.replaceChildren(el('div', '', pending.text || 'The agent asks for approval.'))
+    if (blocked) { card.append(el('div', 'qda-muted', blocked)); return }
+    card.append(approvalButtons(thread, pending))
+  }
+  function approvalButtons(thread, event) {
+    const actions = el('div', 'qda-actions')
+    for (const [allow, label] of [[true, 'Allow'], [false, 'Deny']]) {
+      const b = el('button', 'qda-btn' + (allow ? ' primary' : ''), label)
+      b.type = 'button'
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        answered.add(event.id)
+        host.reply(thread.request.id, { approval: event.id, allow })
+        if (panel.hidden) renderPins()
+        else render()
+      })
+      actions.append(b)
+    }
+    return actions
+  }
+  // stops the agent's work on a request (what it did stays, to keep or undo)
+  function stop(id) {
+    const thread = threads.get(id)
+    if (!thread || whyNot(thread.request.to)) return
+    host.reply(id, { stop: true })
   }
   let dragging = null // { id, handle, area, from: { x, y }, start }
   function startDrag(e, id, handle, box) {
@@ -578,7 +661,49 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     addEventListener('pointercancel', up)
   }
 
+  const marked = el('div', 'qda-marked')
+  function renderMarked() {
+    marked.hidden = !pendingArea || panel.hidden
+    if (marked.hidden) return
+    if (!marked.isConnected) pinLayer.prepend(marked)
+    const p = editor.pageToScreen(pendingArea.x, pendingArea.y), q = editor.pageToScreen(pendingArea.x + pendingArea.w, pendingArea.y + pendingArea.h)
+    Object.assign(marked.style, { left: `${p.x}px`, top: `${p.y}px`, width: `${q.x - p.x}px`, height: `${q.y - p.y}px` })
+  }
+  // drag a box on the board: where the next request should work (Escape cancels)
+  function pickArea() {
+    const layer = el('div', 'qda-pick')
+    const hint = el('div', 'qda-pick-hint', 'Drag out where it should work — Esc cancels')
+    const box = el('div', 'qda-pick-box')
+    box.hidden = true
+    layer.append(hint, box)
+    container.append(layer)
+    const at = (e) => { const r = container.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+    let from = null
+    const end = () => { layer.remove(); removeEventListener('keydown', onKey, true) }
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); end() } }
+    addEventListener('keydown', onKey, true)
+    layer.addEventListener('pointerdown', (e) => { e.stopPropagation(); from = at(e); layer.setPointerCapture?.(e.pointerId) })
+    layer.addEventListener('pointermove', (e) => {
+      if (!from) return
+      const to = at(e)
+      box.hidden = false
+      Object.assign(box.style, { left: `${Math.min(from.x, to.x)}px`, top: `${Math.min(from.y, to.y)}px`, width: `${Math.abs(to.x - from.x)}px`, height: `${Math.abs(to.y - from.y)}px` })
+    })
+    layer.addEventListener('pointerup', (e) => {
+      if (!from) return
+      const a = markedArea(editor.screenToPage(from.x, from.y), editor.screenToPage(at(e).x, at(e).y))
+      end()
+      if (!a) return
+      pendingArea = a
+      show()
+      renderFoot()
+      renderMarked()
+      prompt.focus()
+    })
+  }
+
   function renderPins() {
+    renderMarked()
     for (const [id, thread] of threads) {
       renderArea(id, thread)
       let pin = pins.get(id)
@@ -653,20 +778,20 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     if (feedback.length) request = { ...request, context: { ...request.context, feedback } }
     skipped.clear()
     following = request.id
-    threads.set(request.id, { request, events: [], diffs: [], status: 'working' })
+    threads.set(request.id, { request, events: [], diffs: [], status: 'working', ...(request.context.area ? { area: { ...request.context.area } } : {}) })
     open(request.id)
     Promise.resolve(host.ask(request)).catch((error) => handleEvent({ type: 'error', message: String(error) }, request.id))
     return request
   }
   const currentAgent = () => picker.value || getAgents()[0]?.id || ''
-  function askSelection(shapeIds = [...editor.selection], text = prompt.value) {
+  function askSelection(shapeIds = [...editor.selection], text = prompt.value, area = null) {
     const selected = shapeIds.map((id) => store.get(id)).filter(Boolean)
     const first = selected[0]
     const v = editor.viewportPageBounds()
     const anchor = first ? { shapeId: first.id, x: first.x, y: first.y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 }
     return sendRequest(buildAgentRequest({
       id: crypto.randomUUID(), to: currentAgent(), text, editor, options: optionsFor(currentAgent()),
-      shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id), anchor,
+      shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id), anchor, ...(area ? { area } : {}),
     }))
   }
   function askText(text, anchor = {}) {
@@ -709,6 +834,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   modelPick.addEventListener('change', () => choose(currentAgent(), { model: modelPick.value }))
   effortPick.addEventListener('change', () => choose(currentAgent(), { effort: effortPick.value }))
   chipClear.addEventListener('click', () => { pendingShapeIds = null; renderFoot() })
+  areaClear.addEventListener('click', () => { pendingArea = null; renderFoot(); renderMarked() })
+  mark.addEventListener('click', pickArea)
   prompt.addEventListener('input', () => {
     prompt.style.height = 'auto'
     prompt.style.height = `${prompt.scrollHeight}px`
@@ -725,8 +852,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     prompt.style.height = 'auto'
     if (view && threads.has(view)) host.reply(view, text)
     else {
-      askSelection(pendingShapeIds ?? [], text)
+      askSelection(pendingShapeIds ?? [], text, pendingArea)
       pendingShapeIds = null
+      pendingArea = null
     }
     renderFoot()
   })
