@@ -6,7 +6,7 @@ import * as Y from 'yjs'
 import { DatabaseSync } from 'node:sqlite'
 import { importSingleBoard } from '../src/serve/boards.ts'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
-import { PRESENCE, SV, UPDATE, pack } from '../src/protocol.js'
+import { AGENT, PRESENCE, SV, UPDATE, pack, packAgent, unpackAgent } from '../src/protocol.js'
 
 let apps: ReturnType<typeof createQuickdrawServer>[] = []
 afterEach(async () => { for (const app of apps) await app.close(); apps = [] })
@@ -104,10 +104,10 @@ describe('relay', () => {
     const url = await start()
     const base = httpOf(url)
     const id = url.split('/').pop()
-    for (const path of ['/', `/b/${id}`, '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js']) {
+    for (const path of ['/', `/b/${id}`, '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js', '/_/quickdraw-agent/src/panel.js']) {
       expect((await fetch(base + path)).status, path).toBe(200)
     }
-    for (const path of ['/b/nosuchboard', '/board.html', '/_/core/package.json', '/_/quickdraw-agent/src/index.js', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
+    for (const path of ['/b/nosuchboard', '/board.html', '/_/core/package.json', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
       expect((await fetch(base + path)).status, path).not.toBe(200)
     }
   })
@@ -157,5 +157,118 @@ describe('boards', () => {
     const doc = new Y.Doc()
     Y.applyUpdate(doc, app.boards.state(board.id))
     expect(doc.getMap('quickdraw').size).toBe(3)
+  })
+})
+
+// AGENT messages to a connection, in order; `take(kind)` waits for the next of that kind
+function agentInbox(ws: WebSocket) {
+  const got: any[] = []
+  const waiting: [string, (m: any) => void][] = []
+  ws.addEventListener('message', ({ data }) => {
+    const m = new Uint8Array(data)
+    if (m[0] !== AGENT) return
+    const msg = unpackAgent(m)
+    const i = waiting.findIndex(([kind]) => kind === msg.kind)
+    if (i >= 0) waiting.splice(i, 1)[0][1](msg)
+    else got.push(msg)
+  })
+  return {
+    take(kind: string): Promise<any> {
+      const i = got.findIndex((m) => m.kind === kind)
+      if (i >= 0) return Promise.resolve(got.splice(i, 1)[0])
+      return new Promise((ok) => waiting.push([kind, ok]))
+    },
+    has: (kind: string) => got.some((m) => m.kind === kind),
+  }
+}
+const request = (id: string, to = 'board-ai') => ({ id, to, text: 'Sort these', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {} })
+
+describe('agents', () => {
+  async function setup(opts?: ServeOptions) {
+    const url = await start(opts)
+    const page = await open(url), agent = await open(url)
+    const pageIn = agentInbox(page), agentIn = agentInbox(agent)
+    page.send(packAgent({ kind: 'hello' }))
+    expect((await pageIn.take('agents')).agents).toEqual([])
+    agent.send(packAgent({ kind: 'join', agent: { id: 'board-ai', name: 'Board AI', knows: ['This board'] } }))
+    expect((await agentIn.take('joined')).id).toBe('board-ai')
+    expect((await pageIn.take('agents')).agents).toEqual([{ id: 'board-ai', name: 'Board AI', knows: ['This board'], status: 'idle' }])
+    return { url, page, agent, pageIn, agentIn }
+  }
+
+  it('lists the agents on a board, and drops one that leaves', async () => {
+    const { page, agent, pageIn } = await setup()
+    agent.send(packAgent({ kind: 'status', status: 'working' }))
+    expect((await pageIn.take('agents')).agents[0].status).toBe('working')
+    agent.close()
+    expect((await pageIn.take('agents')).agents).toEqual([])
+    page.close()
+  })
+
+  it('takes a request to its agent and the agent\'s events to every page, and keeps the thread', async () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), 'qd-agent-')), 'board.sqlite')
+    const { url, page, agent, pageIn, agentIn } = await setup({ dbPath })
+    const other = await open(url)
+    const otherIn = agentInbox(other)
+    other.send(packAgent({ kind: 'hello' }))
+    await otherIn.take('threads')
+
+    page.send(packAgent({ kind: 'request', request: request('r1') }))
+    expect((await agentIn.take('request')).request.id).toBe('r1')
+    expect((await otherIn.take('thread')).thread.request.id).toBe('r1') // started on another device
+
+    agent.send(packAgent({ kind: 'event', event: { type: 'op', requestId: 'r1', op: 'op:1', diff: { records: [] }, ids: ['shape:f'] } }))
+    agent.send(packAgent({ kind: 'event', event: { type: 'done', requestId: 'r1' } }))
+    for (const inbox of [pageIn, otherIn]) {
+      expect((await inbox.take('event')).event.type).toBe('op')
+      expect((await inbox.take('event')).event.type).toBe('done')
+    }
+
+    // a person's reply comes back to every page, the sender too, and goes to the agent
+    page.send(packAgent({ kind: 'reply', requestId: 'r1', message: 'Thanks' }))
+    expect((await pageIn.take('event')).event).toEqual({ type: 'reply', requestId: 'r1', text: 'Thanks' })
+    expect((await agentIn.take('reply')).message).toBe('Thanks')
+    // an approval goes to the agent only; an undo is kept
+    page.send(packAgent({ kind: 'reply', requestId: 'r1', message: { approval: 'a1', allow: true } }))
+    expect((await agentIn.take('reply')).message).toEqual({ approval: 'a1', allow: true })
+    page.send(packAgent({ kind: 'reply', requestId: 'r1', message: { undo: { reverted: 1, skipped: [] } } }))
+    expect((await otherIn.take('event')).event.type).toBe('reply')
+    expect((await otherIn.take('event')).event).toMatchObject({ type: 'undo', reverted: 1 })
+
+    for (const ws of [page, agent, other]) ws.close()
+    await apps.pop()!.close()
+
+    // after a restart, a page gets the thread as it was
+    const again = await open(await start({ dbPath }))
+    const againIn = agentInbox(again)
+    again.send(packAgent({ kind: 'hello' }))
+    const [thread] = (await againIn.take('threads')).threads
+    expect(thread).toMatchObject({ status: 'done', diffs: [], undoResult: { reverted: 1, skipped: [] }, request: { id: 'r1', anchor: { shapeId: 'shape:f' } } })
+    expect(thread.events.map((e: { type: string }) => e.type)).toEqual(['op', 'done', 'reply', 'undo'])
+    again.close()
+  })
+
+  it('refuses events from an agent a request was not to, and says when no agent is there', async () => {
+    const { url, page, agent, pageIn } = await setup()
+    const intruder = await open(url)
+    intruder.send(packAgent({ kind: 'join', agent: { id: 'board-ai', name: 'Other' } }))
+    expect((await agentInbox(intruder).take('joined')).id).toBe('board-ai-2')
+
+    page.send(packAgent({ kind: 'request', request: request('r2') }))
+    intruder.send(packAgent({ kind: 'event', event: { type: 'message', requestId: 'r2', text: 'not mine' } }))
+    agent.send(packAgent({ kind: 'event', event: { type: 'message', requestId: 'r2', text: 'mine' } }))
+    expect((await pageIn.take('event')).event.text).toBe('mine')
+
+    page.send(packAgent({ kind: 'request', request: request('r3', 'nobody') }))
+    expect((await pageIn.take('event')).event).toMatchObject({ type: 'error', requestId: 'r3' })
+
+    // an agent that leaves mid-request says so in the thread
+    page.send(packAgent({ kind: 'request', request: request('r4') }))
+    await new Promise((r) => setTimeout(r, 50))
+    agent.close()
+    const left = [(await pageIn.take('event')).event, (await pageIn.take('event')).event]
+    expect(left.map((e) => e.requestId).sort()).toEqual(['r2', 'r4']) // both unfinished
+    expect(left[0]).toMatchObject({ type: 'error', message: 'Board AI left the board.' })
+    for (const ws of [page, intruder]) ws.close()
   })
 })

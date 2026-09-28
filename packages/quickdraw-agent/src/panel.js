@@ -33,13 +33,18 @@ export function hasAgentThreadForAnchor(shapeId, threads) {
 export function updateAgentThread(thread, event) {
   const next = { ...thread, events: [...(thread.events || []), event], diffs: [...(thread.diffs || [])] }
   if (event.type === 'op' && event.diff) next.diffs.push(event.diff)
+  if (event.type === 'undo') { // undone here or on another device: nothing left to undo
+    next.undoResult = { reverted: event.reverted, skipped: event.skipped }
+    next.diffs = []
+  }
   // a request about nothing in particular is pinned to the first thing it made
   if (event.type === 'op' && event.ids?.length && !thread.request?.anchor?.shapeId) {
     next.request = { ...thread.request, anchor: { ...thread.request.anchor, shapeId: event.ids[0] } }
   }
   if (event.type === 'done' || event.type === 'error') next.status = event.type
-  else if (event.type === 'approval') next.status = 'waiting'
-  else if (['progress', 'message', 'question', 'op'].includes(event.type)) next.status = 'working'
+  else if (event.type === 'approval' || event.type === 'question') next.status = 'waiting'
+  else if (event.type === 'progress' || event.type === 'op') next.status = 'working'
+  // a message or a person's reply leaves it as it was: a word after `done` does not reopen it
   return next
 }
 
@@ -237,6 +242,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       who.append(row)
     }
     body.append(who)
+    if (!getAgents().length) who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
     const list = [...threads.values()].reverse()
     if (!list.length) {
       body.append(el('div', 'qda-empty', 'Ask here, from ✦ on a selected shape, or write a note that starts with “@AI”.'))
@@ -365,6 +371,16 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
 
   function handleEvent(envelope, requestId) {
     if (envelope.type === 'agents') { if (!panel.hidden) render(); return }
+    if (envelope.type === 'threads' || envelope.type === 'thread') {
+      // `threads`: the stored ones, as they are now (after reconnecting too);
+      // `thread`: one started on another device
+      for (const thread of envelope.threads || [envelope.thread]) {
+        if (envelope.type === 'threads' || !threads.has(thread.request.id)) threads.set(thread.request.id, { ...thread, events: [...thread.events], diffs: [...thread.diffs] })
+      }
+      if (panel.hidden) renderPins()
+      else render()
+      return
+    }
     const event = envelope.type === 'event' && envelope.event ? envelope.event : envelope
     const id = event.requestId || requestId
     const thread = threads.get(id)

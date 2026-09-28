@@ -88,8 +88,15 @@ export type AgentEvent =
   | { type: 'done', requestId: string, text?: string }
   /** A person's follow-up: the host sends it back to every viewer, this one too. */
   | { type: 'reply', requestId: string, text: string }
+  /** Undone, here or on another device. */
+  | { type: 'undo', requestId: string, reverted: number, skipped: string[] }
   | { type: 'error', requestId: string, message: string }
-export type AgentHostEvent = { type: 'agents', agents?: AgentParticipant[] } | { type: 'event', event: AgentEvent }
+export type AgentHostEvent =
+  | { type: 'agents', agents?: AgentParticipant[] }
+  | { type: 'event', event: AgentEvent }
+  /** Threads the panel did not have: stored ones once connected, or one started on another device. */
+  | { type: 'threads', threads: AgentThread[] }
+  | { type: 'thread', thread: AgentThread }
 export interface AgentUndoResult { reverted: number, skipped: string[] }
 export interface AgentThread {
   request: AgentRequest
