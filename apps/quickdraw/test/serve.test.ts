@@ -101,6 +101,30 @@ describe('relay', () => {
     b.close()
   })
 
+  it('tells a page who is here already when it connects, and forgets whoever left', async () => {
+    const url = await start()
+    const decode = (m: Uint8Array) => { expect(m[0]).toBe(PRESENCE); return JSON.parse(new TextDecoder().decode(m.subarray(1))) }
+    const [a, b] = await Promise.all([open(url), open(url)])
+    let got = next(b)
+    a.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify({ name: 'Mac', x: 1, y: 2 }))))
+    const first = decode(await got)
+    got = next(b)
+    a.send(pack(PRESENCE, new TextEncoder().encode(JSON.stringify({ name: 'Ann', status: 'away', x: 3, y: 4 }))))
+    await got
+    // a page coming later hears the latest, without waiting for a move
+    const c = await open(url)
+    expect(decode(await next(c))).toEqual({ name: 'Ann', status: 'away', x: 3, y: 4, id: first.id })
+    got = next(b)
+    a.close()
+    await got
+    const d = await open(url)
+    let heard = false
+    d.onmessage = ({ data }) => { if (new Uint8Array(data as ArrayBuffer)[0] === PRESENCE) heard = true }
+    await fetchState(url) // a round trip
+    expect(heard).toBe(false)
+    for (const ws of [b, c, d]) ws.close()
+  })
+
   it('serves the boards, their pages, the protocol and the packages the page imports, and nothing else', async () => {
     const url = await start()
     const base = httpOf(url)

@@ -2,8 +2,10 @@
 // A binary WebSocket message is one type byte + payload:
 //   UPDATE   a Yjs update
 //   SV       a Yjs state vector: "send me what I am missing"; answered with an UPDATE
-//   PRESENCE JSON (a cursor: { name, color, x, y }); the server adds the sender's
-//            `id` and never stores it; a disconnect is relayed as { id, gone: true }
+//   PRESENCE JSON, who someone is and where (quickdraw-presence's: { name, color, status?, x, y,
+//            view?, agent?, agentStatus? }); the server adds the sender's `id`, keeps each
+//            one's latest in memory only (sent to a page when it connects), never stores
+//            it; a disconnect is relayed as { id, gone: true }
 //   AGENT    JSON, agents on the board and requests to them (below)
 //   SHARE    JSON, screen sharing (quickdraw-screenshare's messages): from a page
 //            start { name }, stop, snap { by }; from the server sharing

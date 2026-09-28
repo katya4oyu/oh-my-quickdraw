@@ -196,6 +196,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     },
     status(status) {
       relay.send({ kind: 'status', status })
+      relay.status(status) // on its cursor too
       // the cursor stays a moment after the work, so people see where it ended
       if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
     },

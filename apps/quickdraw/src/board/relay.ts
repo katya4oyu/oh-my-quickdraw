@@ -1,12 +1,14 @@
 // Joins a board through the relay of `quickdraw serve` (../protocol.js) like
 // any browser tab: it sends what it has, asks for the rest, and shows a cursor
-// while it works. An agent also speaks AGENT messages on the same connection.
+// while it works (a presence saying it is an agent, see quickdraw-presence). An agent also speaks AGENT messages on the same connection.
 import * as Y from 'yjs'
 import { AGENT, SV, UPDATE, pack, packAgent, packPresence, unpackAgent } from '../protocol.js'
 
 export interface Relay {
   /** shows the cursor at a page point (null hides it) */
   cursor(x: number | null, y: number | null): void
+  /** what the agent is doing, on its cursor and in the row of who is here */
+  status(status: 'idle' | 'working' | 'waiting'): void
   /** sends an AGENT message (see ../protocol.js) */
   send(message: object): void
   /** AGENT messages from the server; returns a function that stops listening */
@@ -49,10 +51,12 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
       ready = true
       clearTimeout(timer)
       ydoc.on('update', onUpdate)
-      const me: Presence & { x: number | null, y: number | null } = { name, color, x: null, y: null }
+      const me: Presence & { x: number | null, y: number | null, agent: true, agentStatus?: string } = { name, color, x: null, y: null, agent: true }
       const sendPresence = () => { if (ws.readyState === WebSocket.OPEN) ws.send(packPresence(me)) }
+      sendPresence() // here, before it points at anything
       resolve({
         cursor(x, y) { Object.assign(me, { x, y }); sendPresence() },
+        status(agentStatus) { if (me.agentStatus !== agentStatus) { me.agentStatus = agentStatus; sendPresence() } },
         send(message) { if (ws.readyState === WebSocket.OPEN) ws.send(packAgent(message)) },
         onMessage(fn) { listeners.add(fn); return () => listeners.delete(fn) },
         onClose(fn) { closed = fn },

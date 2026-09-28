@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENT, packAgent, unpackAgent } from '../src/protocol.js'
+import { AGENT, PRESENCE, packAgent, unpackAgent, unpackPresence } from '../src/protocol.js'
 
 const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const hasChrome = !!findChrome()
@@ -24,10 +24,11 @@ async function page(url: string) {
   const ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
   await new Promise((ok) => { ws.onopen = ok })
-  const events: any[] = [], agents: any[][] = []
+  const events: any[] = [], agents: any[][] = [], presences: any[] = []
   const wake = new Set<() => void>()
   ws.onmessage = ({ data }) => {
     const m = new Uint8Array(data)
+    if (m[0] === PRESENCE) { presences.push(unpackPresence(m)); for (const fn of wake) fn() }
     if (m[0] !== AGENT) return
     const msg = unpackAgent(m)
     if (msg.kind === 'event') events.push(msg.event)
@@ -41,7 +42,7 @@ async function page(url: string) {
   })
   ws.send(packAgent({ kind: 'hello' }))
   cleanup.push(() => ws.close())
-  return { send: (m: object) => ws.send(packAgent(m)), events, agents, until }
+  return { send: (m: object) => ws.send(packAgent(m)), events, agents, presences, until }
 }
 
 describe('quickdraw agent codex', () => {
@@ -122,6 +123,9 @@ describe('quickdraw agent codex', () => {
     person.send({ kind: 'request', request })
     await person.until(() => person.events.some((e) => e.type === 'approval'))
     expect(person.agents.at(-1)?.[0].status).toBe('waiting')
+    // its cursor says so too, as an agent's, for the row of who is here
+    await person.until(() => person.presences.at(-1)?.agentStatus === 'waiting')
+    expect(person.presences[0]).toMatchObject({ name: 'Codex · repo', agent: true, x: null, y: null }) // here as soon as it joins
     const approval = person.events.find((e) => e.type === 'approval')
     expect(approval.text).toBe('Run ls — to see the files')
     person.send({ kind: 'reply', requestId: 'r1', message: { approval: approval.id, allow: true } })
@@ -142,6 +146,7 @@ describe('quickdraw agent codex', () => {
     const note = board.store.get(op.ids[0])
     expect(note).toMatchObject({ type: 'note', props: { text: 'From Codex' }, agent: { name: 'Codex · repo', op: op.op } })
     await person.until(() => person.agents.at(-1)?.[0].status === 'idle')
+    await person.until(() => person.presences.at(-1)?.agentStatus === 'idle')
 
     // an image it generated goes on the board with add_image, as one more undoable operation
     const dir = mkdtempSync(join(tmpdir(), 'qd-img-'))
