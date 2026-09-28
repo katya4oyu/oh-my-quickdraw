@@ -48,7 +48,7 @@ export const BOARD_TOOLS = [
   step('add_arrow', 'arrow', 'An arrow between two shapes; it follows them when they move later.', { from: str('shape id'), to: str('shape id'), color, line: { type: 'boolean', description: 'a line, no arrowhead' } }, ['from', 'to']),
   step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card or frame title) or the color.', { id: str(), text: str(), color }, ['id']),
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
-  step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, gap: num, at: point }, ['ids']),
+  step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {

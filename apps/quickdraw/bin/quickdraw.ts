@@ -9,6 +9,11 @@ const USAGE = `quickdraw <command>
   serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]
         the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
         SQLite persistence (<data>/boards.sqlite), link previews (/preview)
+  agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]
+        Codex joins a board, working in this directory (its files, AGENTS.md
+        and your Codex settings), and takes requests from the board's AI panel,
+        where people choose the model and effort per request; --model and
+        --effort (low, medium, high, …) set the defaults there
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -32,6 +37,52 @@ if (command === 'serve') {
   if (imported) console.log(`imported board.sqlite as the board "${imported.title}" (${imported.id})`)
   const { port } = await app.listen(Number(values.port), values.host)
   console.log(`http://${values.host === '0.0.0.0' ? 'localhost' : values.host}:${port}/   (data: ${data})`)
+} else if (command === 'agent') {
+  const { values, positionals } = parseArgs({
+    args: rest,
+    allowPositionals: true,
+    options: {
+      board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
+      model: { type: 'string' }, effort: { type: 'string' },
+    },
+  })
+  if (positionals[0] !== 'codex') {
+    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E]\n')
+    process.exit(1)
+  }
+  const { basename } = await import('node:path')
+  const { resolveBoard, serverOf } = await import('../src/commands/boards.ts')
+  const { openBoard } = await import('../src/board/open.ts')
+  const { joinBoard } = await import('../src/agent/board-agent.ts')
+  const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
+  const cwd = process.cwd()
+  const folder = basename(cwd)
+  const name = values.name ?? `Codex · ${folder}`
+  const id = values.id ?? ('codex-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+  try {
+    const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server))
+    const board = await openBoard({ url, name })
+    const codex = startAppServer(cwd)
+    const offered = await initCodex(codex, { model: values.model, effort: values.effort })
+    const { homedir } = await import('node:os')
+    const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
+    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered }, { imageRoots: [cwd, generatedImages] })
+    const leave = async (code: number, why?: string) => {
+      if (why) process.stderr.write(why + '\n')
+      codex.close()
+      await agent.close()
+      process.exit(code)
+    }
+    codex.onExit(() => leave(1, 'codex app-server stopped'))
+    board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
+    process.on('SIGINT', () => leave(0))
+    process.on('SIGTERM', () => leave(0))
+    await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
+    console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
+  } catch (e) {
+    process.stderr.write(JSON.stringify({ error: (e as Error).message }) + '\n')
+    process.exit(1)
+  }
 } else {
   const { BOARD_COMMANDS, BOARD_USAGE, main } = await import('../src/commands/index.ts')
   if (command && BOARD_COMMANDS.includes(command)) {

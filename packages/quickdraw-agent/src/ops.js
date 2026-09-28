@@ -186,6 +186,15 @@ function operations(store, name, op) {
       const w = opts.w ?? 180, h = opts.h ?? 100
       return add('geo', { geo, w, h, color: checkColor(opts.color) ?? 'blue', size: 'm', dash: 'draw', fill: opts.fill ?? 'none', font: 'draw', ...(label ? { label: String(label) } : {}) }, w, h, opts)
     },
+    // an image from a data URL of `natural` size; shown `w` wide (400 at most by default)
+    image(src, natural, opts = {}) {
+      if (typeof src !== 'string' || !src.startsWith('data:image/')) throw new Error('an image needs a data:image/… URL')
+      if (!(natural?.w > 0 && natural?.h > 0)) throw new Error('an image needs its size')
+      const w = opts.w ?? Math.min(natural.w, 400), h = (w * natural.h) / natural.w
+      const assetId = newId('asset')
+      store.put({ id: assetId, typeName: 'asset', src, w: natural.w, h: natural.h })
+      return add('image', { w, h, assetId }, w, h, opts)
+    },
     markdown(md, opts = {}) {
       const w = opts.w ?? 360
       const at = opts.at ?? place(w, 240, opts)
@@ -246,11 +255,11 @@ function operations(store, name, op) {
     },
     // lays shapes out in a grid, row or column, from `at` or where they start;
     // a frame counts with its title, so frames in a column do not overlap titles
-    arrange(ids, { layout = 'grid', gap = 24, at } = {}) {
+    arrange(ids, { layout = 'grid', gap = 24, at, cols: across } = {}) {
       const shapes = ids.map(need)
       const bs = shapes.map((s) => withTitle(store, s))
       let x0 = at?.x ?? Math.min(...bs.map((b) => b.x)), y0 = at?.y ?? Math.min(...bs.map((b) => b.y))
-      const cols = layout === 'row' ? shapes.length : layout === 'column' ? 1 : Math.ceil(Math.sqrt(shapes.length))
+      const cols = layout === 'row' ? shapes.length : layout === 'column' ? 1 : across > 0 ? Math.floor(across) : Math.ceil(Math.sqrt(shapes.length))
       let x = x0, y = y0, rowH = 0
       shapes.forEach((s, i) => {
         if (i && i % cols === 0) { x = x0; y += rowH + gap; rowH = 0 }
@@ -389,6 +398,7 @@ export function applySteps(store, name, steps) {
         case 'text': out = ops.text(s.text ?? '', opts(s)); break
         case 'shape': out = ops.shape(s.shape ?? 'rectangle', s.text ?? s.label ?? '', opts(s)); break
         case 'markdown': out = ops.markdown(s.text ?? s.md ?? '', opts(s)); break
+        case 'image': out = ops.image(s.src, s.natural, opts(s)); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r) }); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color }); break

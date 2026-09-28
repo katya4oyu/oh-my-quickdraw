@@ -1,0 +1,217 @@
+// An agent's side of a board, whatever it runs on: it joins the board as a
+// participant, takes the requests addressed to it, runs the board tools
+// (quickdraw-agent's BOARD_TOOLS) on its own copy of the board, and reports
+// back — progress, messages, each operation with its diff (so the panel can
+// undo a request), approvals it waits for, done. A runtime (./codex.ts) turns
+// its own events into these.
+//
+// People watch it work: an operation is made on a copy of the board first
+// (so it is checked, all or nothing, and laid out as one), then put on the
+// board a piece at a time with the cursor on each — one undo, as before.
+import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
+import { bindFrames } from 'quickdraw-frames'
+import { applySteps, BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import type { Board } from '../board/open.ts'
+import { resolve as resolvePath } from 'node:path'
+import { loadImage, splitImage } from './images.ts'
+
+import type { AgentModel } from 'quickdraw-agent'
+
+export interface Participant { id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string }
+
+export interface BoardAgent {
+  /** set by the runtime: a new request */
+  onRequest(request: AgentRequest): void
+  /** set by the runtime: a person's follow-up in a request's thread */
+  onReply(requestId: string, text: string): void
+  /** the tools, as the runtime hands them to the model */
+  tools: { name: string, description: string, inputSchema: object }[]
+  /** an image the runtime generated for a request, for add_image to put on the board */
+  generated(requestId: string, file: string, opts?: { transparent?: boolean }): number
+  /** runs a tool for a request, a piece at a time: what the model gets back, as text */
+  runTool(requestId: string, name: string, args: unknown): Promise<string>
+  /** puts the cursor on what a request is about, while the agent thinks */
+  lookAt(request: AgentRequest): void
+  /** an event in a request's thread */
+  emit(requestId: string, event: Omit<AgentEvent, 'requestId'> & Record<string, unknown>): void
+  /** asks the people on the board; resolves with their answer */
+  approve(requestId: string, text: string): Promise<boolean>
+  /** what the agent is doing overall, shown next to its name */
+  status(status: 'idle' | 'working' | 'waiting'): void
+  /** leaves the board */
+  close(): Promise<void>
+}
+
+type Emitted = Omit<AgentEvent, 'requestId'> & Record<string, unknown>
+
+const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
+const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
+
+// the board as it is, to try an operation on
+function copyOf(store: StoreType): StoreType {
+  const copy = new Store()
+  copy.loadSnapshot({ document: { store: Object.fromEntries(store.all().map((r) => [r.id, structuredClone(r)])) } })
+  bindFrames(copy)
+  return copy
+}
+
+/**
+ * Puts what an operation did on `done` (a copy it ran on) onto `store` a record
+ * at a time, pointing at each; `pace` spreads it over about that long. The
+ * records are taken as they ended up on the copy: a diff's added records are
+ * as they were added, before listeners (frame membership) touched them.
+ */
+export async function putLive(store: StoreType, diff: Diff, done: StoreType, point: (x: number, y: number) => void, pace = 2500) {
+  const final = (id: string) => done.get(id) as BoardRecord
+  // frames first (a member put before its frame would be let go of), arrows
+  // last (after what they connect); otherwise in the order they were made
+  const rank = (r: BoardRecord) => ((r as { isFrame?: boolean }).isFrame ? 0 : (r as { type?: string }).type === 'arrow' ? 2 : 1)
+  const added = Object.keys(diff.added).map(final).filter(Boolean).sort((a, b) => rank(a) - rank(b))
+  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]]).filter(([, [, to]]) => to)
+  const shown = added.filter(isShape).length + updated.filter(([, [, to]]) => isShape(to)).length
+  const gap = shown ? Math.min(250, Math.max(40, pace / shown)) : 0
+  const one = async (d: Partial<Diff>, rec: BoardRecord) => {
+    store.applyDiff({ added: {}, updated: {}, removed: {}, ...d }, 'user')
+    if (!isShape(rec)) return
+    const b = pageBounds(rec as never)
+    point(b.x + b.w / 2, b.y + b.h / 2)
+    await sleep(gap)
+  }
+  for (const rec of added) await one({ added: { [rec.id]: rec } }, rec)
+  for (const [id, pair] of updated) await one({ updated: { [id]: pair } }, pair[1])
+  if (Object.keys(diff.removed).length) store.applyDiff({ added: {}, updated: {}, removed: diff.removed }, 'user')
+}
+
+// Images: the board tools take an image as data; the agent names a file instead
+const point = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }
+const ADD_IMAGE = {
+  name: 'add_image',
+  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
+    + 'With `split`, an image laid out as an even grid (a sprite or sticker sheet) is cut into its cells, which go on the board as separate images in the same grid (each `w` wide, 160 by default), optionally in a new frame titled `frame`.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['image'], properties: {
+    image: { type: 'string', description: '"latest", the number of a generated image, or a file path' },
+    w: { type: 'number', description: 'shown width' },
+    at: { ...point, description: 'page position of the top-left corner' },
+    in: { type: 'string', description: 'a frame id (not with split)' },
+    split: { type: 'object', additionalProperties: false, required: ['cols', 'rows'], description: 'cut an even grid into its cells',
+      properties: { cols: { type: 'number' }, rows: { type: 'number' }, inset: { type: 'number', description: 'share of each cell to trim at its edges, 0 to 0.2 (for gutters or lines between cells)' } } },
+    frame: { type: 'string', description: 'with split: a title for a frame around the pieces' },
+  } },
+}
+
+export interface JoinOptions {
+  /** where image files may be read from: the working directory first (relative paths are in it) */
+  imageRoots?: string[]
+}
+
+export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()] }: JoinOptions = {}): Promise<BoardAgent> {
+  if (!board.relay) throw new Error('an agent needs a live board (quickdraw serve), not a file')
+  const relay = board.relay
+  const approvals = new Map<string, (allow: boolean) => void>()
+  const approvalBase = Date.now().toString(36)
+  let hideTimer: ReturnType<typeof setTimeout> | undefined
+  const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
+  const holdCursor = () => clearTimeout(hideTimer)
+  let nextApproval = 1
+
+  relay.onMessage((m) => {
+    if (m.kind === 'request' && m.request?.id) agent.onRequest(m.request)
+    else if (m.kind === 'reply' && typeof m.message === 'string') agent.onReply(m.requestId, m.message)
+    else if (m.kind === 'reply' && typeof m.message?.approval === 'string') {
+      const resolve = approvals.get(m.message.approval)
+      approvals.delete(m.message.approval)
+      resolve?.(m.message.allow === true)
+    }
+  })
+
+  function emit(requestId: string, event: Emitted) {
+    relay.send({ kind: 'event', event: { ...event, requestId } })
+  }
+
+  const agent: BoardAgent = {
+    onRequest() {},
+    onReply() {},
+    tools: [...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE],
+    generated(requestId, file, { transparent = false } = {}) {
+      const list = images.get(requestId) ?? []
+      list.push({ file, transparent })
+      images.set(requestId, list)
+      return list.length
+    },
+    async runTool(requestId, name, args) {
+      if (name === 'add_image') return put(requestId, await imageStep(requestId, (args ?? {}) as Record<string, any>))
+      const tool = BOARD_TOOLS.find((t) => t.name === name)
+      if (!tool) throw new Error(`no tool ${name}`)
+      if (name === 'read_board') {
+        const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name }) as unknown
+        return typeof result === 'string' ? result : JSON.stringify(result)
+      }
+      return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name }) as never)
+    },
+    lookAt(request) {
+      const shape = request.anchor.shapeId ? board.store.get(request.anchor.shapeId) : undefined
+      const b = shape?.typeName === 'shape' ? pageBounds(shape as never) : null
+      const v = request.context.viewport
+      holdCursor()
+      if (b) board.cursor(b.x + b.w / 2, b.y + b.h / 2)
+      else board.cursor(request.anchor.x ?? v.x + v.w / 2, request.anchor.y ?? v.y + v.h / 2)
+    },
+    emit,
+    approve(requestId, text) {
+      const id = `${approvalBase}:${nextApproval++}`
+      emit(requestId, { type: 'approval', id, text })
+      return new Promise((ok) => approvals.set(id, ok))
+    },
+    status(status) {
+      relay.send({ kind: 'status', status })
+      // the cursor stays a moment after the work, so people see where it ended
+      if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
+    },
+    close: () => { clearTimeout(hideTimer); return board.close() },
+  }
+
+  // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[] }) {
+    const copy = copyOf(board.store)
+    const r = make(copy)
+    holdCursor()
+    emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids: r.ids }) // first, so the panel can take the view there
+    await putLive(board.store, r.diff, copy, board.cursor)
+    return JSON.stringify({ op: r.op, ids: r.ids })
+  }
+
+  async function imageStep(requestId: string, args: Record<string, any>) {
+    const made = images.get(requestId) ?? []
+    const which = String(args.image ?? '')
+    const pick = which === 'latest' ? made.at(-1) : /^\d+$/.test(which) ? made[Number(which) - 1] : null
+    if ((which === 'latest' || /^\d+$/.test(which)) && !pick) throw new Error(made.length ? `there is no image ${which}; you made ${made.length}` : 'you have not generated an image for this request')
+    const file = pick ? pick.file : resolvePath(imageRoots[0], which)
+    if (args.split) {
+      // the cells, laid out as on the sheet, as one operation (one undo)
+      const cells = await splitImage(file, args.split, imageRoots, { transparent: pick?.transparent, inset: args.split.inset })
+      const refs = cells.map((_, i) => `cell${i}`)
+      const steps: object[] = cells.map((img, i) => ({ do: 'image', ref: refs[i], src: img.src, natural: { w: img.w, h: img.h }, w: args.w ?? Math.min(img.w, 160) }))
+      steps.push({ do: 'arrange', ids: refs.map((r) => '@' + r), layout: 'grid', cols: Math.floor(args.split.cols), gap: 16, ...(args.at ? { at: args.at } : {}) })
+      if (args.frame) steps.push({ do: 'frame', title: String(args.frame), around: refs.map((r) => '@' + r) })
+      return (store: StoreType) => {
+        const { op, diff, result } = applySteps(store as never, me.name, steps as never)
+        return { op, diff, ids: (result as unknown[]).flat().filter((v): v is string => typeof v === 'string').filter((v, i, a) => a.indexOf(v) === i) }
+      }
+    }
+    const img = await loadImage(file, imageRoots, { transparent: pick?.transparent })
+    const step = { do: 'image', src: img.src, natural: { w: img.w, h: img.h }, w: args.w, at: args.at, in: args.in }
+    return (store: StoreType) => {
+      const { op, diff, result } = applySteps(store as never, me.name, [step])
+      return { op, diff, ids: [String((result as unknown[])[0])] }
+    }
+  }
+
+  return new Promise((resolve) => {
+    const off = relay.onMessage((m) => {
+      if (m.kind !== 'joined') return
+      off()
+      resolve(agent)
+    })
+    relay.send({ kind: 'join', agent: me })
+  })
+}
