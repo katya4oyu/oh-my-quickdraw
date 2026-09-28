@@ -118,7 +118,8 @@ export interface AgentRequest {
   text: string
   /** What was selected; `frameIds`: the frames among it. */
   /** `feedback`: ids of what the host offered as feedback (see AgentHost.feedback), e.g. snapshot frames */
-  context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport, feedback?: string[] }
+  /** `area`: where the person marked out that it should work (it becomes its work area) */
+  context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport, feedback?: string[], area?: Rect }
   anchor: AgentAnchor
   /** chosen in the panel, for an agent that offers models */
   options?: { model?: string, effort?: string }
@@ -211,6 +212,8 @@ export function buildAgentRequest(options: {
   frameIds?: string[]
   options?: { model?: string, effort?: string }
   anchor?: AgentAnchor
+  /** where it should work, marked out on the board */
+  area?: Rect
 }): AgentRequest
 /** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults; undefined for an agent that offers none. */
 /** "9% · resets in 6d": how much of a usage limit is used, and when it starts again */
@@ -224,5 +227,9 @@ export function detectAgentMention(text: string, agents: AgentParticipant[]): { 
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
 /** A work area dragged by dx, dy (board units): moved by its label, or resized by its corner. */
 export function dragArea<T extends Rect>(area: T, handle: 'move' | 'resize', dx: number, dy: number): T
+/** The approval a thread waits on (its last event, not answered yet), or null. */
+export function pendingApproval(thread: AgentThread, answered?: Set<string>): Extract<AgentEvent, { type: 'approval' }> | null
+/** A box dragged out on the board between two page points, or null when smaller than `min` (120) either way. */
+export function markedArea(a: Point, b: Point, min?: number): Rect | null
 export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }
 export function hasAgentThreadForAnchor(shapeId: string, threads: Iterable<AgentThread>): boolean

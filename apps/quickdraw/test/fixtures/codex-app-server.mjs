@@ -53,11 +53,22 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     out({ id: m.id, result: {} })
     return out({ method: 'thread/realtime/closed', params: { threadId: m.params.threadId, reason: 'requested' } })
   }
+  if (m.method === 'turn/interrupt') { // the turn ends where it is
+    out({ id: m.id, result: {} })
+    return out({ method: 'turn/completed', params: { threadId: m.params.threadId, turn: { id: m.params.turnId, status: 'interrupted', error: null } } })
+  }
   if (m.method === 'turn/start') {
     const threadId = m.params.threadId, turnId = `turn-${++turns}`, text = m.params.input[0].text
     process.stderr.write(`effort=${m.params.effort}\n`)
     out({ id: m.id, result: { turn: { id: turnId } } })
     out({ method: 'turn/started', params: { threadId, turn: { id: turnId, status: 'inProgress' } } })
+    // "Wait…": says what it was asked, adds a note, then waits on an approval (until stopped)
+    if (text.startsWith('Wait')) {
+      out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text } } })
+      await ask('item/tool/call', { threadId, turnId, callId: 'w1', tool: 'add_note', arguments: { text: 'Started' } })
+      await ask('item/commandExecution/requestApproval', { threadId, turnId, itemId: 'w2', command: 'make', reason: 'to build it' })
+      return
+    }
     // a request with pictures (feedback on snapshots): says what came, and looks at the first snapshot itself
     const images = m.params.input.filter((i) => i.type === 'localImage')
     if (images.length) {

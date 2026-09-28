@@ -165,6 +165,39 @@ describe('quickdraw agent codex', () => {
     expect(JSON.parse(await agent.runTool('w1', 'claim_area', { w: 400, h: 300, x: -500, y: 900 })).area).toEqual({ x: -500, y: 900, w: 400, h: 300 })
   }, 20_000)
 
+  it('works where a person marked out, and stops when asked, keeping what it did', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Marked').id}`
+    const person = await page(url)
+    const board = await openBoard({ url, name: 'Codex' })
+    const codex = startAppServer(process.cwd(), ['node', MOCK])
+    const agent = await joinBoard(board, { id: 'codex', name: 'Codex', knows: [], ...(await initCodex(codex)) })
+    cleanup.push(() => agent.close(), () => codex.close())
+    await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex' })
+    await person.until(() => person.agents.at(-1)?.[0]?.id === 'codex')
+
+    const area = { x: 1000, y: 1000, w: 600, h: 400 }
+    person.send({ kind: 'request', request: { id: 'm1', to: 'codex', text: 'Wait here', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1200, h: 800 }, area }, anchor: {} } })
+    // its work area from the start, and Codex is told so
+    await person.until(() => person.events.some((e) => e.type === 'area' && e.requestId === 'm1'))
+    expect(person.events.find((e) => e.type === 'area')).toMatchObject({ requestId: 'm1', area })
+    await person.until(() => person.events.some((e) => e.type === 'approval' && e.requestId === 'm1'))
+    expect(person.events.find((e) => e.type === 'progress' && /marked out/.test(e.text))?.text)
+      .toMatch(/They marked out where it goes: x 1000, y 1000, 600 × 400\. It is your work area already/)
+    const op = person.events.find((e) => e.type === 'op' && e.requestId === 'm1')
+    const note = board.store.get(op.ids[0]) as any
+    expect(note.x >= 1000 && note.y >= 1000 && note.x + 200 <= 1600 && note.y + 200 <= 1400).toBe(true)
+
+    // Stop: the turn ends where it is; what it did stays, to keep or undo
+    person.send({ kind: 'reply', requestId: 'm1', message: { stop: true } })
+    await person.until(() => person.events.some((e) => e.type === 'done' && e.requestId === 'm1'))
+    expect(person.events.find((e) => e.type === 'done' && e.requestId === 'm1').text).toBe('Stopped.')
+    expect(board.store.get(op.ids[0])).toBeTruthy()
+    await person.until(() => person.agents.at(-1)?.[0]?.status === 'idle') // what it waited on was declined by stopping
+  }, 20_000)
+
   it('shows by the cursor what Codex starts doing, and on what', () => {
     expect(activityOf({ type: 'reasoning' })).toEqual({ kind: 'thinking' })
     expect(activityOf({ type: 'webSearch', query: 'tldraw pricing' })).toEqual({ kind: 'searching', note: 'tldraw pricing' })

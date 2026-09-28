@@ -68,11 +68,14 @@ export function startAppServer(cwd: string, command = ['codex', 'app-server']): 
 
 /** what the request says, and what it is about on the board */
 function prompt(request: AgentRequest): string {
-  const { shapeIds, frameIds } = request.context
+  const { shapeIds, frameIds, area } = request.context
   const about = shapeIds.length
     ? `\n\n(Selected on the board: ${shapeIds.join(', ')}${frameIds.length ? `; of which frames: ${frameIds.join(', ')}` : ''}.)`
     : ''
-  return request.text + about
+  const where = area
+    ? `\n\n(They marked out where it goes: x ${Math.round(area.x)}, y ${Math.round(area.y)}, ${Math.round(area.w)} × ${Math.round(area.h)}. It is your work area already: what you add without a place goes in it.)`
+    : ''
+  return request.text + about + where
 }
 
 const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
@@ -293,6 +296,12 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     } catch (e) {
       agent.emit(request.id, { type: 'error', message: (e as Error).message })
     }
+  }
+  // a person pressed Stop: the turn ends where it is, and what it did stays (to keep or undo)
+  agent.onStop = async (requestId) => {
+    const t = byRequest.get(requestId)
+    if (!t?.turnId) return
+    try { await server.request('turn/interrupt', { threadId: t.threadId, turnId: t.turnId }) } catch (e) { agent.emit(requestId, { type: 'error', message: (e as Error).message }) }
   }
   agent.onReply = async (requestId, text) => {
     if (!byRequest.has(requestId)) return // from before this agent started
