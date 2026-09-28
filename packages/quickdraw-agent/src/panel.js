@@ -274,8 +274,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   const lock = el('div', 'qda-muted') // why this viewer may not ask
   foot.append(fbRow, chip, opts, lock, input)
   panel.append(head, body, foot)
-  // typing here is not for the board: its shortcuts (keys on the container) and its paste
-  for (const type of ['keydown', 'keyup', 'paste']) panel.addEventListener(type, (e) => e.stopPropagation())
+  // what is done here is not for the board: its shortcuts (keys on the container), its paste, its wheel
+  for (const type of ['keydown', 'keyup', 'paste', 'wheel']) panel.addEventListener(type, (e) => e.stopPropagation())
   ;(container.querySelector('.qd-ui') || container).append(panel)
   const pinLayer = el('div', 'qda-pins')
   container.append(pinLayer)
