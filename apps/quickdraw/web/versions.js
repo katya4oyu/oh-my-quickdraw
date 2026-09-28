@@ -20,6 +20,8 @@ export function createVersions(boardId, container = document.body) {
   const dialog = el('dialog', { className: 'versions' },
     el('header', {}, el('strong', { textContent: 'Versions' }), el('span', {}, save, ' ', close)), list)
   container.append(dialog)
+  // keys in the dialog are not the board's shortcuts (it is inside the board's element)
+  for (const type of ['keydown', 'keyup', 'paste']) dialog.addEventListener(type, (e) => e.stopPropagation())
 
   async function show() {
     let versions
