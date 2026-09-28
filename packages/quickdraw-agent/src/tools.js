@@ -24,9 +24,9 @@ function step(name, verb, description, properties, required) {
     name,
     description,
     inputSchema: object(properties, required),
-    run(store, args, { name: who = 'Agent' } = {}) {
-      const { op, diff, result, focus } = applySteps(store, who, [{ ...args, do: verb }])
-      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))] }
+    run(store, args, { name: who = 'Agent', area } = {}) {
+      const { op, diff, result, focus, area: grown } = applySteps(store, who, [{ ...args, do: verb }], { area })
+      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
     },
   }
 }
@@ -62,9 +62,9 @@ export const BOARD_TOOLS = [
       + 'Each step is { do: note|text|shape|markdown|embed|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
-    run(store, { steps }, { name: who = 'Agent' } = {}) {
-      const { op, diff, result, focus } = applySteps(store, who, steps)
-      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))] }
+    run(store, { steps }, { name: who = 'Agent', area } = {}) {
+      const { op, diff, result, focus, area: grown } = applySteps(store, who, steps, { area })
+      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
     },
   },
 ]

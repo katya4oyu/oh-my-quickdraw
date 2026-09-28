@@ -33,7 +33,11 @@ export interface Operation<T = unknown> {
   result: T
   /** Where it worked, to show a cursor there. */
   focus: Point | null
+  /** The work area it was given, grown if what it added did not fit. */
+  area?: Rect
 }
+/** A work area: where what is added without a place goes (it grows downwards when full). */
+export interface Rect { x: number, y: number, w: number, h: number }
 
 /** A step of `applySteps`: `{ do: 'note', text, … }`; `ref` names what it adds, `"@ref"` points at it. */
 /** A link card's preview, as quickdraw-embed stores it (the image an inline data URL). */
@@ -52,8 +56,10 @@ export interface BoardDescription {
 export function describeBoard(store: Store): BoardDescription
 export function boardToMarkdown(store: Store): string
 export function textOf(store: Store, shape: object): string
-export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T): Operation<T>
-export function applySteps(store: Store, name: string, steps: Step[]): Operation<unknown[]>
+export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect }): Operation<T>
+export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect }): Operation<unknown[]>
+/** Free space for a w × h box (and a frame's title above it), clear of every shape: at `prefer` (its top-left) if free, else the nearest free spot. */
+export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts?: { gap?: number, above?: number }): Point
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
 export function undoDiff(store: Store, diff: Diff): { reverted: number, skipped: string[] }
 export function parseRatio(s: string | number | null | undefined): number | null
@@ -66,10 +72,10 @@ export interface BoardTool {
   description: string
   inputSchema: JsonSchema
   /** Reading tools return the board; writing tools make one operation. */
-  run(store: Store, args: any, context?: { name?: string }): string | BoardDescription | ToolOperation
+  run(store: Store, args: any, context?: { name?: string, area?: Rect }): string | BoardDescription | ToolOperation
 }
 
-export interface ToolOperation { op: string, diff: Diff, focus: Point | null, ids: string[] }
+export interface ToolOperation { op: string, diff: Diff, focus: Point | null, ids: string[], area?: Rect }
 
 export const BOARD_TOOLS: BoardTool[]
 
@@ -124,6 +130,8 @@ export type AgentEvent =
   | { type: 'approval', requestId: string, id: string, text?: string }
   /** `ids`: what it added; a thread not about a shape is pinned to the first. */
   | { type: 'op', requestId: string, op: string, diff: Diff, ids?: string[] }
+  /** Where the agent works for this request (people may move it: `by: 'person'`); shown while it works. */
+  | { type: 'area', requestId: string, area: Rect, title?: string, by?: 'person' }
   | { type: 'done', requestId: string, text?: string }
   /** A person's follow-up: the host sends it back to every viewer, this one too. */
   | { type: 'reply', requestId: string, text: string }
@@ -142,6 +150,8 @@ export interface AgentThread {
   events: AgentEvent[]
   diffs: Diff[]
   status: string
+  /** where the agent works on it (shown while it does), and what it makes */
+  area?: Rect & { title?: string }
   undoResult?: AgentUndoResult
   undoSyncError?: string
 }
@@ -212,5 +222,7 @@ export function feedbackToSend(items: Array<{ id: string }> | undefined, skipped
 export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
+/** A work area dragged by dx, dy (board units): moved by its label, or resized by its corner. */
+export function dragArea<T extends Rect>(area: T, handle: 'move' | 'resize', dx: number, dy: number): T
 export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }
 export function hasAgentThreadForAnchor(shapeId: string, threads: Iterable<AgentThread>): boolean

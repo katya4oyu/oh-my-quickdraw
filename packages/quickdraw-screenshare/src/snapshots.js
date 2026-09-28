@@ -3,14 +3,12 @@
 // its frame record (`snapshot: { at, by, imageId, sent? }`), so it travels with
 // the board: synced, saved, exported, like any shape.
 import { newId, pageBounds } from '@quickdrawjs/core'
-import { createFrame, frameTitle, isFrame } from 'quickdraw-frames'
+import { createFrame, frameTitle, freeSpot, isFrame } from 'quickdraw-frames'
 
 const GAP = 80
 const PAD = 24 // around the image, inside the frame
 const NOTES = 240 // room on the right for notes
 const TITLE = 34 // the frame's title sits this far above it
-const STEP = 80 // how finely free space is looked for around the view
-const RINGS = 30 // how far (in steps) before giving up and going right of everything
 
 export const isSnapshot = (rec) => isFrame(rec) && typeof rec.snapshot?.at === 'number'
 
@@ -31,7 +29,9 @@ export function placeSnapshot(editor, image, { title, by = '', at = Date.now(), 
   const w = Math.min(width, image.w), h = (w * image.h) / image.w
   const fw = w + PAD * 2 + NOTES, fh = h + PAD * 2
   const last = snapshots(store).at(-1)
-  const { x, y } = last ? nextInRow(store, fw, fh, last) : nearView(store, fw, fh, editor.viewportPageBounds())
+  const v = editor.viewportPageBounds()
+  // the first: as near mid-view as there is room; then along the row
+  const { x, y } = last ? nextInRow(store, fw, fh, last) : freeSpot(store, fw, fh, { x: v.x + (v.w - fw) / 2, y: v.y + (v.h - fh) / 2 }, { gap: GAP, above: TITLE })
   const assetId = newId('asset'), imageId = newId()
   let frameId
   store.transact(() => {
@@ -63,16 +63,6 @@ function nextInRow(store, w, h, last) {
   }
 }
 
-// the first: mid-view if free, else the free spot nearest to it, else right of everything
-function nearView(store, w, h, v) {
-  const all = taken(store)
-  const x0 = v.x + (v.w - w) / 2, y0 = v.y + (v.h - h) / 2
-  const spots = []
-  for (let i = -RINGS; i <= RINGS; i++) for (let j = -RINGS; j <= RINGS; j++) spots.push([i * i + j * j, x0 + i * STEP, y0 + j * STEP])
-  spots.sort((a, b) => a[0] - b[0])
-  for (const [, x, y] of spots) if (!all.some((b) => overlaps(area(x, y, w, h), b))) return { x, y }
-  return { x: Math.max(...all.map((b) => b.x + b.w)) + GAP, y: y0 }
-}
 
 // a short, stable fingerprint of what is written in a snapshot
 function fingerprint(shapes) {

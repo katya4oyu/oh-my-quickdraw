@@ -115,6 +115,56 @@ describe('quickdraw agent codex', () => {
     expect(other.events.some((e) => e.type === 'reply' && e.requestId === 'v1')).toBe(true)
   }, 30_000)
 
+  it('works in an area people see: what it adds goes there, and it hears what people did in it and where they moved it', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Together').id}`
+    const person = await page(url)
+    const ann = await openBoard({ url, name: 'Ann' }) // someone drawing on the board
+    cleanup.push(() => ann.close())
+    const board = await openBoard({ url, name: 'Codex' })
+    const agent = await joinBoard(board, { id: 'codex', name: 'Codex', knows: [] })
+    cleanup.push(() => agent.close())
+    await person.until(() => person.agents.at(-1)?.[0]?.id === 'codex')
+    person.send({ kind: 'request', request: { id: 'w1', to: 'codex', text: 'Map the flow', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1200, h: 800 } }, anchor: {} } })
+    await new Promise((r) => setTimeout(r, 200))
+
+    const { area } = JSON.parse(await agent.runTool('w1', 'claim_area', { w: 600, h: 400, title: 'Flow' }))
+    expect(area).toEqual({ x: 300, y: 200, w: 600, h: 400 }) // mid-view, on an empty board
+    await person.until(() => person.events.some((e) => e.type === 'area'))
+    expect(person.events.find((e) => e.type === 'area')).toMatchObject({ requestId: 'w1', area, title: 'Flow' })
+    const within = (id: string, a: typeof area) => { const s = board.store.get(id) as any; return s.x >= a.x && s.y >= a.y && s.x + 200 <= a.x + a.w && s.y + 200 <= a.y + a.h }
+    const first = JSON.parse(await agent.runTool('w1', 'add_note', { text: 'Record' }))
+    expect(within(first.ids[0], area)).toBe(true)
+
+    // Ann writes in its area: its next step hears of it
+    ann.store.put({ id: 'shape:ann1', typeName: 'shape', type: 'note', x: area.x + 330, y: area.y + 60, rot: 0, z: 99, props: { text: 'Ask the team', color: 'green', size: 'm', font: 'draw', scale: 1 } } as never)
+    await new Promise((r) => setTimeout(r, 300))
+    const heard = await agent.runTool('w1', 'add_note', { text: 'Transcribe' })
+    expect(heard).toMatch(/In your work area since your last step: People added note "Ask the team" \(shape:ann1\)\. Keep what they did/)
+    expect(await agent.runTool('w1', 'read_board', {})).not.toMatch(/work area since/) // told once
+
+    // a person moves the area: everyone sees it, and the agent builds there
+    const moved = { x: 2000, y: 0, w: 600, h: 400 }
+    person.send({ kind: 'reply', requestId: 'w1', message: { area: moved } })
+    await person.until(() => person.events.some((e) => e.type === 'area' && e.by === 'person'))
+    await new Promise((r) => setTimeout(r, 100))
+    const there = await agent.runTool('w1', 'add_note', { text: 'Summarize' })
+    expect(there).toMatch(/People moved your work area to x 2000, y 0 \(600 × 400\): build there\./)
+    expect(within(JSON.parse(there.split('\n')[0]).ids[0], moved)).toBe(true)
+    // kept with the thread: claimed, grown when Ann's note left no room, moved
+    expect(app.threads.get('w1')?.thread.events.filter((e: any) => e.type === 'area').map((e: any) => [e.area.y, e.area.h > 400, e.by ?? 'agent'])).toEqual([[200, false, 'agent'], [200, true, 'agent'], [0, false, 'person']])
+
+    // put beside it, by a place of its own: the area takes it in, so it stays where the work is
+    const far = JSON.parse((await agent.runTool('w1', 'add_note', { text: 'Far', at: { x: 3000, y: 600 } })).split('\n')[0])
+    expect(far.area).toMatchObject({ x: 2000, y: 0 })
+    expect(far.area.x + far.area.w).toBeGreaterThanOrEqual(3200)
+    expect(far.area.y + far.area.h).toBeGreaterThanOrEqual(800)
+    // or claimed where the request says
+    expect(JSON.parse(await agent.runTool('w1', 'claim_area', { w: 400, h: 300, x: -500, y: 900 })).area).toEqual({ x: -500, y: 900, w: 400, h: 300 })
+  }, 20_000)
+
   it('shows by the cursor what Codex starts doing, and on what', () => {
     expect(activityOf({ type: 'reasoning' })).toEqual({ kind: 'thinking' })
     expect(activityOf({ type: 'webSearch', query: 'tldraw pricing' })).toEqual({ kind: 'searching', note: 'tldraw pricing' })

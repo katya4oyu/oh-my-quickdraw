@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
+import { undoAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor, dragArea } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -104,5 +104,18 @@ describe('agent panel request model', () => {
     expect(result.skipped).toContain(secondId)
     expect(store.get(first.result)).toBeUndefined()
     expect(store.get(secondId).props.text).toBe('human edit')
+  })
+
+  it('keeps where the agent works, as it or a person moves it, and drags it by its label or its corner', () => {
+    let t = { request: { id: 'r', text: 'Map it' }, events: [], diffs: [], status: 'working' }
+    t = updateAgentThread(t, { type: 'area', requestId: 'r', area: { x: 0, y: 0, w: 800, h: 500 }, title: 'Flow' })
+    expect(t.area).toEqual({ x: 0, y: 0, w: 800, h: 500, title: 'Flow' })
+    expect(t.status).toBe('working')
+    t = updateAgentThread(t, { type: 'area', requestId: 'r', area: { x: 40, y: 0, w: 800, h: 500 }, by: 'person' })
+    expect(t.area).toEqual({ x: 40, y: 0, w: 800, h: 500, title: 'Flow' }) // the title stays
+    const a = { x: 10, y: 20, w: 800, h: 500, title: 'Flow' }
+    expect(dragArea(a, 'move', 100.4, -50)).toEqual({ x: 110, y: -30, w: 800, h: 500, title: 'Flow' })
+    expect(dragArea(a, 'resize', 200, 100)).toEqual({ x: 10, y: 20, w: 1000, h: 600, title: 'Flow' })
+    expect(dragArea(a, 'resize', -2000, -2000)).toMatchObject({ w: 240, h: 240 }) // never smaller than that
   })
 })

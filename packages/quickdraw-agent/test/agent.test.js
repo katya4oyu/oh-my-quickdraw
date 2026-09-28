@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -268,5 +268,43 @@ describe('snapshots', () => {
     const md = boardToMarkdown(store)
     expect(md).toMatch(/## 10:32 · Ann \(snapshot of a shared screen; its notes and marks are feedback; id /)
     expect(md).toMatch(/Button is cut off/)
+  })
+})
+
+describe('a work area', () => {
+  const inside = (b, a) => b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h
+  it('finds free space near where it is wanted, clear of what is there', () => {
+    const store = board()
+    expect(freeSpot(store, 600, 400, { x: 100, y: 100 })).toEqual({ x: 100, y: 100 }) // an empty board
+    store.put(human('shape:h', 'Mine', 150, 150))
+    const at = freeSpot(store, 600, 400, { x: 100, y: 100 })
+    const note = pageBounds(store.get('shape:h'))
+    expect(at.x + 600 < note.x || at.x > note.x + note.w || at.y + 400 < note.y || at.y - 40 > note.y + note.h).toBe(true)
+  })
+
+  it('takes what is added without a place, and grows down when full', () => {
+    const store = board()
+    const area = { x: 1000, y: 0, w: 520, h: 300 }
+    store.put(human('shape:h', 'Mine', 1030, 50)) // a person's note in it already
+    const r = applySteps(store, 'Codex', [
+      { do: 'note', text: 'a' }, { do: 'note', text: 'b' }, { do: 'note', text: 'c' },
+    ], { area })
+    const boxes = r.result.map((id) => pageBounds(store.get(id)))
+    for (const b of boxes) expect(inside(b, r.area)).toBe(true)
+    expect(boxes.every((b) => !(b.x < 1230 && b.x + b.w > 1030 && b.y < 250 && b.y + b.h > 50))).toBe(true) // not on the person's note
+    expect(r.area).toMatchObject({ x: 1000, y: 0, w: 520 })
+    expect(r.area.h).toBeGreaterThan(300) // three notes and the person's do not fit: it grew down
+    expect(area.h).toBe(300) // the caller's, untouched
+    // a place given wins; no area, no area back
+    const at = applySteps(store, 'Codex', [{ do: 'note', text: 'd', at: { x: -500, y: -500 } }], { area })
+    expect(store.get(at.result[0])).toMatchObject({ x: -500, y: -500 })
+    expect(applySteps(store, 'Codex', [{ do: 'note', text: 'e' }]).area).toBeUndefined()
+  })
+
+  it('goes through the board tools', () => {
+    const store = board()
+    const tool = BOARD_TOOLS.find((t) => t.name === 'add_note')
+    const out = tool.run(store, { text: 'x' }, { name: 'Codex', area: { x: 0, y: 0, w: 400, h: 300 } })
+    expect(inside(pageBounds(store.get(out.ids[0])), out.area)).toBe(true)
   })
 })
