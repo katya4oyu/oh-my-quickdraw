@@ -8,7 +8,8 @@ import { bindYjs } from 'quickdraw-yjs'
 import { runOp } from 'quickdraw-agent'
 import { openBoard } from '../src/board/open.ts'
 import { main } from '../src/commands/index.ts'
-import { resolveBoard } from '../src/commands/boards.ts'
+import { PassThrough } from 'node:stream'
+import { chooseBoard, resolveBoard } from '../src/commands/boards.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { PRESENCE, UPDATE, unpackPresence } from '../src/protocol.js'
 
@@ -85,6 +86,19 @@ describe('which board', () => {
 
     const b = app.boards.create('Retro')
     await expect(resolveBoard(undefined, server)).rejects.toThrow(new RegExp(`2 boards; pass --board ID:\\n  ${a.id}  Plan\\n  ${b.id}  Retro`))
+
+    // a person at a terminal chooses by number, asked again until it is one
+    const input = new PassThrough(), output = new PassThrough()
+    let shown = ''
+    output.on('data', (d) => { shown += d })
+    input.end('5\nretro\n2\n')
+    expect(await resolveBoard(undefined, server, (boards) => chooseBoard(boards, 'quickdraw agent codex', input, output))).toMatch(new RegExp(`/ws/${b.id}$`))
+    expect(shown).toContain(`1) Plan  (${a.id})`)
+    expect(shown.match(/Number \(1-2\)/g)).toHaveLength(3)
+    expect(shown).toContain(`Next time: quickdraw agent codex --board ${b.id}`)
+    const none = new PassThrough()
+    none.end('')
+    await expect(chooseBoard([a, b], 'x', none, new PassThrough())).rejects.toThrow(/no board chosen/)
   })
 
   it('lists and makes boards from the command line', async () => {
