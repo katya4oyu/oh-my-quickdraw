@@ -11,6 +11,9 @@ export function buildAgentRequest({ id, to, text, editor, shapeIds = [], frameId
   }
 }
 
+/** The feedback a new request carries: what the host offers, less what the person set aside. */
+export const feedbackToSend = (items, skipped = new Set()) => (items || []).filter((f) => !skipped.has(f.id)).map((f) => f.id)
+
 /** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults. */
 export function agentOptions(agent, choice = {}) {
   const models = agent?.models
@@ -161,6 +164,8 @@ const STYLE = `
 .qda-foot{flex:none;padding:8px;border-top:1px solid var(--qd-menu-div);display:grid;gap:6px}
 .qda-chip{display:flex;align-items:center;gap:6px;justify-self:start;max-width:100%;padding:2px 4px 2px 9px;border-radius:999px;background:var(--qd-seg-bg);font-size:12px}
 .qda-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qda-fb{display:flex;flex-wrap:wrap;gap:4px}
+.qda-fb .qda-chip{background:color-mix(in srgb,var(--qda-accent) 14%,transparent)}
 .qda-chip .qd-tool{width:22px;height:22px}.qda-chip .qd-tool svg{width:13px;height:13px}
 .qda-input{display:flex;align-items:flex-end;gap:6px;padding:4px 4px 4px 10px;border-radius:14px;background:var(--qd-seg-bg)}
 .qda-input textarea{flex:1;border:0;outline:0;background:transparent;color:inherit;resize:none;font:16px/1.35 system-ui,-apple-system,sans-serif;padding:4px 0;max-height:120px}
@@ -243,6 +248,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   head.append(back, title, close)
   const body = el('div', 'qda-body')
   const foot = el('form', 'qda-foot')
+  const fbRow = el('div', 'qda-fb') // feedback that goes with the next request
+  const skipped = new Set() // feedback set aside for the next request
   const chip = el('div', 'qda-chip')
   const chipText = el('span')
   const chipClear = iconButton(ICONS.close, 'Not about the selection')
@@ -264,7 +271,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   send.type = 'submit'
   input.append(prompt, send)
   const lock = el('div', 'qda-muted') // why this viewer may not ask
-  foot.append(chip, opts, lock, input)
+  foot.append(fbRow, chip, opts, lock, input)
   panel.append(head, body, foot)
   // typing here is not for the board: its shortcuts (keys on the container) and its paste
   for (const type of ['keydown', 'keyup', 'paste']) panel.addEventListener(type, (e) => e.stopPropagation())
@@ -444,6 +451,22 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       usage.title = [agent.account, ...agent.limits.map((l) => `${l.name}: ${limitText(l)}`)].filter(Boolean).join('\n')
     }
     opts.hidden = picker.hidden && modelPick.hidden && usage.hidden
+    // feedback (e.g. snapshots written on) that the next request carries, each set aside with its ×
+    const feedback = inThread ? [] : (host.feedback?.() || [])
+    for (const id of skipped) if (!feedback.some((f) => f.id === id)) skipped.delete(id)
+    const fbKey = JSON.stringify(feedback.map((f) => [f.id, f.label, f.count, skipped.has(f.id)]))
+    if (fbRow.dataset.key !== fbKey) {
+      fbRow.dataset.key = fbKey
+      fbRow.replaceChildren(...feedback.filter((f) => !skipped.has(f.id)).map((f) => {
+        const c = el('div', 'qda-chip')
+        c.title = 'Goes with your next request'
+        const x = iconButton(ICONS.close, 'Not this time')
+        x.addEventListener('click', () => { skipped.add(f.id); renderFoot() })
+        c.append(el('span', '', `${f.label}${f.count ? ' · ' + f.count : ''}`), x)
+        return c
+      }))
+    }
+    fbRow.hidden = !fbRow.childElementCount
     const blocked = whyNot(inThread ? threads.get(view).request.to : agent?.id)
     lock.hidden = !blocked
     lock.textContent = blocked || ''
@@ -542,6 +565,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   }
 
   function sendRequest(request) {
+    const feedback = feedbackToSend(host.feedback?.(), skipped)
+    if (feedback.length) request = { ...request, context: { ...request.context, feedback } }
+    skipped.clear()
     following = request.id
     threads.set(request.id, { request, events: [], diffs: [], status: 'working' })
     open(request.id)
@@ -585,6 +611,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
 
   const offHost = host.onEvent((event) => handleEvent(event))
   const offs = ['camera', 'change'].map((name) => editor.on(name, renderPins))
+  offs.push(editor.on('change', () => { if (!panel.hidden) renderFoot() })) // feedback comes and goes with the board
   offs.push(editor.on('camera', () => { if (Date.now() > panning) following = null })) // the person took the view
   offs.push(editor.on('edit', onEdit))
   offs.push(editor.on('selection', () => {

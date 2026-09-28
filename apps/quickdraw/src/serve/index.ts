@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
 import { isLocal } from './local.ts'
 import type { AgentEvent, AgentParticipant, AgentRequest } from 'quickdraw-agent'
-import { AGENT, PRESENCE, SV, UPDATE } from '../protocol.js'
+import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE } from '../protocol.js'
 import { handlePreview } from './preview.ts'
 import { parseJSON } from 'quickdraw-import'
 import { validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
@@ -27,7 +27,7 @@ import { accept, BINARY, CLOSE, frame, parse, PING, PONG } from './websocket.ts'
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -190,9 +190,40 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   const str = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max
   const AGENT_EVENTS = new Set(['progress', 'message', 'question', 'approval', 'op', 'done', 'error'])
 
+  // screen sharing (quickdraw-screenshare): one sharer per board; its frames go to
+  // the pages, dropped for one that is behind, and never stored
+  const sharers = new Map<string, { socket: Duplex, name: string }>() // board -> who shares
+  const shareMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([SHARE]), Buffer.from(JSON.stringify(value))]))
+  const sharingFor = (board: string, s: Duplex) => {
+    const sh = sharers.get(board)
+    return shareMsg({ kind: 'sharing', sharer: sh ? { name: sh.name } : null, mine: sh?.socket === s })
+  }
+  const announceSharing = (board: string, room: Set<Duplex>) => { for (const s of pages(room)) if (s.writable) s.write(sharingFor(board, s)) }
+  const BEHIND = 1_000_000 // bytes waiting for a peer: past this, it skips frames
+
+  function onShareMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
+    if (agentOf.has(socket)) return
+    const sh = sharers.get(board)
+    if (m.kind === 'start') {
+      sharers.set(board, { socket, name: str(m.name, 100) ? m.name : '' }) // takes over from anyone sharing
+      announceSharing(board, room)
+    } else if (m.kind === 'stop' && sh?.socket === socket) {
+      sharers.delete(board)
+      announceSharing(board, room)
+    } else if (m.kind === 'snap' && sh && sh.socket !== socket && sh.socket.writable) {
+      sh.socket.write(shareMsg({ kind: 'snap', by: str(m.by, 100) ? m.by : '' }))
+    }
+  }
+  function onLiveFrame(board: string, room: Set<Duplex>, socket: Duplex, payload: Buffer) {
+    if (sharers.get(board)?.socket !== socket || payload.length > 4_000_000) return
+    const out = frame(BINARY, payload)
+    for (const p of pages(room)) if (p !== socket && p.writable && p.writableLength < BEHIND) p.write(out)
+  }
+
   function onAgentMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
     const agent = agentOf.get(socket)
     if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
+      socket.write(sharingFor(board, socket))
       send(socket, { kind: 'you', local: local.has(socket) })
       send(socket, { kind: 'agents', agents: agentsIn(room) })
       send(socket, { kind: 'threads', threads: threads.list(board) })
@@ -238,6 +269,9 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
       const request = m.request as AgentRequest
       if (threads.get(request.id)) return
+      // feedback it carries (snapshot frames): ids only, a few
+      const fb = request.context?.feedback
+      if (fb !== undefined && !(Array.isArray(fb) && fb.length <= 12 && fb.every((id) => str(id, 100)))) delete request.context.feedback
       const target = [...room].find((s) => agentOf.get(s)?.id === request.to)
       const agentTo = target && agentOf.get(target)
       if (!mayAsk(socket, agentTo)) return send(socket, { kind: 'event', event: { type: 'error', requestId: request.id, message: onlyHere(agentTo!) } })
@@ -307,6 +341,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
           broadcast(peers, socket, frame(BINARY, payload))
         } else if (payload[0] === PRESENCE) {
           try { broadcast(peers, socket, presence(id, JSON.parse(payload.subarray(1).toString()))) } catch {}
+        } else if (payload[0] === LIVE) {
+          onLiveFrame(board, peers, socket, payload)
+        } else if (payload[0] === SHARE) {
+          let m
+          try { m = JSON.parse(payload.subarray(1).toString()) } catch { continue }
+          if (m && typeof m === 'object') onShareMessage(board, peers, socket, m)
         } else if (payload[0] === AGENT) {
           let m
           try { m = JSON.parse(payload.subarray(1).toString()) } catch { continue }
@@ -317,6 +357,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     function drop() {
       if (!peers.delete(socket)) return
       broadcast(peers, socket, presence(id, { gone: true }))
+      if (sharers.get(board!)?.socket === socket) { sharers.delete(board!); announceSharing(board!, peers) }
       const agent = agentOf.get(socket)
       if (agent && !closing) { // not while the server shuts down: the threads are closed
         agentOf.delete(socket)

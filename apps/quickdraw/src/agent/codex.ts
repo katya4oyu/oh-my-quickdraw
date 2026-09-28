@@ -139,9 +139,9 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     agent.status(waiting ? 'waiting' : busy ? 'working' : 'idle')
   }
 
-  async function turn(requestId: string, text: string) {
+  async function turn(requestId: string, text: string, more: Json[] = []) {
     const t = byRequest.get(requestId)!
-    const input = [{ type: 'text', text, text_elements: [] }]
+    const input = [{ type: 'text', text, text_elements: [] }, ...more]
     if (t.turnId) await server.request('turn/steer', { threadId: t.threadId, input, expectedTurnId: t.turnId })
     else await server.request('turn/start', { threadId: t.threadId, input, ...(t.effort ? { effort: t.effort } : {}) })
   }
@@ -196,6 +196,15 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
   server.onRequest(async (method, p) => {
     const requestId = requestOf.get(p?.threadId)
     if (!requestId) throw new Error('not a board request')
+    if (method === 'item/tool/call' && p.tool === 'look_at') { // a picture, not text
+      try {
+        const png = await agent.picture(p.arguments ?? {})
+        if (!png) return { success: false, contentItems: [{ type: 'inputText', text: 'Nothing to draw there.' }] }
+        return { success: true, contentItems: [{ type: 'inputImage', imageUrl: `data:image/png;base64,${png.toString('base64')}` }] }
+      } catch (e) {
+        return { success: false, contentItems: [{ type: 'inputText', text: `Could not draw it: ${(e as Error).message}` }] }
+      }
+    }
     if (method === 'item/tool/call') {
       try {
         const text = await agent.runTool(requestId, p.tool, p.arguments)
@@ -239,7 +248,16 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
       if (used) agent.emit(request.id, { type: 'progress', text: used })
       byRequest.set(request.id, { threadId: thread.id, turnId: null, effort: use.effort })
       requestOf.set(thread.id, request.id)
-      await turn(request.id, prompt(request))
+      // feedback it carries (snapshots written on): what people said, and the pictures
+      const more: Json[] = []
+      const ids = request.context.feedback ?? []
+      if (ids.length) {
+        agent.emit(request.id, { type: 'progress', text: `Looking at ${ids.length} snapshot${ids.length === 1 ? '' : 's'}` })
+        const fb = await agent.feedback(ids)
+        if (fb.text) more.push({ type: 'text', text: fb.text, text_elements: [] })
+        for (const path of fb.images) more.push({ type: 'localImage', path })
+      }
+      await turn(request.id, prompt(request), more)
     } catch (e) {
       agent.emit(request.id, { type: 'error', message: (e as Error).message })
     }

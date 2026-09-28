@@ -22,6 +22,7 @@
     "quickdraw-frames": "*",
     "quickdraw-import": "*",
     "quickdraw-markdown": "*",
+    "quickdraw-screenshare": "*",
     "quickdraw-toolbar": "*",
     "quickdraw-yjs": "*",
     "yjs": "^13.6.33"

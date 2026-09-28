@@ -1,0 +1,32 @@
+{
+  "name": "quickdraw-screenshare",
+  "version": "0.1.0",
+  "description": "Screen sharing on a Quickdraw board: one person shares a tab or window, everyone sees it live, and snapshots of it land on the board to write feedback on.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "quickdraw-frames": "*"
+  },
+  "devDependencies": {
+    "quickdraw-agent": "*"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}

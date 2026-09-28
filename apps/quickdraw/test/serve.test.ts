@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { importSingleBoard } from '../src/serve/boards.ts'
 import { isLocal } from '../src/serve/local.ts'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
-import { AGENT, PRESENCE, SV, UPDATE, pack, packAgent, unpackAgent } from '../src/protocol.js'
+import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE, pack, packAgent, packShare, unpackAgent, unpackShare } from '../src/protocol.js'
 
 let apps: ReturnType<typeof createQuickdrawServer>[] = []
 afterEach(async () => { for (const app of apps) await app.close(); apps = [] })
@@ -411,5 +411,63 @@ describe('thumbnails', () => {
     expect((await fetch(`${base}/api/boards/${id}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'text/html' }, body: '<b>' })).status).toBe(415)
     expect((await fetch(`${base}/api/boards/${id}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'image/png' }, body: new Uint8Array(600_000) })).status).toBe(413)
     expect((await fetch(`${base}/api/boards/nosuchboard/thumbnail`)).status).toBe(404)
+  })
+})
+
+describe('screen sharing', () => {
+  // SHARE messages and LIVE frames to a connection, in order
+  function shareInbox(ws: WebSocket) {
+    const got: any[] = []
+    const wake = new Set<() => void>()
+    ws.addEventListener('message', ({ data }) => {
+      const m = new Uint8Array(data)
+      if (m[0] === SHARE) got.push(unpackShare(m))
+      else if (m[0] === LIVE) got.push({ kind: 'frame', data: [...m.subarray(1)] })
+      else return
+      for (const fn of wake) fn()
+    })
+    const until = (test: () => unknown) => new Promise<void>((ok) => {
+      const check = () => { if (test()) { wake.delete(check); ok() } }
+      wake.add(check)
+      check()
+    })
+    return { got, until, last: (kind: string) => got.filter((m) => m.kind === kind).at(-1) }
+  }
+
+  it('has one sharer per board, sends its frames to the others, its snapshots asked of it, and ends when it leaves', async () => {
+    const url = await start()
+    const [ann, bo, cy] = await Promise.all([open(url), open(url), open(url)])
+    const [a, b, c] = [ann, bo, cy].map(shareInbox)
+    for (const ws of [ann, bo]) ws.send(packAgent({ kind: 'hello' }))
+    await a.until(() => a.last('sharing'))
+    expect(a.last('sharing')).toEqual({ kind: 'sharing', sharer: null, mine: false })
+
+    ann.send(packShare({ kind: 'start', name: 'Ann' }))
+    await b.until(() => b.last('sharing')?.sharer)
+    expect(b.last('sharing')).toEqual({ kind: 'sharing', sharer: { name: 'Ann' }, mine: false })
+    await a.until(() => a.last('sharing')?.mine)
+
+    // frames: from the sharer only, to the others (and not back to it)
+    ann.send(pack(LIVE, new Uint8Array([1, 2, 3])))
+    bo.send(pack(LIVE, new Uint8Array([9]))) // not the sharer: dropped
+    await b.until(() => b.last('frame'))
+    await c.until(() => c.last('frame')) // a page that never said hello still watches
+    expect(b.got.filter((m) => m.kind === 'frame')).toEqual([{ kind: 'frame', data: [1, 2, 3] }])
+    expect(a.last('frame')).toBeUndefined()
+
+    // a snapshot asked by someone else goes to the sharer
+    bo.send(packShare({ kind: 'snap', by: 'Bo' }))
+    await a.until(() => a.last('snap'))
+    expect(a.last('snap')).toEqual({ kind: 'snap', by: 'Bo' })
+
+    // someone else takes over; the one before is told it no longer shares
+    bo.send(packShare({ kind: 'start', name: 'Bo' }))
+    await a.until(() => a.last('sharing')?.sharer?.name === 'Bo')
+    expect(a.last('sharing').mine).toBe(false)
+    ann.send(packShare({ kind: 'stop' })) // not the sharer any more: nothing happens
+    // leaving ends it
+    bo.close()
+    await a.until(() => a.last('sharing')?.sharer === null)
+    for (const ws of [ann, cy]) ws.close()
   })
 })

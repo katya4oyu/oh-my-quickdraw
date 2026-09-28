@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, agentOptions, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
+import { undoAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -26,6 +26,13 @@ describe('agent panel request model', () => {
     expect(agentOptions(agent, { model: 'gone', effort: 'low' })).toEqual({ model: 'b', effort: 'low' })
     expect(agentOptions({ ...agent, models: undefined })).toBeUndefined()
     expect(buildAgentRequest({ id: 'r', to: 'codex', text: 'x', editor, options: { model: 'a', effort: 'low' } }).options).toEqual({ model: 'a', effort: 'low' })
+  })
+
+  it('sends the feedback the host offers, less what was set aside', () => {
+    const items = [{ id: 'f1', label: '10:32', count: 2 }, { id: 'f2', label: '10:40', count: 1 }]
+    expect(feedbackToSend(items)).toEqual(['f1', 'f2'])
+    expect(feedbackToSend(items, new Set(['f1']))).toEqual(['f2'])
+    expect(feedbackToSend(undefined)).toEqual([])
   })
 
   it('says how much of a usage limit is used, and when it starts again', () => {
