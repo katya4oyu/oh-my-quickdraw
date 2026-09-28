@@ -4,6 +4,8 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { accountText, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { placeSnapshot } from 'quickdraw-screenshare'
+import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -12,6 +14,7 @@ import { join } from 'node:path'
 import { AGENT, packAgent, unpackAgent } from '../src/protocol.js'
 
 const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+const hasChrome = !!findChrome()
 const MOCK = fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url))
 const cleanup: (() => unknown)[] = []
 afterEach(async () => { for (const fn of cleanup.reverse()) await fn(); cleanup.length = 0 })
@@ -42,6 +45,37 @@ async function page(url: string) {
 }
 
 describe('quickdraw agent codex', () => {
+  it('hands the feedback on snapshots to Codex: what people wrote, and the pictures; and lets it look at the board', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Review').id}`
+    const person = await page(url)
+    const board = await openBoard({ url, name: 'Codex · app' })
+    const codex = startAppServer(process.cwd(), ['node', MOCK])
+    const offered = await initCodex(codex)
+    const agent = await joinBoard(board, { id: 'codex-app', name: 'Codex · app', knows: [], ...offered })
+    cleanup.push(() => agent.close(), () => codex.close())
+    await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · app' })
+
+    // a snapshot of the screen, and a note someone wrote on it
+    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const { frameId } = placeSnapshot({ store: board.store, viewportPageBounds: () => ({ x: 0, y: 0, w: 1600, h: 1000 }) } as never, { src: PNG, w: 800, h: 600 }, { title: '10:32 · Mac', by: 'Mac' })
+    const frame = board.store.get(frameId) as any
+    board.store.put({ id: 'shape:fb1', typeName: 'shape', type: 'note', x: frame.x + 40, y: frame.y + 40, rot: 0, z: board.store.maxZ() + 1, frameId, props: { text: 'Save is cut off', color: 'yellow', size: 'm', font: 'draw', scale: 1 } } as never)
+    await new Promise((r) => setTimeout(r, 300)) // synced
+
+    const request = { id: 'fb', to: 'codex-app', text: 'Fix these', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 }, feedback: [frameId] }, anchor: {} }
+    person.send({ kind: 'request', request })
+    await person.until(() => person.events.some((e) => e.type === 'done' && e.requestId === 'fb'))
+    expect(person.events.find((e) => e.type === 'progress' && e.requestId === 'fb' && /snapshot/.test(e.text))?.text).toBe('Looking at 1 snapshot')
+    const answer = person.events.find((e) => e.type === 'message' && e.requestId === 'fb').text
+    // drawn with the note over it (where there is a Chrome to draw with), and the screen as it was
+    expect(answer).toBe(hasChrome
+      ? '2 images; files there; notes "Save is cut off"; look_at inputImage'
+      : '1 images; files there; notes "Save is cut off"; look_at failed: ' + answer.split('failed: ')[1])
+  }, 60_000)
+
   it('names the account by its kind and plan, and its usage limits by their windows', () => {
     expect(accountText({ type: 'chatgpt', email: 'a@b.c', planType: 'prolite' })).toBe('ChatGPT Pro Lite')
     expect(accountText({ type: 'chatgpt', planType: 'self_serve_business_usage_based' })).toBe('ChatGPT Self Serve Business Usage Based')

@@ -5,6 +5,11 @@
 //   PRESENCE JSON (a cursor: { name, color, x, y }); the server adds the sender's
 //            `id` and never stores it; a disconnect is relayed as { id, gone: true }
 //   AGENT    JSON, agents on the board and requests to them (below)
+//   SHARE    JSON, screen sharing (quickdraw-screenshare's messages): from a page
+//            start { name }, stop, snap { by }; from the server sharing
+//            { sharer: { name } | null, mine } (to each page, and on hello), snap { by } (to the sharer)
+//   LIVE     a JPEG frame of the shared screen, from the sharer to the others;
+//            dropped for a peer that is behind, never stored
 //
 // AGENT messages, `{ kind, … }`:
 //   from an agent    join { agent: { id, name, knows, status } }, status { status },
@@ -26,6 +31,8 @@ export const UPDATE = 0
 export const SV = 1
 export const PRESENCE = 2
 export const AGENT = 3
+export const SHARE = 4
+export const LIVE = 5
 
 /** @param {number} type @param {Uint8Array} data */
 export function pack(type, data) {
@@ -46,3 +53,9 @@ export const packAgent = (value) => pack(AGENT, new TextEncoder().encode(JSON.st
 
 /** @param {Uint8Array} m */
 export const unpackAgent = (m) => JSON.parse(new TextDecoder().decode(m.subarray(1)))
+
+/** @param {object} value */
+export const packShare = (value) => pack(SHARE, new TextEncoder().encode(JSON.stringify(value)))
+
+/** @param {Uint8Array} m */
+export const unpackShare = (m) => JSON.parse(new TextDecoder().decode(m.subarray(1)))

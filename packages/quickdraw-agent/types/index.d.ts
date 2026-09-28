@@ -102,7 +102,8 @@ export interface AgentRequest {
   to: string
   text: string
   /** What was selected; `frameIds`: the frames among it. */
-  context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport }
+  /** `feedback`: ids of what the host offered as feedback (see AgentHost.feedback), e.g. snapshot frames */
+  context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport, feedback?: string[] }
   anchor: AgentAnchor
   /** chosen in the panel, for an agent that offers models */
   options?: { model?: string, effort?: string }
@@ -143,6 +144,8 @@ export interface AgentHost {
   join?(): { text?: string, command: string } | undefined
   /** Why this viewer may not ask this agent or answer its approvals (shown instead of the input); nothing if they may. */
   cannotAsk?(agent: AgentParticipant): string | undefined
+  /** Feedback the next new request carries (e.g. snapshots written on): shown as chips, each set aside with its ×; their ids go in `context.feedback`. */
+  feedback?(): Array<{ id: string, label: string, count?: number }>
 }
 export interface AgentEditor {
   readonly store: Store
@@ -193,6 +196,8 @@ export function buildAgentRequest(options: {
 export function limitText(limit: AgentLimit, now?: number): string
 /** how close to a limit: 'full' at 100%, 'high' from 80%, else '' */
 export function limitLevel(limit: AgentLimit): '' | 'high' | 'full'
+/** the ids of the feedback a request carries: `items` less the `skipped` ones */
+export function feedbackToSend(items: Array<{ id: string }> | undefined, skipped?: Set<string>): string[]
 export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread

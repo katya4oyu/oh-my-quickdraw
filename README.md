@@ -31,6 +31,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-agent`](packages/quickdraw-agent) | What agents can do on a board: reading, undoable operations, and the same as tools for any agent runtime | No (Markdown cards need the fork, like `quickdraw-markdown`) | — |
 | [`quickdraw-toolbar`](packages/quickdraw-toolbar) | Icon toolbar: a rail for adding things, a bar over the selection; the packages ship their items | No | — |
 | [`quickdraw-embed`](packages/quickdraw-embed) | Allowed web pages and sandboxed inline HTML as live iframes; link cards with Open Graph previews | **Yes** — `registerShapeType` | — |
+| [`quickdraw-screenshare`](packages/quickdraw-screenshare) | One person shares a screen, everyone watches it live, and snapshots land on the board to write feedback on | No | `quickdraw-frames` |
 
 "Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown` and `quickdraw-embed` still load: `isMarkdownSupported()` / `isEmbedSupported()` are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.
 
@@ -48,6 +49,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | `examples/quickdraw-embed` | A YouTube (or other allowed) page, a link card (with a made-up preview), and sandboxed inline HTML |
 | `examples/quickdraw-agent` | Agent participants, panel and note requests, pinned threads, approvals, and undo |
 | `examples/quickdraw-toolbar` | The toolbar with two items of its own |
+| `examples/quickdraw-screenshare` | A presenter and a viewer side by side: share a tab (or a demo app), watch it live, snapshot it onto the board |
 
 ## App
 

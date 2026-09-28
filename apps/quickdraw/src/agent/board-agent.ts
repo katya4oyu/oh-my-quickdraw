@@ -10,7 +10,12 @@
 // board a piece at a time with the cursor on each — one undo, as before.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
-import { applySteps, BOARD_TOOLS, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { applySteps, BOARD_TOOLS, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { snapshotFeedback } from 'quickdraw-screenshare'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Renderer } from '../board/render.ts'
 import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
 import { loadImage, splitImage } from './images.ts'
@@ -44,6 +49,10 @@ export interface BoardAgent {
   status(status: 'idle' | 'working' | 'waiting'): void
   /** what it runs on, shown in the panel: its account and how much of its usage limits is used */
   account(info: { account?: string, limits?: AgentLimit[] }): void
+  /** part of the board as a PNG, as drawn (a frame's contents, or some shapes); null when there is nothing */
+  picture(what: { frame?: string, ids?: string[] }): Promise<Buffer | null>
+  /** feedback on snapshots (their frame ids), for the model: a text, and image files (each: as drawn over, then the screen as it was) */
+  feedback(frameIds: string[]): Promise<{ text: string, images: string[] }>
   /** leaves the board */
   close(): Promise<void>
 }
@@ -90,6 +99,16 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
 
 // Images: the board tools take an image as data; the agent names a file instead
 const point = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }
+const LOOK_AT = {
+  name: 'look_at',
+  description: 'Looks at part of the board as a picture, as people see it: a frame (its contents: a snapshot of a screen with the notes, pen strokes and arrows people put on it) or some shapes by id. '
+    + 'Use it for what read_board cannot say: what a screenshot shows, and where a circle, a stroke or an arrow points.',
+  inputSchema: { type: 'object', additionalProperties: false, properties: {
+    frame: { type: 'string', description: 'a frame id' },
+    ids: { type: 'array', items: { type: 'string' }, description: 'shape ids (instead of a frame)' },
+  } },
+}
+
 const ADD_IMAGE = {
   name: 'add_image',
   description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
@@ -119,6 +138,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
   let nextApproval = 1
+  let renderer: Renderer | undefined // pictures of the board, in a headless Chrome made when first needed
+  let files: string | undefined // where pictures for the model are written; removed on close
 
   relay.onMessage((m) => {
     // the server lets only this computer ask, unless `remote`; checked here too
@@ -142,7 +163,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE],
+    tools: [...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -179,7 +200,52 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
     },
     account: ({ account, limits }) => relay.send({ kind: 'account', account, limits }),
-    close: () => { clearTimeout(hideTimer); return board.close() },
+    async picture({ frame, ids }) {
+      renderer ??= new Renderer()
+      return renderer.render({ records: board.store.all(), ...(frame ? { frame } : { ids: ids?.length ? ids : undefined }), scale: 1.5 })
+    },
+    async feedback(frameIds) {
+      const lines: string[] = [], images: string[] = []
+      for (const id of frameIds) {
+        const fb = snapshotFeedback(board.store as never, id)
+        if (!fb) continue
+        const shapes = fb.shapeIds.map((sid) => board.store.get(sid)).filter(Boolean) as BoardRecord[]
+        const said = shapes.map((s) => textOf(board.store as never, s)).filter(Boolean)
+        const marks = shapes.filter((s) => ['draw', 'highlight', 'arrow', 'line', 'geo'].includes((s as { type?: string }).type ?? '')).length
+        lines.push(`Snapshot "${fb.title}" (frame ${id}${fb.by ? ', taken for ' + fb.by : ''}):`)
+        for (const t of said) lines.push(`- "${t.replace(/\s+/g, ' ')}"`)
+        if (marks) lines.push(`- ${marks} pen mark${marks === 1 ? '' : 's'}, arrow${marks === 1 ? '' : 's'} or shape${marks === 1 ? '' : 's'}: see where they are in the picture`)
+        files ??= mkdtempSync(join(tmpdir(), 'quickdraw-agent-'))
+        const name = id.replace(/[^a-z0-9]+/gi, '-')
+        try {
+          const png = await agent.picture({ frame: id })
+          if (png) { writeFileSync(join(files, `${name}-feedback.png`), png); images.push(join(files, `${name}-feedback.png`)) }
+        } catch {
+          lines.push('  (it could not be drawn with the feedback over it here: no Chrome; the screen alone follows)')
+        }
+        const image = board.store.get(fb.imageId) as { props?: { assetId?: string } } | undefined
+        const src = image?.props?.assetId ? board.store.asset(image.props.assetId)?.src : undefined
+        const m = typeof src === 'string' && src.match(/^data:image\/(png|jpeg|webp);base64,(.*)$/s)
+        if (m) {
+          const file = join(files, `${name}-screen.${m[1] === 'jpeg' ? 'jpg' : m[1]}`)
+          writeFileSync(file, Buffer.from(m[2], 'base64'))
+          images.push(file)
+        }
+      }
+      if (!lines.length) return { text: '', images }
+      return {
+        text: 'People reviewed the app together and left feedback on these snapshots of its screen, taken while one of them used it. '
+          + 'For each snapshot the pictures are: the snapshot with their notes and pen marks drawn over it, then the screen as it was. '
+          + 'Pen strokes, circles and arrows point at what a note is about. Address each point; say which ones you did not.\n\n' + lines.join('\n'),
+        images,
+      }
+    },
+    close: async () => {
+      clearTimeout(hideTimer)
+      await renderer?.close()
+      if (files) rmSync(files, { recursive: true, force: true })
+      return board.close()
+    },
   }
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time

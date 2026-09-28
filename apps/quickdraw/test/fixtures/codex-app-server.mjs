@@ -2,6 +2,7 @@
 // something, calls the board tools it was given, asks to run a command, and
 // answers — or, for a follow-up, just answers.
 import { createInterface } from 'node:readline'
+import { existsSync } from 'node:fs'
 
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
 let nextId = 1000
@@ -35,6 +36,18 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     process.stderr.write(`effort=${m.params.effort}\n`)
     out({ id: m.id, result: { turn: { id: turnId } } })
     out({ method: 'turn/started', params: { threadId, turn: { id: turnId, status: 'inProgress' } } })
+    // a request with pictures (feedback on snapshots): says what came, and looks at the first snapshot itself
+    const images = m.params.input.filter((i) => i.type === 'localImage')
+    if (images.length) {
+      const notes = m.params.input.filter((i) => i.type === 'text').map((i) => i.text).join('\n')
+      const frame = notes.match(/\(frame ([^,)]+)/)?.[1]
+      const look = await ask('item/tool/call', { threadId, turnId, callId: 'l1', tool: 'look_at', arguments: { frame } })
+      const said = [`${images.length} images`, `files ${images.every((i) => existsSync(i.path)) ? 'there' : 'missing'}`,
+        `notes ${JSON.stringify(notes.match(/- "([^"]*)"/)?.[1])}`, `look_at ${look.success ? look.contentItems[0].type : 'failed: ' + look.contentItems[0].text}`]
+      out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', phase: 'final_answer', text: said.join('; ') } } })
+      out({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed', error: null } } })
+      return
+    }
     if (turns === 1) {
       out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', phase: 'commentary', text: 'Looking at the board.' } } })
       const board = await ask('item/tool/call', { threadId, turnId, callId: 'c1', tool: 'read_board', arguments: {} })
