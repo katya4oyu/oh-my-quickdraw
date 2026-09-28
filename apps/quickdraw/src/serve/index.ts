@@ -13,6 +13,7 @@ import type { Duplex } from 'node:stream'
 import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
+import { isLocal } from './local.ts'
 import type { AgentEvent, AgentParticipant, AgentRequest } from 'quickdraw-agent'
 import { AGENT, PRESENCE, SV, UPDATE } from '../protocol.js'
 import { handlePreview } from './preview.ts'
@@ -172,6 +173,10 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
+  const local = new WeakSet<Duplex>() // connections from this computer (./local.ts)
+  // an agent takes requests and replies from this computer only, unless it was started with --allow-remote
+  const mayAsk = (socket: Duplex, agent?: AgentParticipant) => !agent || agent.remote === true || local.has(socket)
+  const onlyHere = (agent: AgentParticipant) => `${agent.name} takes requests only from the computer running quickdraw serve (unless it is started with --allow-remote).`
   let closing = false
   const agentMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([AGENT]), Buffer.from(JSON.stringify(value))]))
   const send = (to: Duplex, value: object) => { if (to.writable) to.write(agentMsg(value)) }
@@ -188,6 +193,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   function onAgentMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
     const agent = agentOf.get(socket)
     if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
+      send(socket, { kind: 'you', local: local.has(socket) })
       send(socket, { kind: 'agents', agents: agentsIn(room) })
       send(socket, { kind: 'threads', threads: threads.list(board) })
     } else if (m.kind === 'join' && !agent && str(m.agent?.name, 100)) {
@@ -207,6 +213,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         ...(models.length ? { models } : {}),
         ...(str(m.agent.model, 100) ? { model: m.agent.model } : {}),
         ...(str(m.agent.effort, 40) ? { effort: m.agent.effort } : {}),
+        ...(m.agent.remote === true ? { remote: true } : {}),
       })
       send(socket, { kind: 'joined', id })
       announce(room)
@@ -231,22 +238,28 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
       const request = m.request as AgentRequest
       if (threads.get(request.id)) return
+      const target = [...room].find((s) => agentOf.get(s)?.id === request.to)
+      const agentTo = target && agentOf.get(target)
+      if (!mayAsk(socket, agentTo)) return send(socket, { kind: 'event', event: { type: 'error', requestId: request.id, message: onlyHere(agentTo!) } })
       boards.saveVersion(board, `Before AI: ${request.text.replace(/\s+/g, ' ').slice(0, 60)}`, true) // to go back past what it does
       const thread = threads.create(board, request)
       broadcast(new Set(pages(room)), socket, agentMsg({ kind: 'thread', thread })) // the sender has it
-      const to = [...room].find((s) => agentOf.get(s)?.id === request.to)
-      if (to) send(to, { kind: 'request', request })
+      if (target) send(target, { kind: 'request', request, local: local.has(socket) })
       else record(room, { type: 'error', requestId: request.id, message: 'That agent is not on this board.' })
     } else if (m.kind === 'reply' && !agent && str(m.requestId, 100)) {
       const t = threads.get(m.requestId)
       if (t?.board !== board) return
       const { message } = m
       const to = [...room].find((s) => agentOf.get(s)?.id === t.thread.request.to)
+      const answering = str(message, 20_000) || (message && str(message.approval, 200))
+      if (answering && !mayAsk(socket, to && agentOf.get(to))) {
+        return send(socket, { kind: 'event', event: { type: 'error', requestId: m.requestId, message: onlyHere(agentOf.get(to!)!) } })
+      }
       if (str(message, 20_000)) {
         record(room, { type: 'reply', requestId: m.requestId, text: message })
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message, local: local.has(socket) })
       } else if (message && str(message.approval, 200) && typeof message.allow === 'boolean') {
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow } })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow }, local: local.has(socket) })
       } else if (message?.undo && Number.isInteger(message.undo.reverted) && Array.isArray(message.undo.skipped)) {
         record(room, { type: 'undo', requestId: m.requestId, reverted: message.undo.reverted, skipped: message.undo.skipped.filter((s: unknown) => str(s, 200)) })
       }
@@ -272,6 +285,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     const board = new URL(req.url ?? '/', 'http://x').pathname.match(/^\/ws\/([^/]+)$/)?.[1]
     // an unknown board is refused, never created: boards are made on purpose
     if (!board || !BOARD_ID.test(board) || !boards.get(board) || !accept(req, socket)) return socket.destroy()
+    if (isLocal(req)) local.add(socket)
     let room = rooms.get(board)
     if (!room) rooms.set(board, room = new Set())
     const peers = room

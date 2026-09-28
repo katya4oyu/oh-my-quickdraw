@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import * as Y from 'yjs'
 import { DatabaseSync } from 'node:sqlite'
 import { importSingleBoard } from '../src/serve/boards.ts'
+import { isLocal } from '../src/serve/local.ts'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
 import { AGENT, PRESENCE, SV, UPDATE, pack, packAgent, unpackAgent } from '../src/protocol.js'
 
@@ -20,8 +21,8 @@ async function start(opts?: ServeOptions) {
 }
 const httpOf = (ws: string) => ws.replace('ws:', 'http:').replace(/\/ws\/.*/, '')
 
-const open = (u: string) => new Promise<WebSocket>((ok, fail) => {
-  const ws = new WebSocket(u)
+const open = (u: string, headers?: Record<string, string>) => new Promise<WebSocket>((ok, fail) => {
+  const ws = headers ? new WebSocket(u, { headers } as never) : new WebSocket(u) // (Node's WebSocket takes headers)
   ws.binaryType = 'arraybuffer'
   ws.onopen = () => ok(ws)
   ws.onerror = fail
@@ -246,6 +247,52 @@ describe('agents', () => {
     expect(thread).toMatchObject({ status: 'done', diffs: [], undoResult: { reverted: 1, skipped: [] }, request: { id: 'r1', anchor: { shapeId: 'shape:f' } } })
     expect(thread.events.map((e: { type: string }) => e.type)).toEqual(['op', 'done', 'reply', 'undo'])
     again.close()
+  })
+
+  it('lets only this computer ask an agent or answer it, unless the agent allows anyone', async () => {
+    const { url, page, pageIn, agentIn } = await setup()
+    expect((await pageIn.take('you')).local).toBe(true)
+    // through `tailscale serve`: from 127.0.0.1 too, but proxied
+    const remote = await open(url, { 'tailscale-user-login': 'someone@example.com', 'x-forwarded-for': '100.64.0.2' })
+    const remoteIn = agentInbox(remote)
+    remote.send(packAgent({ kind: 'hello' }))
+    expect((await remoteIn.take('you')).local).toBe(false)
+    await remoteIn.take('threads')
+
+    remote.send(packAgent({ kind: 'request', request: request('far') }))
+    expect((await remoteIn.take('event')).event).toMatchObject({ type: 'error', requestId: 'far', message: expect.stringMatching(/only from the computer running quickdraw serve/) })
+    page.send(packAgent({ kind: 'request', request: request('near') }))
+    expect((await agentIn.take('request'))).toMatchObject({ request: { id: 'near' }, local: true }) // not 'far': it never got there
+    expect(pageIn.has('thread') || (await remoteIn.take('thread')).thread.request.id === 'near').toBe(true)
+    // nor its replies or approvals; a person here may
+    remote.send(packAgent({ kind: 'reply', requestId: 'near', message: { approval: 'a1', allow: true } }))
+    expect((await remoteIn.take('event')).event).toMatchObject({ type: 'error', requestId: 'near' })
+    page.send(packAgent({ kind: 'reply', requestId: 'near', message: { approval: 'a1', allow: false } }))
+    expect((await agentIn.take('reply'))).toMatchObject({ message: { approval: 'a1', allow: false }, local: true })
+
+    // an agent started with --allow-remote takes them from anyone, and says whom from
+    const open2 = await open(url)
+    const openIn = agentInbox(open2)
+    open2.send(packAgent({ kind: 'join', agent: { id: 'anyone', name: 'Anyone', remote: true } }))
+    await openIn.take('joined')
+    let listed: any
+    while (!(listed = (await remoteIn.take('agents')).agents.find((a: any) => a.id === 'anyone')));
+    expect(listed).toMatchObject({ remote: true })
+    remote.send(packAgent({ kind: 'request', request: request('far2', 'anyone') }))
+    expect(await openIn.take('request')).toMatchObject({ request: { id: 'far2' }, local: false })
+    for (const ws of [page, remote, open2]) ws.close()
+  })
+
+  it('knows a connection from this computer from a proxied one, another site, or a DNS name that points here', () => {
+    const req = (headers: Record<string, string>, remoteAddress = '127.0.0.1') => ({ headers, socket: { remoteAddress } })
+    expect(isLocal(req({ host: '127.0.0.1:8795' }))).toBe(true) // the CLI: no Origin
+    expect(isLocal(req({ host: 'localhost:8795', origin: 'http://localhost:8795' }))).toBe(true) // its page
+    expect(isLocal(req({ host: '[::1]:8795', origin: 'http://[::1]:8795' }, '::1'))).toBe(true)
+    expect(isLocal(req({ host: 'localhost:8795', origin: 'https://evil.example' }))).toBe(false) // another site in this browser
+    expect(isLocal(req({ host: 'evil.example:8795', origin: 'http://evil.example:8795' }))).toBe(false) // DNS rebinding
+    expect(isLocal(req({ host: 'localhost:8795', 'x-forwarded-for': '100.64.0.2' }))).toBe(false) // a proxy
+    expect(isLocal(req({ host: 'mac.tailnet.ts.net', 'tailscale-user-login': 'a@b.c' }))).toBe(false) // tailscale serve
+    expect(isLocal(req({ host: '192.168.1.5:8795' }, '192.168.1.9'))).toBe(false) // served on the LAN (--host 0.0.0.0)
   })
 
   it('refuses events from an agent a request was not to, and says when no agent is there', async () => {
