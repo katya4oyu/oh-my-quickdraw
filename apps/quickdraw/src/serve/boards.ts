@@ -9,7 +9,8 @@ import { existsSync, renameSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import * as Y from 'yjs'
 
-export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string }
+export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string, thumbnailAt?: string }
+export interface Thumbnail { data: Uint8Array, type: string, at: string }
 export interface VersionInfo { id: number, name: string, at: string, auto: boolean }
 type Rec = { id: string } & Record<string, unknown>
 
@@ -33,6 +34,9 @@ export interface Boards {
   restore(id: string, vid: number): Uint8Array
   /** a new board as the board was in version `vid` */
   openVersion(id: string, vid: number, title?: string): BoardInfo
+  /** a small picture of the board for the list, as a page that has it open draws it */
+  setThumbnail(id: string, data: Uint8Array, type: string): void
+  thumbnail(id: string): Thumbnail | undefined
   close(): void
 }
 
@@ -52,13 +56,16 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
     CREATE INDEX IF NOT EXISTS updates_board ON updates (board, seq);
     CREATE TABLE IF NOT EXISTS versions (id INTEGER PRIMARY KEY AUTOINCREMENT, board TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, auto INTEGER NOT NULL, state BLOB NOT NULL);
     CREATE INDEX IF NOT EXISTS versions_board ON versions (board, id);
+    CREATE TABLE IF NOT EXISTS thumbnails (board TEXT PRIMARY KEY, type TEXT NOT NULL, at TEXT NOT NULL, data BLOB NOT NULL);
   `)
   const columns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
   if (!columns.includes('archived_at')) db.exec('ALTER TABLE boards ADD COLUMN archived_at TEXT')
-  const COLS = 'id, title, created_at AS createdAt, archived_at AS archivedAt'
+  const COLS = 'id, title, created_at AS createdAt, archived_at AS archivedAt, (SELECT at FROM thumbnails WHERE board = boards.id) AS thumbnailAt'
   const listQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NULL ORDER BY created_at, id`)
   const listArchivedQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, id`)
   const getQ = db.prepare(`SELECT ${COLS} FROM boards WHERE id = ?`)
+  const setThumbQ = db.prepare('INSERT INTO thumbnails (board, type, at, data) VALUES (?, ?, ?, ?) ON CONFLICT (board) DO UPDATE SET type = excluded.type, at = excluded.at, data = excluded.data')
+  const thumbQ = db.prepare('SELECT data, type, at FROM thumbnails WHERE board = ?')
   const renameQ = db.prepare('UPDATE boards SET title = ? WHERE id = ?')
   const archiveQ = db.prepare('UPDATE boards SET archived_at = ? WHERE id = ?')
   const saveQ = db.prepare('INSERT INTO versions (board, name, at, auto, state) VALUES (?, ?, ?, ?, ?)')
@@ -72,7 +79,8 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
   const clear = db.prepare('DELETE FROM updates WHERE board = ?')
 
   const state = (id: string) => Y.mergeUpdates(all.all(id).map((r) => r.data as Uint8Array))
-  const clean = (b: BoardInfo | undefined) => b && (b.archivedAt ? b : (({ archivedAt, ...rest }) => rest)(b) as BoardInfo)
+  // no null fields: archivedAt and thumbnailAt only when there are
+  const clean = (b: BoardInfo | undefined) => b && Object.fromEntries(Object.entries(b).filter(([, v]) => v != null)) as unknown as BoardInfo
   const need = (id: string) => {
     const b = boards.get(id)
     if (!b) throw new Error('no such board')
@@ -153,6 +161,11 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
       const records = Object.values(recordsOf(versionState(id, vid)))
       return boards.createFrom(title(t, `${from.title} (version)`), records)
     },
+    setThumbnail(id, data, type) {
+      need(id)
+      setThumbQ.run(id, type, new Date().toISOString(), data)
+    },
+    thumbnail: (id) => thumbQ.get(id) as unknown as Thumbnail | undefined,
     state,
     append(id, update) {
       insert.run(id, update)

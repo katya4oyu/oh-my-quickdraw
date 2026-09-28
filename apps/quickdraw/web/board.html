@@ -47,7 +47,7 @@
   <div id="board"></div>
   <script type="module">
     import * as Y from 'yjs'
-    import { createQuickdraw } from '@quickdrawjs/core'
+    import { createQuickdraw, pageBounds } from '@quickdrawjs/core'
     import { bindYjs } from 'quickdraw-yjs'
     import { exportTool } from 'quickdraw-export'
     import { importTool } from 'quickdraw-import'
@@ -224,6 +224,40 @@
     addEventListener('resize', () => cursors.forEach(place))
 
     connect()
+
+    // the list's picture of this board: drawn here once it settles (and when
+    // the page is left), whoever changed it — people or an agent
+    const THUMB = { w: 480, h: 300 }
+    let changed = false, settle = null
+    async function drawThumbnail() {
+      const shapes = editor.store.shapes()
+      if (!shapes.length) return null
+      const bs = shapes.map(pageBounds)
+      const w = Math.max(...bs.map((b) => b.x + b.w)) - Math.min(...bs.map((b) => b.x)) + 96
+      const h = Math.max(...bs.map((b) => b.y + b.h)) - Math.min(...bs.map((b) => b.y)) + 96
+      const png = await editor.exportImage({ background: true, margin: 48, scale: Math.min(1, (2 * THUMB.w) / w, (2 * THUMB.h) / h) })
+      if (!png) return null
+      const img = await createImageBitmap(png)
+      const canvas = Object.assign(document.createElement('canvas'), { width: THUMB.w, height: THUMB.h })
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = editor.theme.background
+      ctx.fillRect(0, 0, THUMB.w, THUMB.h)
+      const k = Math.min(THUMB.w / img.width, THUMB.h / img.height)
+      ctx.drawImage(img, (THUMB.w - img.width * k) / 2, (THUMB.h - img.height * k) / 2, img.width * k, img.height * k)
+      return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    }
+    async function sendThumbnail(leaving = false) {
+      if (!changed) return
+      changed = false
+      const blob = await drawThumbnail().catch(() => null)
+      if (blob) fetch(`/api/boards/${boardId}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: blob, keepalive: leaving }).catch(() => {})
+    }
+    editor.store.listen(() => {
+      changed = true
+      clearTimeout(settle)
+      settle = setTimeout(sendThumbnail, 4000)
+    }, { source: 'all' })
+    addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sendThumbnail(true) })
 
     window.board = board
     window.ydoc = ydoc

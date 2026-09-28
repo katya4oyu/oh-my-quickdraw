@@ -88,6 +88,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   //   GET    /api/boards/ID/versions              its versions, newest first
   //   POST   /api/boards/ID/versions { name }     keep it as it is now
   //   POST   /api/boards/ID/versions/V/restore { as: 'board' | 'new' }   back to V, or V as a new board
+  //   GET    /api/boards/ID/thumbnail             a small picture of it (PUT one: a JPEG, PNG or WebP)
   async function api(req: IncomingMessage, res: ServerResponse, pathname: string) {
     const body = async (limit?: number) => {
       if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('send JSON'), { status: 415 })
@@ -107,6 +108,28 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
           return json(res, 201, boards.createFrom(t ?? 'Imported', [...parsed.shapes, ...Object.values(parsed.assets)] as never))
         }
         return json(res, 201, boards.create(t))
+      }
+      const t = pathname.match(/^\/api\/boards\/([^/]+)\/thumbnail$/)
+      if (t) {
+        const tid = BOARD_ID.test(t[1]) && boards.get(t[1]) ? t[1] : null
+        if (!tid) return json(res, 404, { error: 'no such board' })
+        if (req.method === 'GET') {
+          const thumb = boards.thumbnail(tid)
+          if (!thumb) return json(res, 404, { error: 'no thumbnail yet' })
+          return res.writeHead(200, { 'content-type': thumb.type, 'cache-control': 'no-cache', etag: `"${thumb.at}"` }).end(thumb.data)
+        }
+        if (req.method !== 'PUT') return json(res, 405, { error: 'GET or PUT' })
+        const type = req.headers['content-type'] ?? ''
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return json(res, 415, { error: 'send a JPEG, PNG or WebP' })
+        const chunks: Buffer[] = []
+        let size = 0
+        for await (const chunk of req) {
+          size += chunk.length
+          if (size > 500_000) return json(res, 413, { error: 'too large for a thumbnail' })
+          chunks.push(chunk)
+        }
+        boards.setThumbnail(tid, Buffer.concat(chunks), type)
+        return res.writeHead(204).end()
       }
       const m = pathname.match(/^\/api\/boards\/([^/]+)(\/versions(?:\/(\d+)\/restore)?)?$/)
       const info = m && BOARD_ID.test(m[1]) ? boards.get(m[1]) : undefined

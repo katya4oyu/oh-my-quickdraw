@@ -348,3 +348,21 @@ describe('managing boards', () => {
     page.close(); agent.close()
   })
 })
+
+describe('thumbnails', () => {
+  it('keeps the picture a page sends of its board, and lists when it was made', async () => {
+    const url = await start()
+    const base = httpOf(url), id = url.split('/').pop()!
+    expect((await fetch(`${base}/api/boards/${id}/thumbnail`)).status).toBe(404)
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
+    expect((await fetch(`${base}/api/boards/${id}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status).toBe(204)
+    const r = await fetch(`${base}/api/boards/${id}/thumbnail`)
+    expect([r.status, r.headers.get('content-type')]).toEqual([200, 'image/jpeg'])
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(jpeg)
+    const [listed] = await (await fetch(`${base}/api/boards`)).json()
+    expect(listed.thumbnailAt).toBeTruthy()
+    expect((await fetch(`${base}/api/boards/${id}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'text/html' }, body: '<b>' })).status).toBe(415)
+    expect((await fetch(`${base}/api/boards/${id}/thumbnail`, { method: 'PUT', headers: { 'content-type': 'image/png' }, body: new Uint8Array(600_000) })).status).toBe(413)
+    expect((await fetch(`${base}/api/boards/nosuchboard/thumbnail`)).status).toBe(404)
+  })
+})

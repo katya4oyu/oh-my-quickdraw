@@ -8,22 +8,26 @@
     :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0; --accent: #1971c2; --menu: #fff; color-scheme: light dark; }
     @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #333336; --accent: #4dabf7; --menu: #2c2c2e; } }
     body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
-    main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+    main { max-width: 980px; margin: 0 auto; padding: 32px 16px; }
+    form, .tools { max-width: 640px; }
     h1 { font-size: 22px; margin: 0 0 20px; }
     form { display: flex; gap: 8px; margin-bottom: 8px; }
     input { flex: 1; min-width: 0; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
     button { font: inherit; padding: 8px 16px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
     button.plain { background: transparent; color: var(--accent); padding: 4px 0; font-size: 14px; }
     .tools { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; }
-    ul { list-style: none; margin: 0; padding: 0; }
-    li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
-    li a { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 16px; padding: 12px 4px; color: inherit; text-decoration: none; }
+    ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    li { position: relative; border: 1px solid var(--line); border-radius: 12px; }
+    li a { display: block; color: inherit; text-decoration: none; }
     li a:hover .title { color: var(--accent); }
-    .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .meta { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .thumb { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: contain; border-radius: 11px 11px 0 0; background: var(--line); }
+    .no-thumb { display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+    .info { display: grid; gap: 2px; padding: 8px 40px 10px 12px; }
+    .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+    .meta { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
     .ai { color: var(--accent); }
     .empty { color: var(--muted); padding: 12px 4px; border: 0; }
-    details { position: relative; }
+    li details { position: absolute; right: 4px; bottom: 6px; }
     summary { list-style: none; cursor: pointer; padding: 8px 10px; color: var(--muted); border-radius: 8px; }
     summary::-webkit-details-marker { display: none; }
     summary:hover { background: var(--line); }
@@ -69,7 +73,11 @@
 
     function row(b, archived) {
       const meta = [b.agents ? `✦ ${b.agents === 1 ? 'AI' : b.agents + ' AIs'} here` : '', new Date(b.createdAt).toLocaleDateString()].filter(Boolean).join(' · ')
-      const link = el('a', { href: '/b/' + b.id }, el('span', { className: 'title', textContent: b.title }), el('span', { className: 'meta' + (b.agents ? ' ai' : ''), textContent: meta }))
+      // the picture a page last drew of it (a board not opened since has none yet)
+      const thumb = b.thumbnailAt
+        ? el('img', { className: 'thumb', alt: '', loading: 'lazy', src: `/api/boards/${b.id}/thumbnail?at=${encodeURIComponent(b.thumbnailAt)}` })
+        : el('span', { className: 'thumb no-thumb', textContent: 'Open it to see it here' })
+      const link = el('a', { href: '/b/' + b.id }, thumb, el('span', { className: 'info' }, el('span', { className: 'title', textContent: b.title }), el('span', { className: 'meta' + (b.agents ? ' ai' : ''), textContent: meta })))
       const actions = archived
         ? [['Bring back', () => api('PATCH', '/api/boards/' + b.id, { archived: false }).then(show, fail)]]
         : [
