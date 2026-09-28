@@ -26,6 +26,8 @@ export interface Participant {
   id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string
   /** takes requests and approvals from anyone on the board; else only from the computer running quickdraw serve */
   remote?: boolean
+  /** people can talk with it (its runtime sets onVoice) */
+  voice?: boolean
 }
 
 export interface BoardAgent {
@@ -33,6 +35,12 @@ export interface BoardAgent {
   onRequest(request: AgentRequest): void
   /** set by the runtime: a person's follow-up in a request's thread */
   onReply(requestId: string, text: string): void
+  /** set by a runtime that talks (./voice.ts): a request to talk, with the page's WebRTC offer */
+  onVoice?(request: AgentRequest, sdp: string): void
+  /** set by a runtime that talks: the person hung up */
+  onVoiceStop?(requestId: string): void
+  /** to the page that asked to talk: the WebRTC answer, or that the conversation ended (and why) */
+  voice(requestId: string, message: { sdp: string } | { end: string | null }): void
   /** the tools, as the runtime hands them to the model */
   tools: { name: string, description: string, inputSchema: object }[]
   /** an image the runtime generated for a request, for add_image to put on the board */
@@ -147,7 +155,11 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       if (m.kind === 'request' && m.request?.id) emit(m.request.id, { type: 'error', message: `${me.name} takes requests only from the computer running quickdraw serve.` })
       return
     }
-    if (m.kind === 'request' && m.request?.id) agent.onRequest(m.request)
+    if (m.kind === 'request' && m.request?.id && typeof m.sdp === 'string') {
+      if (agent.onVoice) agent.onVoice(m.request, m.sdp)
+      else agent.voice(m.request.id, { end: `${me.name} does not talk.` })
+    } else if (m.kind === 'request' && m.request?.id) agent.onRequest(m.request)
+    else if (m.kind === 'voice' && m.stop === true && typeof m.requestId === 'string') agent.onVoiceStop?.(m.requestId)
     else if (m.kind === 'reply' && typeof m.message === 'string') agent.onReply(m.requestId, m.message)
     else if (m.kind === 'reply' && typeof m.message?.approval === 'string') {
       const resolve = approvals.get(m.message.approval)
@@ -189,6 +201,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       else board.cursor(request.anchor.x ?? v.x + v.w / 2, request.anchor.y ?? v.y + v.h / 2)
     },
     emit,
+    voice: (requestId, message) => relay.send({ kind: 'voice', requestId, ...message }),
     approve(requestId, text) {
       const id = `${approvalBase}:${nextApproval++}`
       emit(requestId, { type: 'approval', id, text })

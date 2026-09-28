@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — voice example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; font: 13px system-ui; }
+    #board { position: fixed; inset: 0; }
+    .hint { position: fixed; z-index: 60; left: 50%; bottom: 76px; transform: translateX(-50%); margin: 0; padding: 6px 12px; border-radius: 999px;
+      background: rgba(0,0,0,.65); color: #fff; font: 500 12px system-ui; pointer-events: none; text-align: center; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; }
+  </style>
+  <!-- in your own project, a bundler resolves these from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <p class="hint">Press the microphone on the right: a made-up call, no microphone or agent needed</p>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { createVoice, voiceTools } from '../../packages/quickdraw-voice/src/index.js'
+    import { createToolbar } from '../../packages/quickdraw-toolbar/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+
+    // what the voice model would say on the call's events channel, a word at a time
+    const script = [
+      ['user', 'Make three frames: plan, doing and done.'],
+      ['assistant', 'Sure, on it.'],
+      ['user', 'And two example tasks in each.'],
+      ['assistant', 'Done: three frames with two notes each.'],
+    ]
+    // a call without a network: a silent microphone, and a peer that plays the script once answered
+    class MadeUpPeer {
+      iceGatheringState = 'complete'
+      addTrack() {}
+      createDataChannel() { return (this.events = {}) }
+      async createOffer() { return { type: 'offer', sdp: 'v=0 (made up)' } }
+      async setLocalDescription(d) { this.localDescription = d }
+      async setRemoteDescription() {
+        let t = 800
+        for (const [role, line] of script) {
+          const send = (e) => setTimeout(() => this.events.onmessage?.({ data: JSON.stringify(e) }), t)
+          send({ type: 'turn.created', turn: { role } })
+          for (const word of line.split(' ')) { t += 180; send({ type: role === 'user' ? 'input_transcript.added' : 'output_transcript.added', item: { text: ' ' + word } }) }
+          t += 900
+        }
+      }
+      close() {}
+    }
+    const rtc = {
+      Peer: MadeUpPeer,
+      getUserMedia: async () => { const ctx = new AudioContext(); return ctx.createMediaStreamDestination().stream },
+    }
+    // the host: in an app, a request to an agent that answers through a relay; here it answers itself
+    const inbox = new Set()
+    let calls = 0
+    const voice = createVoice({ editor: board.editor, rtc, host: {
+      agent: () => ({ id: 'codex', name: 'Codex' }),
+      start() { const id = `call-${++calls}`; setTimeout(() => inbox.forEach((fn) => fn({ kind: 'answer', id, sdp: 'v=0 (made up)' })), 600); return id },
+      stop() {},
+      onMessage(fn) { inbox.add(fn); return () => inbox.delete(fn) },
+    } })
+    createToolbar(board.editor, { rail: [...voiceTools(voice).rail] })
+  </script>
+</body>
+</html>

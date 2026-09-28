@@ -1,0 +1,26 @@
+{
+  "name": "quickdraw-voice",
+  "version": "0.1.0",
+  "description": "Talk with an agent on a Quickdraw board: a microphone, a call straight to a voice model over WebRTC, and a bar with what is said while the agent works on the board.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}

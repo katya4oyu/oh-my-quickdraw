@@ -25,6 +25,12 @@
 //                    thread { thread } (a new one), event { event } (to every page,
 //                    the sender too: a person's reply comes back as a `reply` event);
 //                    to an agent: request { request }, reply { requestId, message }
+//   voice            talking with an agent that says `voice: true` when it joins: a page sends
+//                    request { request, sdp } (its WebRTC offer; the agent gets it with the request),
+//                    then voice { requestId, stop: true } to hang up; the agent answers
+//                    voice { requestId, sdp } and, when it ends, voice { requestId, end: reason | null },
+//                    and in the thread a `reply` event for what the person said. Voice messages go
+//                    between that page and that agent only, and are not stored.
 // The server stores the threads (not in the board's Yjs document) and knows
 // nothing of what an agent runs on.
 // Plain JS so the browser can load it as served, without a build.

@@ -7,7 +7,8 @@
 //
 // One Codex thread per request; a person's follow-up in the panel continues it
 // (steering the turn if one is running). Codex's approval requests go to the
-// panel and wait for a person.
+// panel and wait for a person. A voice conversation (./voice.ts) is a request
+// too, on a thread of its own.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { AgentLimit, AgentRequest } from 'quickdraw-agent'
@@ -19,6 +20,7 @@ type Json = any
 export interface AppServer {
   request(method: string, params: Json): Promise<Json>
   notify(method: string, params?: Json): void
+  /** each listener hears every notification */
   onNotification(fn: (method: string, params: Json) => void): void
   /** answers the server's requests (approvals, tool calls) */
   onRequest(fn: (method: string, params: Json) => Promise<Json>): void
@@ -31,7 +33,7 @@ export function startAppServer(cwd: string, command = ['codex', 'app-server']): 
   const child: ChildProcess = spawn(command[0], command.slice(1), { cwd, stdio: ['pipe', 'pipe', 'inherit'] })
   let nextId = 1
   const pending = new Map<number, { ok: (v: Json) => void, fail: (e: Error) => void }>()
-  let onNote: (method: string, params: Json) => void = () => {}
+  const onNote = new Set<(method: string, params: Json) => void>()
   let onReq: (method: string, params: Json) => Promise<Json> = async () => { throw new Error('not handled') }
   const write = (m: Json) => { if (child.stdin?.writable) child.stdin.write(JSON.stringify(m) + '\n') }
 
@@ -48,7 +50,7 @@ export function startAppServer(cwd: string, command = ['codex', 'app-server']): 
         (result) => write({ id: m.id, result }),
         (e: Error) => write({ id: m.id, error: { code: -32000, message: e.message } }),
       )
-    } else if (m.method) onNote(m.method, m.params)
+    } else if (m.method) for (const fn of onNote) fn(m.method, m.params)
   })
 
   return {
@@ -57,7 +59,7 @@ export function startAppServer(cwd: string, command = ['codex', 'app-server']): 
       return new Promise((ok, fail) => { pending.set(id, { ok, fail }); write({ id, method, params }) })
     },
     notify: (method, params) => write(params === undefined ? { method } : { method, params }),
-    onNotification(fn) { onNote = fn },
+    onNotification(fn) { onNote.add(fn) },
     onRequest(fn) { onReq = fn },
     onExit(fn) { child.on('exit', fn) },
     close() { child.kill() },
@@ -128,10 +130,19 @@ export interface CodexOptions {
   effort?: string
 }
 
-/** Connects an initialized app-server (initCodex) to a board agent. */
-export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name, model, effort }: CodexOptions) {
+export interface Codex {
+  /** a Codex thread for a request, with the board tools; `voice`: for a spoken conversation (./voice.ts) */
+  startThread(request: AgentRequest, opts?: { voice?: boolean }): Promise<string>
+  /** the request a Codex thread is for */
+  requestOf(threadId: string): string | undefined
+}
 
-  const byRequest = new Map<string, { threadId: string, turnId: string | null, effort?: string }>()
+/** Connects an initialized app-server (initCodex) to a board agent. */
+export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name, model, effort }: CodexOptions): Promise<Codex> {
+
+  // `voice`: its turns are handed to it by a voice conversation, which goes on
+  // after each of them; what it says is the conversation's, not an answer
+  const byRequest = new Map<string, { threadId: string, turnId: string | null, effort?: string, voice?: boolean }>()
   const requestOf = new Map<string, string>() // Codex thread -> request
   let waiting = 0
   const updateStatus = () => {
@@ -174,7 +185,7 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
       t.turnId = null
       const { status, error } = p.turn
       if (status === 'failed') agent.emit(requestId, { type: 'error', message: error?.message ?? 'Codex stopped with an error.' })
-      else agent.emit(requestId, { type: 'done', ...(status === 'interrupted' ? { text: 'Stopped.' } : {}) })
+      else if (!t.voice) agent.emit(requestId, { type: 'done', ...(status === 'interrupted' ? { text: 'Stopped.' } : {}) })
       updateStatus()
     } else if (method === 'item/started') {
       const item = p.item
@@ -189,7 +200,7 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
       agent.emit(requestId, { type: 'progress', text: `Generated image ${n}` })
     } else if (method === 'item/completed' && p.item.type === 'agentMessage' && p.item.text) {
       // commentary while it works is progress; the final answer is its reply
-      agent.emit(requestId, { type: p.item.phase === 'commentary' ? 'progress' : 'message', text: p.item.text })
+      agent.emit(requestId, { type: p.item.phase === 'commentary' || t.voice ? 'progress' : 'message', text: p.item.text })
     }
   })
 
@@ -233,21 +244,26 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     throw new Error(`${method} is not supported on a board`)
   })
 
+  async function startThread(request: AgentRequest, { voice = false } = {}) {
+    const use = { model: request.options?.model ?? model, effort: request.options?.effort ?? effort }
+    const started = await server.request('thread/start', {
+      cwd,
+      ...(use.model ? { model: use.model } : {}),
+      developerInstructions: instructions(name, { voice }),
+      dynamicTools: agent.tools.map((t) => ({ type: 'function', ...t })),
+    })
+    const { thread } = started
+    const used = [started.model, use.effort ?? started.reasoningEffort].filter(Boolean).join(' · ')
+    if (used) agent.emit(request.id, { type: 'progress', text: used })
+    byRequest.set(request.id, { threadId: thread.id, turnId: null, effort: use.effort, voice })
+    requestOf.set(thread.id, request.id)
+    return thread.id as string
+  }
+
   agent.onRequest = async (request) => {
     try {
       agent.lookAt(request)
-      const use = { model: request.options?.model ?? model, effort: request.options?.effort ?? effort }
-      const started = await server.request('thread/start', {
-        cwd,
-        ...(use.model ? { model: use.model } : {}),
-        developerInstructions: instructions(name),
-        dynamicTools: agent.tools.map((t) => ({ type: 'function', ...t })),
-      })
-      const { thread } = started
-      const used = [started.model, use.effort ?? started.reasoningEffort].filter(Boolean).join(' · ')
-      if (used) agent.emit(request.id, { type: 'progress', text: used })
-      byRequest.set(request.id, { threadId: thread.id, turnId: null, effort: use.effort })
-      requestOf.set(thread.id, request.id)
+      await startThread(request)
       // feedback it carries (snapshots written on): what people said, and the pictures
       const more: Json[] = []
       const ids = request.context.feedback ?? []
@@ -266,4 +282,5 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     if (!byRequest.has(requestId)) return // from before this agent started
     try { await turn(requestId, text) } catch (e) { agent.emit(requestId, { type: 'error', message: (e as Error).message }) }
   }
+  return { startThread, requestOf: (threadId) => requestOf.get(threadId) }
 }

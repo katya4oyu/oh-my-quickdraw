@@ -4,6 +4,7 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { accountText, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
 import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
@@ -24,7 +25,7 @@ async function page(url: string) {
   const ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
   await new Promise((ok) => { ws.onopen = ok })
-  const events: any[] = [], agents: any[][] = [], presences: any[] = []
+  const events: any[] = [], agents: any[][] = [], presences: any[] = [], voices: any[] = []
   const wake = new Set<() => void>()
   ws.onmessage = ({ data }) => {
     const m = new Uint8Array(data)
@@ -33,6 +34,7 @@ async function page(url: string) {
     const msg = unpackAgent(m)
     if (msg.kind === 'event') events.push(msg.event)
     if (msg.kind === 'agents') agents.push(msg.agents)
+    if (msg.kind === 'voice') voices.push(msg)
     for (const fn of wake) fn()
   }
   const until = (test: () => unknown) => new Promise<void>((ok) => {
@@ -42,7 +44,7 @@ async function page(url: string) {
   })
   ws.send(packAgent({ kind: 'hello' }))
   cleanup.push(() => ws.close())
-  return { send: (m: object) => ws.send(packAgent(m)), events, agents, presences, until }
+  return { send: (m: object) => ws.send(packAgent(m)), events, agents, presences, voices, until }
 }
 
 describe('quickdraw agent codex', () => {
@@ -76,6 +78,42 @@ describe('quickdraw agent codex', () => {
       ? '2 images; files there; notes "Save is cut off"; look_at inputImage'
       : '1 images; files there; notes "Save is cut off"; look_at failed: ' + answer.split('failed: ')[1])
   }, 60_000)
+
+  it('talks: the offer goes to a realtime conversation, the answer back to the page that asked, and what is said and done fills the thread', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Talk').id}`
+    const person = await page(url)
+    const other = await page(url) // someone else on the board: sees the thread, never the call
+    const board = await openBoard({ url, name: 'Codex · talk' })
+    const codex = startAppServer(process.cwd(), ['node', MOCK])
+    const agent = await joinBoard(board, { id: 'codex-talk', name: 'Codex · talk', knows: [], voice: true, ...(await initCodex(codex)) })
+    cleanup.push(() => agent.close(), () => codex.close())
+    runVoice(codex, agent, await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · talk' }))
+    await person.until(() => person.agents.at(-1)?.[0]?.voice === true)
+
+    const request = { id: 'v1', to: 'codex-talk', text: 'Voice', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {} }
+    person.send({ kind: 'request', request, sdp: 'v=offer' })
+    await person.until(() => person.voices.some((v) => v.sdp))
+    expect(person.voices[0]).toEqual({ kind: 'voice', requestId: 'v1', sdp: 'v=answer' })
+    await person.until(() => person.events.some((e) => e.type === 'message' && e.requestId === 'v1'))
+    // what the person said, as theirs; Codex's work as progress; what was said back, as the answer
+    expect(person.events.filter((e) => e.requestId === 'v1').map((e) => [e.type, e.text ?? ''])).toEqual([
+      ['progress', 'fast'], ['reply', 'Put a note that says hi.'], ['op', ''], ['progress', 'Added it (true).'], ['message', 'Done, it says hi.'],
+    ])
+    expect(board.store.all().some((r: any) => r.props?.text === 'hi')).toBe(true)
+    expect(app.threads.get('v1')?.thread.request.voice).toBe(true)
+    expect(app.threads.get('v1')?.thread.status).toBe('working') // still talking
+
+    // hanging up ends it, for the page that talked only
+    person.send({ kind: 'voice', requestId: 'v1', stop: true })
+    await person.until(() => person.voices.some((v) => 'end' in v))
+    expect(person.voices.at(-1)).toEqual({ kind: 'voice', requestId: 'v1', end: 'requested' })
+    await person.until(() => person.events.some((e) => e.type === 'done' && e.requestId === 'v1'))
+    expect(other.voices).toEqual([])
+    expect(other.events.some((e) => e.type === 'reply' && e.requestId === 'v1')).toBe(true)
+  }, 30_000)
 
   it('names the account by its kind and plan, and its usage limits by their windows', () => {
     expect(accountText({ type: 'chatgpt', email: 'a@b.c', planType: 'prolite' })).toBe('ChatGPT Pro Lite')

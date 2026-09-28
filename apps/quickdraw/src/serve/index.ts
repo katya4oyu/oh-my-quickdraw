@@ -27,7 +27,7 @@ import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -192,6 +192,9 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   }
   const str = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max
   const AGENT_EVENTS = new Set(['progress', 'message', 'question', 'approval', 'op', 'done', 'error'])
+  // voice conversations (a request with a WebRTC offer): the page that asked, by request.
+  // Their offer and answer go between it and the agent only, and are never stored.
+  const talking = new Map<string, { page: Duplex, agent: Duplex }>()
 
   // screen sharing (quickdraw-screenshare): one sharer per board; its frames go to
   // the pages, dropped for one that is behind, and never stored
@@ -248,6 +251,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         ...(str(m.agent.model, 100) ? { model: m.agent.model } : {}),
         ...(str(m.agent.effort, 40) ? { effort: m.agent.effort } : {}),
         ...(m.agent.remote === true ? { remote: true } : {}),
+        ...(m.agent.voice === true ? { voice: true } : {}),
       })
       send(socket, { kind: 'joined', id })
       announce(room)
@@ -265,10 +269,20 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       if (limits.length) agent.limits = limits
       else delete agent.limits
       announce(room)
-    } else if (m.kind === 'event' && agent && AGENT_EVENTS.has(m.event?.type)) {
-      // only about a request to this agent, on this board
+    } else if (m.kind === 'event' && agent && (AGENT_EVENTS.has(m.event?.type) || (m.event?.type === 'reply' && talking.has(m.event.requestId)))) {
+      // only about a request to this agent, on this board; in a conversation, what the person said comes from it too
       const t = threads.get(m.event.requestId)
       if (t?.board === board && t.thread.request.to === agent.id) record(room, m.event)
+    } else if (m.kind === 'voice' && str(m.requestId, 100)) {
+      const call = talking.get(m.requestId)
+      if (!call) return
+      if (agent && call.agent === socket) { // the answer, or that it ended
+        if (str(m.sdp, 20_000)) send(call.page, { kind: 'voice', requestId: m.requestId, sdp: m.sdp })
+        else if ('end' in m) {
+          talking.delete(m.requestId)
+          send(call.page, { kind: 'voice', requestId: m.requestId, end: str(m.end, 500) ? m.end : null })
+        }
+      } else if (call.page === socket && m.stop === true) send(call.agent, { kind: 'voice', requestId: m.requestId, stop: true })
     } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
       const request = m.request as AgentRequest
       if (threads.get(request.id)) return
@@ -278,10 +292,16 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       const target = [...room].find((s) => agentOf.get(s)?.id === request.to)
       const agentTo = target && agentOf.get(target)
       if (!mayAsk(socket, agentTo)) return send(socket, { kind: 'event', event: { type: 'error', requestId: request.id, message: onlyHere(agentTo!) } })
+      // to talk (see ./protocol.js): only with an agent that talks
+      const sdp = str(m.sdp, 20_000) ? m.sdp as string : undefined
+      if (sdp && !agentTo?.voice) return send(socket, { kind: 'voice', requestId: request.id, end: 'That agent does not talk.' })
+      if (sdp) request.voice = true
+      else delete request.voice
       boards.saveVersion(board, `Before AI: ${request.text.replace(/\s+/g, ' ').slice(0, 60)}`, true) // to go back past what it does
       const thread = threads.create(board, request)
       broadcast(new Set(pages(room)), socket, agentMsg({ kind: 'thread', thread })) // the sender has it
-      if (target) send(target, { kind: 'request', request, local: local.has(socket) })
+      if (target && sdp) talking.set(request.id, { page: socket, agent: target })
+      if (target) send(target, { kind: 'request', request, local: local.has(socket), ...(sdp ? { sdp } : {}) })
       else record(room, { type: 'error', requestId: request.id, message: 'That agent is not on this board.' })
     } else if (m.kind === 'reply' && !agent && str(m.requestId, 100)) {
       const t = threads.get(m.requestId)
@@ -367,6 +387,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       presences.delete(socket)
       broadcast(peers, socket, presence(id, { gone: true }))
       if (sharers.get(board!)?.socket === socket) { sharers.delete(board!); announceSharing(board!, peers) }
+      // a conversation ends with the page that talks, or the agent it talks with
+      for (const [requestId, call] of talking) {
+        if (call.page === socket) send(call.agent, { kind: 'voice', requestId, stop: true })
+        if (call.agent === socket) send(call.page, { kind: 'voice', requestId, end: 'The agent left the board.' })
+        if (call.page === socket || call.agent === socket) talking.delete(requestId)
+      }
       const agent = agentOf.get(socket)
       if (agent && !closing) { // not while the server shuts down: the threads are closed
         agentOf.delete(socket)
