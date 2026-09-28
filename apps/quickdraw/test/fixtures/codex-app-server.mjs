@@ -19,6 +19,11 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     { id: 'deep', displayName: 'Deep', hidden: false, isDefault: false, defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
     { id: 'secret', displayName: 'Secret', hidden: true, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [] },
   ], nextCursor: null } })
+  if (m.method === 'account/read') return out({ id: m.id, result: { account: { type: 'chatgpt', email: 'someone@example.com', planType: 'prolite' }, requiresOpenaiAuth: true } })
+  if (m.method === 'account/rateLimits/read') {
+    const codex = { limitId: 'codex', limitName: null, primary: { usedPercent: 9, windowDurationMins: 10080, resetsAt: 1791105016 }, secondary: null, planType: 'prolite' }
+    return out({ id: m.id, result: { rateLimits: codex, rateLimitsByLimitId: { codex } } })
+  }
   if (m.method === 'config/read') return out({ id: m.id, result: { config: {} } })
   if (m.method === 'thread/start') {
     tools = m.params.dynamicTools.map((t) => t.name)
@@ -42,6 +47,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     } else {
       out({ method: 'item/completed', params: { threadId, turnId, item: { type: 'agentMessage', phase: 'final_answer', text: `You said: ${text}` } } })
     }
+    // a sparse update: a new 5h window; the weekly one stays as it was
+    out({ method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'codex', limitName: null, primary: null, secondary: { usedPercent: 30, windowDurationMins: 300, resetsAt: null }, planType: null } } })
     out({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed', error: null } } })
   }
 })

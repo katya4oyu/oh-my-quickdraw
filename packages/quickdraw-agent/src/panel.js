@@ -20,6 +20,19 @@ export function agentOptions(agent, choice = {}) {
   return { model: model.id, effort: model.efforts.includes(choice.effort) ? choice.effort : fallback }
 }
 
+/** "9% · resets in 6d": how much of a usage limit an agent has used, and when it starts again. */
+export function limitText(limit, now = Date.now()) {
+  const used = `${Math.round(limit.usedPercent)}%`
+  if (!limit.resetsAt) return used
+  const mins = Math.max(1, Math.round((limit.resetsAt - now) / 60000))
+  const left = mins < 60 ? `${mins}m` : mins < 48 * 60 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
+  return `${used} · resets in ${left}`
+}
+/** How close to a limit: 'full' at 100%, 'high' from 80%. */
+export const limitLevel = (limit) => (limit.usedPercent >= 100 ? 'full' : limit.usedPercent >= 80 ? 'high' : '')
+// the agent's most-used limit
+const topLimit = (agent) => (agent?.limits || []).reduce((a, b) => (!a || b.usedPercent > a.usedPercent ? b : a), null)
+
 /** A committed note beginning with @AI or a known agent name is a request. */
 export function detectAgentMention(text, agents) {
   const value = String(text || '').trim()
@@ -125,6 +138,13 @@ const STYLE = `
 .qda-join>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .qda-join code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:all}
 .qda-join code span{display:inline-block;max-width:100%;overflow-wrap:anywhere}
+.qda-usage{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 8px;padding:8px 11px;margin-bottom:6px;border-radius:12px;background:var(--qd-seg-bg);font-size:12px}
+.qda-usage>.qda-muted{grid-column:1/-1}
+.qda-bar{height:5px;border-radius:3px;background:var(--qd-hover);overflow:hidden}
+.qda-bar i{display:block;height:100%;border-radius:3px;background:var(--qda-accent)}
+[data-level=high] .qda-bar i{background:var(--qda-wait)}[data-level=full] .qda-bar i{background:var(--qda-error)}
+.qda-limit{display:contents}.qda-limit span:last-child{color:var(--qd-ink-soft);font-variant-numeric:tabular-nums}
+.qda-opts .qda-muted{align-self:center;padding:0 4px}.qda-opts [data-level=high]{color:var(--qda-wait)}.qda-opts [data-level=full]{color:var(--qda-error)}
 .qda-empty{padding:18px 4px;text-align:center;color:var(--qd-ink-soft)}
 .qda-row{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;padding:8px 9px;margin:0 -9px;border-radius:10px;cursor:pointer}
 .qda-row:hover{background:var(--qd-hover)}
@@ -238,7 +258,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   modelPick.setAttribute('aria-label', 'Model')
   const effortPick = el('select')
   effortPick.setAttribute('aria-label', 'Effort')
-  opts.append(picker, modelPick, effortPick)
+  const usage = el('span', 'qda-muted') // the chosen agent's most-used limit
+  opts.append(picker, modelPick, effortPick, usage)
   const send = iconButton(ICONS.send, 'Send', 'qda-send')
   send.type = 'submit'
   input.append(prompt, send)
@@ -274,6 +295,24 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       who.append(row)
     }
     body.append(who)
+    // what each runs on, and how much of its limits is used
+    for (const agent of getAgents()) {
+      if (!agent.account && !agent.limits?.length) continue
+      const box = el('div', 'qda-usage')
+      const label = [getAgents().length > 1 && agent.name, agent.account].filter(Boolean).join(' · ')
+      if (label) box.append(el('span', 'qda-muted', label))
+      for (const limit of agent.limits || []) {
+        const row = el('div', 'qda-limit')
+        row.dataset.level = limitLevel(limit)
+        const bar = el('span', 'qda-bar')
+        const fillBar = el('i')
+        fillBar.style.width = `${Math.min(100, limit.usedPercent)}%`
+        bar.append(fillBar)
+        row.append(el('span', '', limit.name), bar, el('span', '', limitText(limit)))
+        box.append(row)
+      }
+      body.append(box)
+    }
     if (!getAgents().length) {
       who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
       const join = host.join?.()
@@ -390,7 +429,14 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       fill(modelPick, agent.models.map((m) => [m.id, m.name]), chosen.model)
       fill(effortPick, model.efforts.map((e) => [e, e]), chosen.effort)
     }
-    opts.hidden = picker.hidden && modelPick.hidden
+    const top = topLimit(agent)
+    usage.hidden = inThread || !top
+    if (top) {
+      usage.textContent = `${top.name} ${Math.round(top.usedPercent)}%`
+      usage.dataset.level = limitLevel(top)
+      usage.title = [agent.account, ...agent.limits.map((l) => `${l.name}: ${limitText(l)}`)].filter(Boolean).join('\n')
+    }
+    opts.hidden = picker.hidden && modelPick.hidden && usage.hidden
     prompt.placeholder = inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
     send.disabled = !prompt.value.trim() || (!inThread && !agents.length)
   }

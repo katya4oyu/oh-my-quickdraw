@@ -8,6 +8,7 @@
 //
 // AGENT messages, `{ kind, … }`:
 //   from an agent    join { agent: { id, name, knows, status } }, status { status },
+//                    account { account?, limits?: [{ name, usedPercent, resetsAt? }] } (what it runs on, for the panel),
 //                    event { event }: progress, message, question, approval, op, done, error
 //   from a page      hello (answered with agents and threads), request { request }, reply { requestId, message } (text,
 //                    { approval, allow } or { undo: { reverted, skipped } })

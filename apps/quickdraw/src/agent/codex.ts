@@ -10,7 +10,7 @@
 // panel and wait for a person.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import type { AgentRequest } from 'quickdraw-agent'
+import type { AgentLimit, AgentRequest } from 'quickdraw-agent'
 import type { BoardAgent } from './board-agent.ts'
 import { instructions } from './instructions.ts'
 
@@ -100,6 +100,26 @@ export async function initCodex(server: AppServer, defaults: { model?: string, e
   return { models, model, effort }
 }
 
+// What Codex runs on, for the panel: the account's kind and plan (never its
+// email: everyone on the board sees it), and how much of each usage limit is used.
+const PLANS: Record<string, string> = { prolite: 'Pro Lite', edu_plus: 'Edu Plus', edu_pro: 'Edu Pro' }
+const planName = (plan: string) => PLANS[plan] ?? plan.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
+export function accountText(account: Json, plan = account?.planType): string | undefined {
+  if (account?.type === 'chatgpt') return plan && plan !== 'unknown' ? `ChatGPT ${planName(plan)}` : 'ChatGPT'
+  if (account?.type === 'apiKey') return 'OpenAI API key'
+  if (account?.type === 'amazonBedrock') return 'Amazon Bedrock'
+}
+const windowName = (mins: number | null) =>
+  mins == null ? 'Limit' : mins === 10080 ? 'Weekly' : mins % 1440 === 0 ? `${mins / 1440}-day` : mins % 60 === 0 ? `${mins / 60}h` : `${mins}m`
+/** the windows of Codex's rate-limit snapshots, one per limit (`codex`, or others by their names) */
+export function limitsOf(snapshots: Json[]): AgentLimit[] {
+  return snapshots.flatMap((s) => [s.primary, s.secondary].filter(Boolean).map((w: Json) => ({
+    name: (s.limitId && s.limitId !== 'codex' && s.limitName ? s.limitName + ' ' : '') + windowName(w.windowDurationMins),
+    usedPercent: w.usedPercent,
+    ...(w.resetsAt ? { resetsAt: w.resetsAt * 1000 } : {}),
+  })))
+}
+
 export interface CodexOptions {
   cwd: string
   name: string
@@ -126,7 +146,26 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
     else await server.request('turn/start', { threadId: t.threadId, input, ...(t.effort ? { effort: t.effort } : {}) })
   }
 
+  // the account and its usage: read once, then kept up to date from Codex's
+  // notifications (sparse: a value missing from one keeps the last one), and
+  // read again after a turn, at most once a minute
+  let account: Json = null, plan: string | undefined, readAt = 0
+  const snapshots = new Map<string, Json>() // by limit id
+  const merge = (id: string, s: Json) => snapshots.set(id, { ...snapshots.get(id), ...Object.fromEntries(Object.entries(s).filter(([, v]) => v != null)) })
+  const share = () => agent.account({ account: accountText(account, plan), limits: limitsOf([...snapshots.values()]) })
+  async function readUsage() {
+    readAt = Date.now()
+    const r = await server.request('account/rateLimits/read', { excludeResetCreditDetails: true }).catch(() => null)
+    if (!r) return // an API key has no such limits
+    for (const [id, s] of Object.entries(r.rateLimitsByLimitId ?? { [r.rateLimits?.limitId ?? 'codex']: r.rateLimits })) if (s) merge(id, s)
+    share()
+  }
+  server.request('account/read', {}).then((r) => { account = r?.account; plan = account?.planType; share(); return readUsage() }, () => {})
+
   server.onNotification((method, p) => {
+    if (method === 'account/rateLimits/updated' && p?.rateLimits) { merge(p.rateLimits.limitId ?? 'codex', p.rateLimits); return share() }
+    if (method === 'account/updated') { if (p?.planType) plan = p.planType; return share() }
+    if (method === 'turn/completed' && Date.now() - readAt > 60_000) readUsage()
     const requestId = requestOf.get(p?.threadId)
     if (!requestId) return
     const t = byRequest.get(requestId)!

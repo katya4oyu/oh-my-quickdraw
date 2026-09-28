@@ -3,6 +3,6 @@
 // Runs in browsers and in Node (installMeasure stands in for text measuring).
 export { describeBoard, boardToMarkdown, textOf, runOp, applySteps, undoDiff, parseRatio } from './ops.js'
 export { BOARD_TOOLS } from './tools.js'
-export { createAgentPanel, agentTools, AGENT_ICON, buildAgentRequest, agentOptions, detectAgentMention, updateAgentThread, undoAgentRequest } from './panel.js'
+export { createAgentPanel, agentTools, AGENT_ICON, buildAgentRequest, agentOptions, limitText, limitLevel, detectAgentMention, updateAgentThread, undoAgentRequest } from './panel.js'
 export { hasAgentThreadForAnchor } from './panel.js'
 export { installMeasure, estimateWidth } from './measure.js'

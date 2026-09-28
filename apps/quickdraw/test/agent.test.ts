@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
-import { commandText, initCodex, startAppServer, runCodex } from '../src/agent/codex.ts'
+import { accountText, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -42,6 +42,22 @@ async function page(url: string) {
 }
 
 describe('quickdraw agent codex', () => {
+  it('names the account by its kind and plan, and its usage limits by their windows', () => {
+    expect(accountText({ type: 'chatgpt', email: 'a@b.c', planType: 'prolite' })).toBe('ChatGPT Pro Lite')
+    expect(accountText({ type: 'chatgpt', planType: 'self_serve_business_usage_based' })).toBe('ChatGPT Self Serve Business Usage Based')
+    expect(accountText({ type: 'chatgpt', planType: 'unknown' })).toBe('ChatGPT')
+    expect(accountText({ type: 'apiKey' })).toBe('OpenAI API key')
+    expect(accountText(null)).toBeUndefined()
+    expect(limitsOf([
+      { limitId: 'codex', primary: { usedPercent: 40, windowDurationMins: 300, resetsAt: 10 }, secondary: { usedPercent: 9, windowDurationMins: 10080, resetsAt: null } },
+      { limitId: 'other', limitName: 'Spark', primary: { usedPercent: 1, windowDurationMins: 1440 }, secondary: null },
+    ])).toEqual([
+      { name: '5h', usedPercent: 40, resetsAt: 10_000 },
+      { name: 'Weekly', usedPercent: 9 },
+      { name: 'Spark 1-day', usedPercent: 1 },
+    ])
+  })
+
   it('joins the board, turns a request into a Codex turn, runs its tool calls on the board, and asks people for approvals', async () => {
     const app = createQuickdrawServer()
     cleanup.push(() => app.close())
@@ -63,6 +79,10 @@ describe('quickdraw agent codex', () => {
     await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex · repo', model: offered.model, effort: offered.effort })
     await person.until(() => person.agents.at(-1)?.[0]?.name === 'Codex · repo')
     expect(person.agents.at(-1)?.[0]).toMatchObject({ model: 'fast', effort: 'medium', models: offered.models })
+    // what it runs on: the plan and the usage, never the email
+    await person.until(() => person.agents.at(-1)?.[0]?.limits)
+    expect(person.agents.at(-1)?.[0]).toMatchObject({ account: 'ChatGPT Pro Lite', limits: [{ name: 'Weekly', usedPercent: 9, resetsAt: 1791105016000 }] })
+    expect(JSON.stringify(person.agents)).not.toContain('example.com')
 
     const request = { id: 'r1', to: 'codex-repo', text: 'Add a note', context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {}, options: { model: 'deep', effort: 'high' } }
     person.send({ kind: 'request', request })
@@ -78,6 +98,12 @@ describe('quickdraw agent codex', () => {
     const op = person.events.find((e) => e.type === 'op')
     expect(op.diff).toBeTruthy()
     expect(person.events.find((e) => e.type === 'message').text).toBe('Added a note (Add a note).')
+    // Codex's sparse update adds its 5h window and keeps the weekly one
+    await person.until(() => person.agents.at(-1)?.[0]?.limits?.length === 2)
+    expect(person.agents.at(-1)?.[0].limits).toEqual([
+      { name: 'Weekly', usedPercent: 9, resetsAt: 1791105016000 },
+      { name: '5h', usedPercent: 30 },
+    ])
     // it is on the board, as the agent's, for everyone
     const note = board.store.get(op.ids[0])
     expect(note).toMatchObject({ type: 'note', props: { text: 'From Codex' }, agent: { name: 'Codex · repo', op: op.op } })

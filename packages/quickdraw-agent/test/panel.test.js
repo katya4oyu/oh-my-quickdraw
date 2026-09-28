@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { runOp } from '../src/ops.js'
-import { undoAgentRequest, agentOptions, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
+import { undoAgentRequest, agentOptions, limitText, limitLevel, buildAgentRequest, detectAgentMention, updateAgentThread, hasAgentThreadForAnchor } from '../src/panel.js'
 
 const editor = { viewportPageBounds: () => ({ x: -10, y: 20, w: 800, h: 600 }) }
 
@@ -26,6 +26,16 @@ describe('agent panel request model', () => {
     expect(agentOptions(agent, { model: 'gone', effort: 'low' })).toEqual({ model: 'b', effort: 'low' })
     expect(agentOptions({ ...agent, models: undefined })).toBeUndefined()
     expect(buildAgentRequest({ id: 'r', to: 'codex', text: 'x', editor, options: { model: 'a', effort: 'low' } }).options).toEqual({ model: 'a', effort: 'low' })
+  })
+
+  it('says how much of a usage limit is used, and when it starts again', () => {
+    const now = Date.UTC(2026, 8, 28)
+    expect(limitText({ name: 'Weekly', usedPercent: 9.4, resetsAt: now + 6 * 86400_000 }, now)).toBe('9% · resets in 6d')
+    expect(limitText({ name: '5h', usedPercent: 50, resetsAt: now + 3 * 3600_000 }, now)).toBe('50% · resets in 3h')
+    expect(limitText({ name: '5h', usedPercent: 50, resetsAt: now + 40 * 60_000 }, now)).toBe('50% · resets in 40m')
+    expect(limitText({ name: '5h', usedPercent: 50, resetsAt: now - 1000 }, now)).toBe('50% · resets in 1m') // about to
+    expect(limitText({ name: 'Weekly', usedPercent: 3 })).toBe('3%')
+    expect([0, 79, 80, 100].map((usedPercent) => limitLevel({ name: 'x', usedPercent }))).toEqual(['', '', 'high', 'full'])
   })
 
   it('recognizes only explicit @AI or known @agent-name mentions', () => {
