@@ -42,6 +42,11 @@ export const BOARD_TOOLS = [
   step('add_text', 'text', 'A line of text, such as a heading.', { text: str(), ...placement }, ['text']),
   step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, ...placement }, ['shape']),
   step('add_markdown', 'markdown', 'A Markdown card, for longer text.', { text: str('the Markdown'), w: num, ...placement }, ['text']),
+  step('add_embed', 'embed', 'A web page, a link card or a small HTML page on the board. A page from an allowed site (YouTube, Vimeo, Figma, CodePen, Google Maps) plays live; any other URL shows as a link card (its title and picture), as does `link: true`. '
+    + '`html` is a self-contained page (inline scripts and styles, no network) that runs only when a viewer presses Run: for a small prototype or a demo.', {
+    url: str('https:// page, or any http(s) link for a card'), html: str('a self-contained HTML page instead of a URL'), link: { type: 'boolean', description: 'a link card even for an allowed site' },
+    title: str(), w: num, h: num, ...placement,
+  }),
   step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes.', {
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
   }, ['title']),
@@ -54,7 +59,7 @@ export const BOARD_TOOLS = [
   {
     name: 'apply_steps',
     description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
-      + 'Each step is { do: note|text|shape|markdown|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
+      + 'Each step is { do: note|text|shape|markdown|embed|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
     run(store, { steps }, { name: who = 'Agent' } = {}) {

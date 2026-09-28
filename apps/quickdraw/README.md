@@ -78,10 +78,11 @@ Codex joins the board as a participant with a cursor, and the board's AI panel s
 
 ## Board commands
 
-`quickdraw boards | new | read | export | note | text | shape | markdown | frame | arrow | update | move | arrange | delete | apply | log | undo`. They join a board like a browser tab, as one more peer with a cursor, and print JSON.
+`quickdraw boards | new | read | export | note | text | shape | markdown | embed | image | frame | arrow | update | move | arrange | fit | delete | apply | log | undo`. They join a board like a browser tab, as one more peer with a cursor, and print JSON.
 
 - **Which board**: `--board` takes an id, the page URL (`https://host/b/<id>`, as the browser shows it) or the relay URL (`ws://host/ws/<id>`); or `$QUICKDRAW_BOARD`; or `--file` for a JSON file. Ids are looked up on `--server` / `$QUICKDRAW_SERVER`, by default this machine's `quickdraw serve`. Without a board, the server's only board is used; with several, the command fails and lists them — it never makes one up. (`quickdraw agent codex` at a terminal asks instead: [Which board it joins](#which-board-it-joins).) They are built on [`quickdraw-agent`](../../packages/quickdraw-agent)'s operations.
 
+- **Images and embeds**: `image FILE` puts an image file from the working directory (made lighter, and cut into cells with `--split COLSxROWS`, as `add_image` does); `embed URL` a page or a link card, `embed --html-file` inline HTML. On a live board a link card gets its title and picture from the server's `/preview`, as in the page; Codex's `add_embed` too.
 - **Undo**: each operation's diff goes to `.quickdraw/log.jsonl` in the working directory (or `$QUICKDRAW_LOG`); `undo` reverts what nobody changed since and reports the rest.
 - **PNG** (`export --format png`): drawn by the core itself in a headless Chrome already on the machine — see below.
 

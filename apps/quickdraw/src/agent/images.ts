@@ -6,7 +6,7 @@
 // $QUICKDRAW_IMAGE_TOOL (sips, uv or none) chooses. Only files in the agent's
 // working directory or Codex's generated images are read.
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join, relative, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,14 +66,14 @@ export async function imageTool(): Promise<Tool> {
 }
 const python = (args: string[]) => run('uv', ['run', '--quiet', '--no-project', '--with', 'pillow', 'python', PY, ...args], { timeout: 120_000 })
 
-async function shrink(file: string, opaque: boolean): Promise<Buffer | null> {
+async function shrink(file: string, opaque: boolean, side = MAX_SIDE): Promise<Buffer | null> {
   const tool = await imageTool()
   if (tool === 'none') return null
   const dir = await mkdtemp(join(tmpdir(), 'quickdraw-image-'))
   try {
     const out = join(dir, opaque ? 'image.jpg' : 'image.png')
-    if (tool === 'sips') await run('sips', ['-Z', String(MAX_SIDE), ...(opaque ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', '85'] : []), file, '--out', out])
-    else await python(['shrink', file, out, String(MAX_SIDE), opaque ? '1' : '0'])
+    if (tool === 'sips') await run('sips', ['-Z', String(side), ...(opaque ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', '85'] : []), file, '--out', out])
+    else await python(['shrink', file, out, String(side), opaque ? '1' : '0'])
     return await readFile(out)
   } catch {
     return null
@@ -100,6 +100,39 @@ export async function loadImage(file: string, roots: string[], { transparent = f
   const final = imageSize(data) ?? size
   if (data.length > MAX_BYTES) throw new Error(`${file} is too large for the board (${Math.round(data.length / 1e6)} MB); make it smaller first`)
   return { src: `data:${mime};base64,${data.toString('base64')}`, w: final.w, h: final.h }
+}
+
+/** An image (a data URL) as a JPEG data URL `side` px at most, or null when nothing here can shrink it. */
+export async function smallJpeg(src: string, side: number): Promise<string | null> {
+  const m = src.match(/^data:image\/(png|jpeg|gif|webp);base64,(.*)$/)
+  if (!m) return null
+  const dir = await mkdtemp(join(tmpdir(), 'quickdraw-small-'))
+  try {
+    const file = join(dir, 'in.' + (m[1] === 'jpeg' ? 'jpg' : m[1]))
+    await writeFile(file, Buffer.from(m[2], 'base64'))
+    const out = await shrink(file, true, side)
+    return out && `data:image/jpeg;base64,${out.toString('base64')}`
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+/** The steps that put an image file on the board: as it is, or cut into the cells of an even grid (laid out as on the sheet, in a frame titled `frame`). */
+export async function imageSteps(file: string, args: ImageArgs, roots: string[], { transparent = false } = {}): Promise<object[]> {
+  if (args.split) {
+    const cells = await splitImage(file, args.split, roots, { transparent, inset: args.split.inset })
+    const refs = cells.map((_, i) => `cell${i}`)
+    const steps: object[] = cells.map((img, i) => ({ do: 'image', ref: refs[i], src: img.src, natural: { w: img.w, h: img.h }, w: args.w ?? Math.min(img.w, 160) }))
+    steps.push({ do: 'arrange', ids: refs.map((r) => '@' + r), layout: 'grid', cols: Math.floor(args.split.cols), gap: 16, ...(args.at ? { at: args.at } : {}) })
+    if (args.frame) steps.push({ do: 'frame', title: String(args.frame), around: refs.map((r) => '@' + r) })
+    return steps
+  }
+  const img = await loadImage(file, roots, { transparent })
+  return [{ do: 'image', src: img.src, natural: { w: img.w, h: img.h }, w: args.w, at: args.at, in: args.in }]
+}
+export interface ImageArgs {
+  w?: number, at?: { x: number, y: number }, in?: string, frame?: string,
+  split?: { cols: number, rows: number, inset?: number },
 }
 
 /**
