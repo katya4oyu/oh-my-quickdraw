@@ -22,7 +22,7 @@ import { validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { BOARD_ID, openBoards, type BoardInfo } from './boards.ts'
 import { openThreads } from './threads.ts'
-import { accept, BINARY, CLOSE, frame, parse, PING, PONG } from './websocket.ts'
+import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts'
 
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
@@ -171,6 +171,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   const presence = (id: number, data: object) => frame(BINARY, Buffer.concat([Buffer.from([PRESENCE]), Buffer.from(JSON.stringify({ ...data, id }))]))
   const broadcast = (room: Set<Duplex>, from: Duplex, out: Buffer) => { for (const peer of room) if (peer !== from && peer.writable) peer.write(out) }
   const presences = new Map<Duplex, Buffer>() // each connection's latest, in memory only: for those who come later
+  const refused = (board: string, what: string, payload: Buffer, e: unknown) =>
+    console.warn(`board ${board}: ignored ${what} that cannot be read (${payload.length - 1} bytes): ${(e as Error).message}`)
 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
@@ -327,18 +329,19 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     peers.add(socket)
     const id = nextId++
     for (const peer of peers) { const p = presences.get(peer); if (p) socket.write(p) } // who is here already
-    let buf: Buffer = Buffer.alloc(0)
+    const read = reader()
     socket.on('data', (chunk: Buffer) => {
-      let frames
-      ;[frames, buf] = parse(Buffer.concat([buf, chunk]))
-      for (const { opcode, payload } of frames) {
+      for (const { opcode, payload } of read(chunk)) {
         if (opcode === CLOSE) { socket.end(frame(CLOSE, Buffer.alloc(0))); drop(); return }
         if (opcode === PING) { socket.write(frame(PONG, payload)); continue }
         if (opcode !== BINARY || payload.length === 0) continue
         if (payload[0] === SV) {
-          const diff = Y.diffUpdate(boards.state(board), payload.subarray(1))
+          let diff
+          try { diff = Y.diffUpdate(boards.state(board), payload.subarray(1)) } catch (e) { refused(board, 'a state vector', payload, e); continue }
           socket.write(frame(BINARY, Buffer.concat([Buffer.from([UPDATE]), diff])))
         } else if (payload[0] === UPDATE) {
+          // one that cannot be read is neither kept nor passed on: kept, it would break the board for everyone
+          try { Y.decodeUpdate(payload.subarray(1)) } catch (e) { refused(board, 'an update', payload, e); continue }
           boards.append(board, payload.subarray(1))
           broadcast(peers, socket, frame(BINARY, payload))
         } else if (payload[0] === PRESENCE) {

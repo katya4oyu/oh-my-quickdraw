@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync } from 'node:fs'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Y from 'yjs'
@@ -49,6 +50,27 @@ async function fetchState(url: string) {
   return doc.getMap('quickdraw').toJSON()
 }
 
+// sends one message split into `parts` frames, as a browser sends a large one,
+// with a ping between the first two (control frames may come between fragments)
+async function sendFragmented(url: string, message: Uint8Array, parts: number) {
+  const { hostname, port, pathname } = new URL(url)
+  const socket = connect(Number(port), hostname)
+  await new Promise((ok) => socket.once('connect', ok))
+  socket.write(`GET ${pathname} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`)
+  await new Promise((ok) => socket.once('data', ok))
+  const size = Math.ceil(message.length / parts)
+  for (let i = 0; i < parts; i++) {
+    const part = message.subarray(i * size, (i + 1) * size)
+    const head = Buffer.alloc(14) // a 64-bit length and a zero mask
+    head[0] = (i === parts - 1 ? 0x80 : 0) | (i === 0 ? 2 : 0)
+    head[1] = 0x80 | 127
+    head.writeBigUInt64BE(BigInt(part.length), 2)
+    socket.write(Buffer.concat([head, part]))
+    if (i === 0) socket.write(Buffer.from([0x89, 0x80, 0, 0, 0, 0]))
+  }
+  return socket
+}
+
 describe('relay', () => {
   it('forwards updates to other clients only, including large ones', async () => {
     const url = await start()
@@ -85,6 +107,63 @@ describe('relay', () => {
 
     url = await start({ dbPath, compactEvery: 3 })
     expect(Object.keys(await fetchState(url))).toHaveLength(5)
+  })
+
+  it('puts a message sent in fragments back together', async () => {
+    const url = await start()
+    const b = await open(url)
+    const msg = pack(UPDATE, edit(1, 200_000))
+    const got = next(b)
+    const socket = await sendFragmented(url, msg, 3)
+    expect(await got).toEqual(msg)
+    socket.destroy()
+    expect((await fetchState(url))['shape:0'].pad).toHaveLength(200_000)
+    b.close()
+  })
+
+  it('neither keeps nor passes on an update that cannot be read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const url = await start()
+    const [a, b] = await Promise.all([open(url), open(url)])
+    const got = next(b)
+    a.send(pack(UPDATE, edit(1, 1000).subarray(0, 500))) // cut short
+    const good = pack(UPDATE, edit(2))
+    a.send(good)
+    expect(await got).toEqual(good) // the first thing b hears
+    expect(Object.keys(await fetchState(url))).toEqual(['shape:0', 'shape:1'])
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/ignored an update that cannot be read \(500 bytes\)/))
+    warn.mockRestore()
+    for (const ws of [a, b]) ws.close()
+  })
+
+  it('sets aside a stored update that cannot be read, and keeps the rest', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const dbPath = join(mkdtempSync(join(tmpdir(), 'qd-yjs-')), 'board.sqlite')
+    let url = await start({ dbPath, compactEvery: 4 })
+    const a = await open(url)
+    const doc = new Y.Doc()
+    a.send(pack(UPDATE, edit(1, 10, doc)))
+    await fetchState(url)
+    a.close()
+    await apps.pop()!.close()
+    // as a truncated update got stored before: the server would not start again
+    const db = new DatabaseSync(dbPath)
+    db.prepare('INSERT INTO updates (board, data) SELECT board, ? FROM updates LIMIT 1').run(edit(1, 1000).subarray(0, 500))
+    db.close()
+
+    url = await start({ dbPath, compactEvery: 4 })
+    const b = await open(url)
+    b.send(pack(UPDATE, edit(1, 10, doc))) // compacts (three stored)
+    b.send(pack(UPDATE, edit(1, 10, doc)))
+    expect(Object.keys(await fetchState(url))).toEqual(['shape:0', 'shape:1', 'shape:2'])
+    b.close()
+    await apps.pop()!.close()
+    const check = new DatabaseSync(dbPath)
+    expect(check.prepare('SELECT count(*) AS n FROM broken_updates').get()).toEqual({ n: 1 })
+    expect((check.prepare('SELECT data FROM broken_updates').get() as { data: Uint8Array }).data).toHaveLength(500)
+    check.close()
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/set aside update \d+ \(500 bytes\)/))
+    warn.mockRestore()
   })
 
   it('relays presence tagged with the sender id, and announces disconnects', async () => {

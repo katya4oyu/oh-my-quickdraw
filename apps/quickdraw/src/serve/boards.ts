@@ -1,5 +1,6 @@
 // The boards and their Yjs updates, in one SQLite file (built-in node:sqlite).
-// Updates are stored as they arrive and merged per board once they pile up.
+// Updates are stored as they arrive and merged per board once they pile up;
+// one that cannot be read is set aside (broken_updates), the rest still load.
 // A board is saved as it changes; besides that it can be renamed, archived
 // (hidden from the list, kept), copied, made from a JSON file, and keep
 // versions: whole-board snapshots, made by hand or before an AI request, that
@@ -57,6 +58,7 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
     CREATE TABLE IF NOT EXISTS versions (id INTEGER PRIMARY KEY AUTOINCREMENT, board TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, auto INTEGER NOT NULL, state BLOB NOT NULL);
     CREATE INDEX IF NOT EXISTS versions_board ON versions (board, id);
     CREATE TABLE IF NOT EXISTS thumbnails (board TEXT PRIMARY KEY, type TEXT NOT NULL, at TEXT NOT NULL, data BLOB NOT NULL);
+    CREATE TABLE IF NOT EXISTS broken_updates (seq INTEGER PRIMARY KEY, board TEXT NOT NULL, at TEXT NOT NULL, error TEXT NOT NULL, data BLOB NOT NULL);
   `)
   const columns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
   if (!columns.includes('archived_at')) db.exec('ALTER TABLE boards ADD COLUMN archived_at TEXT')
@@ -74,11 +76,32 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
   const pruneQ = db.prepare('DELETE FROM versions WHERE board = ? AND auto = 1 AND id NOT IN (SELECT id FROM versions WHERE board = ? AND auto = 1 ORDER BY id DESC LIMIT ?)')
   const createQ = db.prepare('INSERT INTO boards (id, title, created_at) VALUES (?, ?, ?)')
   const insert = db.prepare('INSERT INTO updates (board, data) VALUES (?, ?)')
-  const all = db.prepare('SELECT data FROM updates WHERE board = ? ORDER BY seq')
+  const all = db.prepare('SELECT seq, data FROM updates WHERE board = ? ORDER BY seq')
   const count = db.prepare('SELECT count(*) AS n FROM updates WHERE board = ?')
   const clear = db.prepare('DELETE FROM updates WHERE board = ?')
+  const setAsideQ = db.prepare('INSERT INTO broken_updates (seq, board, at, error, data) SELECT seq, board, ?, ?, data FROM updates WHERE seq = ?')
+  const dropQ = db.prepare('DELETE FROM updates WHERE seq = ?')
 
-  const state = (id: string) => Y.mergeUpdates(all.all(id).map((r) => r.data as Uint8Array))
+  const state = (id: string) => {
+    const rows = all.all(id) as { seq: number, data: Uint8Array }[]
+    try { return Y.mergeUpdates(rows.map((r) => r.data)) } catch {}
+    // one of them cannot be read (cut short, say): set it aside, keep the rest
+    const good: Uint8Array[] = []
+    const at = new Date().toISOString()
+    const inTx = db.isTransaction
+    if (!inTx) db.exec('BEGIN')
+    try {
+      for (const { seq, data } of rows) {
+        try { Y.decodeUpdate(data); good.push(data); continue } catch (e) {
+          setAsideQ.run(at, (e as Error).message, seq)
+          dropQ.run(seq)
+          console.warn(`board ${id}: set aside update ${seq} (${data.length} bytes), it cannot be read: ${(e as Error).message}`)
+        }
+      }
+      if (!inTx) db.exec('COMMIT')
+    } catch (e) { if (!inTx) db.exec('ROLLBACK'); throw e }
+    return Y.mergeUpdates(good)
+  }
   // no null fields: archivedAt and thumbnailAt only when there are
   const clean = (b: BoardInfo | undefined) => b && Object.fromEntries(Object.entries(b).filter(([, v]) => v != null)) as unknown as BoardInfo
   const need = (id: string) => {
