@@ -16,7 +16,10 @@ import * as Y from 'yjs'
 import type { AgentEvent, AgentParticipant, AgentRequest } from 'quickdraw-agent'
 import { AGENT, PRESENCE, SV, UPDATE } from '../protocol.js'
 import { handlePreview } from './preview.ts'
-import { BOARD_ID, openBoards } from './boards.ts'
+import { parseJSON } from 'quickdraw-import'
+import { validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
+import { validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+import { BOARD_ID, openBoards, type BoardInfo } from './boards.ts'
 import { openThreads } from './threads.ts'
 import { accept, BINARY, CLOSE, frame, parse, PING, PONG } from './websocket.ts'
 
@@ -66,6 +69,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   function locate(pathname: string): string | null {
     if (pathname === '/') return join(web, 'index.html')
     if (pathname === '/protocol.js') return protocol
+    if (pathname === '/versions.js') return join(web, 'versions.js')
     const b = pathname.match(/^\/b\/([^/]+)$/)
     if (b) return BOARD_ID.test(b[1]) && boards.get(b[1]) ? join(web, 'board.html') : null
     const m = pathname.match(/^\/_\/([^/]+)\/src(\/.*)$/)
@@ -76,21 +80,66 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     return null
   }
 
-  // /api/boards: list (GET) and create (POST, JSON: a cross-site form cannot send it)
+  // /api/boards: the boards (JSON in and out: a cross-site form cannot send it)
+  //   GET    /api/boards[?archived=1]            the list, with how many agents are on each
+  //   POST   /api/boards { title, from?, file? }  a new board: empty, a copy of `from`, or a JSON file's
+  //   GET    /api/boards/ID                       one
+  //   PATCH  /api/boards/ID { title?, archived? } rename, archive or bring back
+  //   GET    /api/boards/ID/versions              its versions, newest first
+  //   POST   /api/boards/ID/versions { name }     keep it as it is now
+  //   POST   /api/boards/ID/versions/V/restore { as: 'board' | 'new' }   back to V, or V as a new board
   async function api(req: IncomingMessage, res: ServerResponse, pathname: string) {
-    if (pathname === '/api/boards') {
-      if (req.method === 'GET') return json(res, 200, boards.list())
-      if (req.method === 'POST') {
-        if (!req.headers['content-type']?.startsWith('application/json')) return json(res, 415, { error: 'send JSON' })
-        let body
-        try { body = await readJson(req) } catch (e) { return json(res, 400, { error: (e as Error).message }) }
-        return json(res, 201, boards.create(typeof body.title === 'string' ? body.title : undefined))
-      }
-      return json(res, 405, { error: 'GET or POST' })
+    const body = async (limit?: number) => {
+      if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('send JSON'), { status: 415 })
+      try { return await readJson(req, limit) } catch (e) { throw Object.assign(e as Error, { status: 400 }) }
     }
-    const one = pathname.match(/^\/api\/boards\/([^/]+)$/)
-    const info = one && BOARD_ID.test(one[1]) ? boards.get(one[1]) : undefined
-    return info ? json(res, 200, info) : json(res, 404, { error: 'no such board' })
+    const withAgents = (b: BoardInfo) => ({ ...b, agents: rooms.get(b.id) ? agentsIn(rooms.get(b.id)!).length : 0 })
+    try {
+      if (pathname === '/api/boards') {
+        if (req.method === 'GET') return json(res, 200, boards.list({ archived: new URL(req.url ?? '/', 'http://x').searchParams.get('archived') === '1' }).map(withAgents))
+        if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' })
+        const b = await body(30_000_000) // a JSON file may carry images
+        const t = typeof b.title === 'string' ? b.title : undefined
+        if (typeof b.from === 'string') return json(res, 201, boards.duplicate(b.from, t))
+        if (b.file !== undefined) {
+          let parsed
+          try { parsed = parseJSON(b.file, { types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }) } catch (e) { return json(res, 400, { error: (e as Error).message }) }
+          return json(res, 201, boards.createFrom(t ?? 'Imported', [...parsed.shapes, ...Object.values(parsed.assets)] as never))
+        }
+        return json(res, 201, boards.create(t))
+      }
+      const m = pathname.match(/^\/api\/boards\/([^/]+)(\/versions(?:\/(\d+)\/restore)?)?$/)
+      const info = m && BOARD_ID.test(m[1]) ? boards.get(m[1]) : undefined
+      if (!m || !info) return json(res, 404, { error: 'no such board' })
+      const id = info.id
+      if (!m[2]) {
+        if (req.method === 'GET') return json(res, 200, withAgents(info))
+        if (req.method !== 'PATCH') return json(res, 405, { error: 'GET or PATCH' })
+        const b = await body()
+        if (typeof b.title === 'string') boards.rename(id, b.title)
+        if (typeof b.archived === 'boolean') boards.archive(id, b.archived)
+        return json(res, 200, boards.get(id))
+      }
+      if (!m[3]) {
+        if (req.method === 'GET') return json(res, 200, boards.versions(id))
+        if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' })
+        const b = await body()
+        return json(res, 201, boards.saveVersion(id, typeof b.name === 'string' ? b.name : ''))
+      }
+      if (req.method !== 'POST') return json(res, 405, { error: 'POST' })
+      const b = await body()
+      const vid = Number(m[3])
+      if (b.as === 'new') return json(res, 201, boards.openVersion(id, vid, typeof b.title === 'string' ? b.title : undefined))
+      // over the board: kept as a version first, then sent to everyone on it as an ordinary update
+      boards.saveVersion(id, 'Before restoring', true)
+      const update = boards.restore(id, vid)
+      const room = rooms.get(id)
+      if (room && update.length) { const out = frame(BINARY, Buffer.concat([Buffer.from([UPDATE]), update])); for (const p of room) if (p.writable) p.write(out) }
+      return json(res, 200, { restored: vid })
+    } catch (e) {
+      const err = e as Error & { status?: number }
+      return json(res, err.status ?? (/no such/.test(err.message) ? 404 : 500), { error: err.message })
+    }
   }
 
   const rooms = new Map<string, Set<Duplex>>() // board id -> its sockets
@@ -148,6 +197,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
       const request = m.request as AgentRequest
       if (threads.get(request.id)) return
+      boards.saveVersion(board, `Before AI: ${request.text.replace(/\s+/g, ' ').slice(0, 60)}`, true) // to go back past what it does
       const thread = threads.create(board, request)
       broadcast(new Set(pages(room)), socket, agentMsg({ kind: 'thread', thread })) // the sender has it
       const to = [...room].find((s) => agentOf.get(s)?.id === request.to)

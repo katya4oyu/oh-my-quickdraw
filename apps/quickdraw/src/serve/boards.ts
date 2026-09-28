@@ -1,20 +1,43 @@
 // The boards and their Yjs updates, in one SQLite file (built-in node:sqlite).
 // Updates are stored as they arrive and merged per board once they pile up.
+// A board is saved as it changes; besides that it can be renamed, archived
+// (hidden from the list, kept), copied, made from a JSON file, and keep
+// versions: whole-board snapshots, made by hand or before an AI request, that
+// can be restored over it or opened as a board of their own.
 import { randomBytes } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import * as Y from 'yjs'
 
-export interface BoardInfo { id: string, title: string, createdAt: string }
+export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string }
+export interface VersionInfo { id: number, name: string, at: string, auto: boolean }
+type Rec = { id: string } & Record<string, unknown>
 
 export interface Boards {
-  list(): BoardInfo[]
+  /** the boards, oldest first; archived ones only with `archived` */
+  list(opts?: { archived?: boolean }): BoardInfo[]
   get(id: string): BoardInfo | undefined
   create(title?: string): BoardInfo
+  /** a new board holding these records (a board's shapes and assets, as a JSON file has them) */
+  createFrom(title: string, records: Rec[]): BoardInfo
+  /** a new board with what `id` holds now */
+  duplicate(id: string, title?: string): BoardInfo
+  rename(id: string, title: string): BoardInfo
+  archive(id: string, archived: boolean): BoardInfo
   state(id: string): Uint8Array
   append(id: string, update: Uint8Array): void
+  /** keeps the board as it is now; automatic versions beyond the last 20 are let go */
+  saveVersion(id: string, name: string, auto?: boolean): VersionInfo
+  versions(id: string): VersionInfo[]
+  /** puts the board back as it was in version `vid`: the update that does it (appended; send it to the peers) */
+  restore(id: string, vid: number): Uint8Array
+  /** a new board as the board was in version `vid` */
+  openVersion(id: string, vid: number, title?: string): BoardInfo
   close(): void
 }
+
+const MAP = 'quickdraw' // quickdraw-yjs's map: record id -> record
+const AUTO_VERSIONS = 20
 
 export const BOARD_ID = /^[a-z0-9]{4,32}$/
 
@@ -27,9 +50,21 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
     CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS updates (seq INTEGER PRIMARY KEY AUTOINCREMENT, board TEXT NOT NULL, data BLOB NOT NULL);
     CREATE INDEX IF NOT EXISTS updates_board ON updates (board, seq);
+    CREATE TABLE IF NOT EXISTS versions (id INTEGER PRIMARY KEY AUTOINCREMENT, board TEXT NOT NULL, name TEXT NOT NULL, at TEXT NOT NULL, auto INTEGER NOT NULL, state BLOB NOT NULL);
+    CREATE INDEX IF NOT EXISTS versions_board ON versions (board, id);
   `)
-  const listQ = db.prepare('SELECT id, title, created_at AS createdAt FROM boards ORDER BY created_at, id')
-  const getQ = db.prepare('SELECT id, title, created_at AS createdAt FROM boards WHERE id = ?')
+  const columns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
+  if (!columns.includes('archived_at')) db.exec('ALTER TABLE boards ADD COLUMN archived_at TEXT')
+  const COLS = 'id, title, created_at AS createdAt, archived_at AS archivedAt'
+  const listQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NULL ORDER BY created_at, id`)
+  const listArchivedQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, id`)
+  const getQ = db.prepare(`SELECT ${COLS} FROM boards WHERE id = ?`)
+  const renameQ = db.prepare('UPDATE boards SET title = ? WHERE id = ?')
+  const archiveQ = db.prepare('UPDATE boards SET archived_at = ? WHERE id = ?')
+  const saveQ = db.prepare('INSERT INTO versions (board, name, at, auto, state) VALUES (?, ?, ?, ?, ?)')
+  const versionsQ = db.prepare('SELECT id, name, at, auto FROM versions WHERE board = ? ORDER BY id DESC')
+  const versionQ = db.prepare('SELECT state FROM versions WHERE board = ? AND id = ?')
+  const pruneQ = db.prepare('DELETE FROM versions WHERE board = ? AND auto = 1 AND id NOT IN (SELECT id FROM versions WHERE board = ? AND auto = 1 ORDER BY id DESC LIMIT ?)')
   const createQ = db.prepare('INSERT INTO boards (id, title, created_at) VALUES (?, ?, ?)')
   const insert = db.prepare('INSERT INTO updates (board, data) VALUES (?, ?)')
   const all = db.prepare('SELECT data FROM updates WHERE board = ? ORDER BY seq')
@@ -37,13 +72,86 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
   const clear = db.prepare('DELETE FROM updates WHERE board = ?')
 
   const state = (id: string) => Y.mergeUpdates(all.all(id).map((r) => r.data as Uint8Array))
+  const clean = (b: BoardInfo | undefined) => b && (b.archivedAt ? b : (({ archivedAt, ...rest }) => rest)(b) as BoardInfo)
+  const need = (id: string) => {
+    const b = boards.get(id)
+    if (!b) throw new Error('no such board')
+    return b
+  }
+  const title = (t: string | undefined, fallback: string) => (t ?? '').trim().slice(0, 200) || fallback
+  // a board's records as a Yjs update, for a board of its own
+  const docOf = (records: Rec[]) => {
+    const doc = new Y.Doc()
+    const map = doc.getMap(MAP)
+    doc.transact(() => { for (const r of records) map.set(r.id, r) })
+    return Y.encodeStateAsUpdate(doc)
+  }
+  const recordsOf = (update: Uint8Array) => {
+    const doc = new Y.Doc()
+    Y.applyUpdate(doc, update)
+    return doc.getMap(MAP).toJSON() as Record<string, Rec>
+  }
+  const versionState = (id: string, vid: number) => {
+    const row = versionQ.get(id, vid) as { state: Uint8Array } | undefined
+    if (!row) throw new Error('no such version')
+    return row.state
+  }
   const boards: Boards = {
-    list: () => listQ.all() as unknown as BoardInfo[],
-    get: (id) => getQ.get(id) as unknown as BoardInfo | undefined,
+    list: ({ archived = false } = {}) => (archived ? listArchivedQ : listQ).all().map((b) => clean(b as unknown as BoardInfo)!) as BoardInfo[],
+    get: (id) => clean(getQ.get(id) as unknown as BoardInfo | undefined),
     create(title = 'Untitled') {
       const info = { id: newBoardId(), title: title.trim().slice(0, 200) || 'Untitled', createdAt: new Date().toISOString() }
       createQ.run(info.id, info.title, info.createdAt)
       return info
+    },
+    createFrom(t, records) {
+      const info = boards.create(title(t, 'Imported'))
+      if (records.length) boards.append(info.id, docOf(records))
+      return info
+    },
+    duplicate(id, t) {
+      const from = need(id)
+      const info = boards.create(title(t, `${from.title} (copy)`))
+      boards.append(info.id, docOf(Object.values(recordsOf(state(id)))))
+      return info
+    },
+    rename(id, t) {
+      need(id)
+      renameQ.run(title(t, 'Untitled'), id)
+      return need(id)
+    },
+    archive(id, archived) {
+      need(id)
+      archiveQ.run(archived ? new Date().toISOString() : null, id)
+      return need(id)
+    },
+    saveVersion(id, name, auto = false) {
+      need(id)
+      const at = new Date().toISOString()
+      const { lastInsertRowid } = saveQ.run(id, title(name, 'Version'), at, auto ? 1 : 0, state(id))
+      if (auto) pruneQ.run(id, id, AUTO_VERSIONS)
+      return { id: Number(lastInsertRowid), name: title(name, 'Version'), at, auto }
+    },
+    versions: (id) => versionsQ.all(id).map((v) => ({ ...(v as unknown as VersionInfo), auto: (v as { auto: number }).auto === 1 })),
+    restore(id, vid) {
+      const target = recordsOf(versionState(id, vid))
+      // the board as it is, changed to what the version holds: an ordinary update
+      const doc = new Y.Doc()
+      Y.applyUpdate(doc, state(id))
+      const map = doc.getMap(MAP)
+      let update: Uint8Array = new Uint8Array()
+      doc.on('update', (u: Uint8Array) => { update = u })
+      doc.transact(() => {
+        for (const key of [...map.keys()]) if (!(key in target)) map.delete(key)
+        for (const [key, rec] of Object.entries(target)) if (JSON.stringify(map.get(key)) !== JSON.stringify(rec)) map.set(key, rec)
+      })
+      if (update.length) boards.append(id, update)
+      return update
+    },
+    openVersion(id, vid, t) {
+      const from = need(id)
+      const records = Object.values(recordsOf(versionState(id, vid)))
+      return boards.createFrom(title(t, `${from.title} (version)`), records)
     },
     state,
     append(id, update) {

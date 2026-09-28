@@ -104,7 +104,7 @@ describe('relay', () => {
     const url = await start()
     const base = httpOf(url)
     const id = url.split('/').pop()
-    for (const path of ['/', `/b/${id}`, '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js', '/_/quickdraw-agent/src/panel.js']) {
+    for (const path of ['/', `/b/${id}`, '/protocol.js', '/_/core/src/index.js', '/_/core/src/quickdraw.css', '/_/quickdraw-embed/src/index.js', '/_/quickdraw-agent/src/panel.js', '/versions.js']) {
       expect((await fetch(base + path)).status, path).toBe(200)
     }
     for (const path of ['/b/nosuchboard', '/board.html', '/_/core/package.json', '/_/core/src/%2e%2e/package.json', '/../package.json']) {
@@ -270,5 +270,81 @@ describe('agents', () => {
     expect(left.map((e) => e.requestId).sort()).toEqual(['r2', 'r4']) // both unfinished
     expect(left[0]).toMatchObject({ type: 'error', message: 'Board AI left the board.' })
     for (const ws of [page, intruder]) ws.close()
+  })
+})
+
+describe('managing boards', () => {
+  const send = (base: string, method: string, path: string, body?: object) =>
+    fetch(base + path, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json() }))
+  const note = (id: string, text: string) => ({ id, typeName: 'shape', type: 'note', x: 0, y: 0, rot: 0, z: 1, props: { text, color: 'yellow', size: 'm', font: 'draw', scale: 1 } })
+
+  it('renames, archives and brings back, copies, and makes a board from a JSON file', async () => {
+    const url = await start()
+    const base = httpOf(url), id = url.split('/').pop()!
+    const a = await open(url)
+    a.send(pack(UPDATE, edit(2)))
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect((await send(base, 'PATCH', `/api/boards/${id}`, { title: 'Ideas' })).body.title).toBe('Ideas')
+    const copy = (await send(base, 'POST', '/api/boards', { from: id })).body
+    expect(copy.title).toBe('Ideas (copy)')
+    expect(Object.keys(await fetchState(url.replace(id, copy.id)))).toEqual(['shape:0', 'shape:1'])
+
+    expect((await send(base, 'PATCH', `/api/boards/${id}`, { archived: true })).body.archivedAt).toBeTruthy()
+    expect((await send(base, 'GET', '/api/boards')).body.map((b: { id: string }) => b.id)).toEqual([copy.id])
+    expect((await send(base, 'GET', '/api/boards?archived=1')).body.map((b: { id: string }) => b.id)).toEqual([id])
+    expect((await send(base, 'GET', `/b/${id}`.replace('/b/', '/api/boards/'))).status).toBe(200) // still there
+    await send(base, 'PATCH', `/api/boards/${id}`, { archived: false })
+
+    const file = { quickdraw: 1, shapes: [note('shape:n', 'From a file')], assets: {} }
+    const made = (await send(base, 'POST', '/api/boards', { title: 'From file', file })).body
+    expect(made.title).toBe('From file')
+    expect((await fetchState(url.replace(id, made.id)))['shape:n'].props.text).toBe('From a file')
+    expect((await send(base, 'POST', '/api/boards', { file: { nope: 1 } })).status).toBe(400)
+    a.close()
+  })
+
+  it('keeps versions, restores one over the board for everyone on it, or opens it as a board', async () => {
+    const url = await start()
+    const base = httpOf(url), id = url.split('/').pop()!
+    const doc = new Y.Doc()
+    const a = await open(url), b = await open(url)
+    a.send(pack(UPDATE, edit(1, 10, doc)))
+    await new Promise((r) => setTimeout(r, 50))
+    const v1 = (await send(base, 'POST', `/api/boards/${id}/versions`, { name: 'One note' })).body
+    a.send(pack(UPDATE, edit(2, 10, doc))) // two more
+    await new Promise((r) => setTimeout(r, 50))
+    expect(Object.keys(await fetchState(url))).toHaveLength(3)
+
+    // a peer on the board gets the restore as an update
+    const got = new Promise<Uint8Array>((ok) => { b.onmessage = ({ data }) => { const m = new Uint8Array(data); if (m[0] === UPDATE) ok(m) } })
+    expect((await send(base, 'POST', `/api/boards/${id}/versions/${v1.id}/restore`, { as: 'board' })).status).toBe(200)
+    const m = await got
+    expect(m[0]).toBe(UPDATE)
+    Y.applyUpdate(doc, m.subarray(1))
+    expect(Object.keys(doc.getMap('quickdraw').toJSON())).toEqual(['shape:0'])
+    expect(Object.keys(await fetchState(url))).toEqual(['shape:0'])
+
+    const versions = (await send(base, 'GET', `/api/boards/${id}/versions`)).body
+    expect(versions.map((v: { name: string, auto: boolean }) => [v.name, v.auto])).toEqual([['Before restoring', true], ['One note', false]])
+    const back = versions[0] // the three notes, before the restore
+    const opened = (await send(base, 'POST', `/api/boards/${id}/versions/${back.id}/restore`, { as: 'new' })).body
+    expect(Object.keys(await fetchState(url.replace(id, opened.id)))).toHaveLength(3)
+    expect((await send(base, 'POST', `/api/boards/${id}/versions/9999/restore`, { as: 'board' })).status).toBe(404)
+    a.close(); b.close()
+  })
+
+  it('keeps a version before each AI request, and counts the agents on a board', async () => {
+    const url = await start()
+    const base = httpOf(url), id = url.split('/').pop()!
+    const page = await open(url), agent = await open(url)
+    const agentIn = agentInbox(agent)
+    agent.send(packAgent({ kind: 'join', agent: { id: 'ai', name: 'AI' } }))
+    await agentIn.take('joined')
+    expect((await send(base, 'GET', '/api/boards')).body[0].agents).toBe(1)
+    page.send(packAgent({ kind: 'request', request: request('r1', 'ai') }))
+    await agentIn.take('request')
+    expect((await send(base, 'GET', `/api/boards/${id}/versions`)).body.map((v: { name: string }) => v.name)).toEqual(['Before AI: Sort these'])
+    page.close(); agent.close()
   })
 })
