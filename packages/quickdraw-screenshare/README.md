@@ -40,7 +40,7 @@ The host decides who is sharing, one at a time. It says so to every page with `s
 
 - **Sharing**: `getDisplayMedia` with the browser tab preferred, and without the board's own tab. Only secure pages can share: `https` or `http://localhost`, on a computer. Everyone else, phones included, can watch.
 - **Frames**: JPEG frames, 1280px on the long side at q0.7, at most every 150ms (`live: { maxSide, quality, every }`). That is enough to follow someone using an app; it is not video.
-- **The window**: it sits in the core's `.qd-ui` in the core's theme. Move it by its header, widen it by its corner, and fold it away. On a phone, it is a sheet at the bottom. Keys, paste and wheel in it stay out of the board.
+- **The window**: it sits in the core's `.qd-ui` in the core's theme. Move it by its header, widen it by its corner, and fold it away. On a phone, it spans the top of the screen, clear of the core's tools at the bottom. Keys, paste and wheel in it stay out of the board.
 
 ## Snapshots
 

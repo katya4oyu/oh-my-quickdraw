@@ -120,7 +120,8 @@ const STYLE = `
   top:10px;right:var(--qda-right,58px);width:320px;max-height:calc(100% - 76px);
   border-radius:16px;background:var(--qd-pop-bg);border:1px solid var(--qd-border);box-shadow:var(--qd-pop-shadow);
   backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);color:var(--qd-ink-strong);
-  font:13px/1.45 system-ui,-apple-system,sans-serif;z-index:1;animation:qda-in 160ms cubic-bezier(.2,.9,.3,1.1)}
+  font:13px/1.45 system-ui,-apple-system,sans-serif;z-index:1;animation:qda-in 160ms cubic-bezier(.2,.9,.3,1.1);
+  touch-action:pan-y} /* scrolls, but never zooms the page (its overflow ends the board's touch-action) */
 @media (max-width:640px){.qda{top:auto;left:8px;right:8px;width:auto;bottom:calc(8px + env(safe-area-inset-bottom));max-height:62%;animation-name:qda-up}}
 @keyframes qda-in{from{opacity:0;transform:translateX(8px)}}
 @keyframes qda-up{from{opacity:0;transform:translateY(12px)}}

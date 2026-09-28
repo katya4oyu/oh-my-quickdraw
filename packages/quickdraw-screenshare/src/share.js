@@ -10,7 +10,7 @@
 //   host.onMessage(fn)                 { kind: 'sharing', sharer: { name } | null, mine }
 //                                      | { kind: 'frame', data: Uint8Array } | { kind: 'snap', by }
 //   host.me()                          { name }
-import { placeSnapshot } from './snapshots.js'
+import { placeSnapshot, snapshots } from './snapshots.js'
 
 const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
 export const SHARE_ICONS = {
@@ -24,8 +24,9 @@ const STYLE = `
 .qss{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;pointer-events:auto;overflow:hidden;
   left:12px;top:12px;width:420px;min-width:220px;max-width:calc(100% - 24px);
   border-radius:14px;background:var(--qd-pop-bg);border:1px solid var(--qd-border);box-shadow:var(--qd-pop-shadow);
-  color:var(--qd-ink-strong);font:13px/1.4 system-ui,-apple-system,sans-serif;z-index:1}
-@media (max-width:640px){.qss{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom));width:auto!important}}
+  color:var(--qd-ink-strong);font:13px/1.4 system-ui,-apple-system,sans-serif;z-index:1;
+  touch-action:none} /* its overflow ends the board's touch-action: no pinch or double-tap zoom of the page here */
+@media (max-width:640px){.qss{left:8px!important;right:8px;top:calc(8px + env(safe-area-inset-top))!important;width:auto!important}} /* the core's tools are at the bottom */
 .qss[hidden],.qss [hidden]{display:none!important}
 .qss-head{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 10px;cursor:grab;touch-action:none;user-select:none}
 .qss-head:active{cursor:grabbing}
@@ -178,6 +179,22 @@ export function createScreenShare({ editor, container = editor.container, host, 
     return placed
   }
 
+  // a snapshot asked for here: when it lands, the view goes to it (and, on a phone,
+  // the live window folds, to make room for writing on it)
+  let awaiting = null // the snapshots there were when we asked; null: not waiting
+  function goTo(frame) {
+    const { w, h } = editor.viewSize()
+    const fw = frame.props.w, fh = frame.props.h
+    const z = Math.min(1, (w * 0.92) / fw, (h * 0.8) / fh)
+    editor.setCamera({ z, x: w / 2 / z - (frame.x + fw / 2), y: h / 2 / z - (frame.y + fh / 2) }, { animate: 300 })
+    if (matchMedia('(max-width: 640px)').matches) { folded = true; render() }
+  }
+  const offStore = editor.store.listen(() => {
+    if (!awaiting) return
+    const mine = snapshots(editor.store).filter((f) => !awaiting.has(f.id) && f.snapshot.by === (host.me()?.name || '')).at(-1)
+    if (mine) { awaiting = null; goTo(mine) }
+  })
+
   const offHost = host.onMessage((m) => {
     if (m?.kind === 'sharing') {
       if (stream && !m.mine) end(false) // someone else took over
@@ -234,6 +251,7 @@ export function createScreenShare({ editor, container = editor.container, host, 
     async snap() {
       if (!sharer) return null
       const by = host.me()?.name || ''
+      awaiting = new Set(snapshots(editor.store).map((f) => f.id))
       if (stream) return takeSnapshot(by)
       host.send({ kind: 'snap', by })
       say('Snapshot asked for…')
@@ -244,6 +262,7 @@ export function createScreenShare({ editor, container = editor.container, host, 
     destroy() {
       end(false)
       offHost?.()
+      offStore()
       box.remove()
     },
   }
