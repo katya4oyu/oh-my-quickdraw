@@ -4,6 +4,7 @@ The app built from this repository's packages: one `quickdraw` command.
 
 ```sh
 npm link -w apps/quickdraw        # puts `quickdraw` on your PATH (once)
+quickdraw skill install           # teaches the agents on this machine the command (Claude Code, Codex, pi…)
 quickdraw serve                   # http://127.0.0.1:8795/ lists the boards
 quickdraw new "Sprint 12"         # a board; prints its id and URL
 quickdraw note "Idea" --board ID  # edits it; `quickdraw help` lists the commands
@@ -112,7 +113,7 @@ Codex ([`src/agent/codex.ts`](src/agent/codex.ts)) and pi ([`src/agent/pi.ts`](s
 - **Undo**: each operation's diff goes to `.quickdraw/log.jsonl` in the working directory (or `$QUICKDRAW_LOG`); `undo` reverts what nobody changed since and reports the rest.
 - **PNG** (`export --format png`): drawn by the core itself in a headless Chrome already on the machine — see below.
 
-Agents learn the commands from the [Agent Skill](../../skills/quickdraw/SKILL.md): link or copy `skills/quickdraw` into the agent's skills folder (for Claude Code, `.claude/skills/quickdraw`).
+Agents learn the commands from the [Agent Skill](../../skills/quickdraw/SKILL.md). `quickdraw skill install` puts it where they look: `~/.agents/skills/quickdraw` (the Agent Skills location, read by Codex, pi and others) and `~/.claude/skills/quickdraw` (Claude Code; a link to the first). `--project` installs it in the current project's `.agents/skills` and `.claude/skills` instead, `--for agents` or `--for claude` for one kind only. It is a copy: install again after updating (`quickdraw skill status` says when one is behind), or `--link` links to this checkout, which it then follows. `quickdraw skill uninstall` removes it; neither touches another skill of the same name without `--force`.
 
 ### PNG export and the machine it runs on
 

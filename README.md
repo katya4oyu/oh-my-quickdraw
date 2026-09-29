@@ -15,7 +15,7 @@ A private workspace for optional packages and examples that extend [`katya4oyu/q
 - `packages/*`: reusable extension packages, managed as npm workspaces.
 - `examples/*`: one small example per package, also npm workspaces. Static files only: no example needs a server.
 - `apps/quickdraw`: the app built from all of this — the `quickdraw` command. `quickdraw serve` serves boards with every package, a relay per board for sync across devices, SQLite persistence and link previews; the other commands list, make, read and edit boards, for people and agents.
-- `skills/quickdraw`: the [Agent Skill](skills/quickdraw/SKILL.md) that teaches an agent the `quickdraw` command.
+- `skills/quickdraw`: the [Agent Skill](skills/quickdraw/SKILL.md) that teaches an agent the `quickdraw` command; `quickdraw skill install` puts it where agents look for skills.
 
 Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
 
