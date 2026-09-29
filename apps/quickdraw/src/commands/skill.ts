@@ -37,7 +37,7 @@ function targets(o: SkillOptions): { which: Target[], base: string } {
 }
 // agents look for a project's skills from where they start up to the
 // repository's root: the root is where every one of them finds it
-function projectRoot(cwd: string) {
+export function projectRoot(cwd: string) {
   try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || cwd } catch { return cwd }
 }
 const dirOf = (base: string, t: Target) => join(base, t === 'agents' ? '.agents' : '.claude', 'skills', NAME)

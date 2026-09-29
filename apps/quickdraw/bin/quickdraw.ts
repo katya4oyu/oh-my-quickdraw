@@ -9,27 +9,30 @@ const USAGE = `quickdraw <command>
   serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]
         the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
         SQLite persistence (<data>/boards.sqlite), link previews (/preview)
-  agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]
+  agent claude|codex [--board ID|URL] [--server URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- ARGS…]
+        Claude Code or Codex joins a board in its own TUI, from this folder,
+        where you can talk with it too: this makes sure it reads a current
+        quickdraw skill (installing it in this repository, or for you with
+        --global, when it has none) and can run quickdraw (for Codex, a rule
+        in .codex/rules lets quickdraw out of its sandbox), joins the board
+        (quickdraw join), starts it telling it to take the board's requests,
+        and leaves the board when it exits. Only you can ask it, and whom you
+        open it to from the board's AI panel (--allow-remote: everyone).
+        What follows -- goes to claude or codex (--model …, say)
+  agent codex-app-server [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]
               [--voice NAME] [--voice-model M] [--no-voice]
-        Codex joins a board, working in this directory (its files, AGENTS.md
-        and your Codex settings), and takes requests from the board's AI panel,
-        where people choose the model and effort per request; --model and
-        --effort (low, medium, high, …) set the defaults there. Without --board,
-        at a terminal, it asks which board; the board's AI panel (and its More
-        menu) has this command for that board, to copy. It takes requests
-        and approvals only from you, who started it (here, or through the
-        same tailnet login), and whom you open it to from the board's panel;
-        --allow-remote opens it to everyone on the board.
+        Codex joins a board through codex app-server, working in this directory
+        (its files, AGENTS.md and your Codex settings), with no TUI: the board's
+        AI panel is where it is asked, where people choose the model and effort
+        per request (--model and --effort set the defaults), and where it asks
+        for approvals. Without --board, at a terminal, it asks which board. It
+        takes requests and approvals only from you, who started it (here, or
+        through the same tailnet login), and whom you open it to from the
+        board's panel; --allow-remote opens it to everyone on the board.
         People can also talk with it (the microphone in the board's AI tools):
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
-        hands the work to Codex; --voice picks its voice, --no-voice turns it off
-  agent claude [--board ID|URL] [--server URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- CLAUDE ARGS…]
-        Claude Code joins a board in its own TUI, from this folder: this
-        makes sure Claude Code reads a current quickdraw skill (installing it
-        in this repository, or for you with --global, when it has none) and can
-        run quickdraw, joins the board (quickdraw join), starts claude telling
-        it to take the board's requests, and leaves the board when it exits.
-        What follows -- goes to claude (--model opus, say)
+        hands the work to Codex; its voice is picked in the panel (--voice: the
+        default), --no-voice turns it off
   agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
            [--no-approval]
         pi joins a board the same way, with your pi settings and sign-ins; the
@@ -77,8 +80,9 @@ if (command === 'serve') {
     process.stdout.write(JSON.stringify({ error: (e as Error).message }) + '\n')
     process.exit(1)
   }
-} else if (command === 'agent' && rest[0] === 'claude') {
-  // Claude Code in its own TUI, with the skill and the board made ready (src/agent/claude.ts)
+} else if (command === 'agent' && (rest[0] === 'claude' || rest[0] === 'codex')) {
+  // Claude Code or Codex in its own TUI, with the skill and the board made ready (src/agent/tui.ts)
+  const tui = rest[0]
   const cut = rest.indexOf('--')
   const { values } = parseArgs({
     args: rest.slice(1, cut < 0 ? undefined : cut),
@@ -86,12 +90,12 @@ if (command === 'serve') {
   })
   const { basename } = await import('node:path')
   const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
-  const { runClaude } = await import('../src/agent/claude.ts')
+  const { runTui } = await import('../src/agent/tui.ts')
   try {
-    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, 'quickdraw agent claude') : undefined
+    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, `quickdraw agent ${tui}`) : undefined
     const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
-    process.exit(await runClaude({
-      url, name: values.name ?? `Claude · ${basename(process.cwd())}`, cwd: process.cwd(),
+    process.exit(await runTui(tui, {
+      url, name: values.name ?? `${tui === 'claude' ? 'Claude' : 'Codex'} · ${basename(process.cwd())}`, cwd: process.cwd(),
       remote: values['allow-remote'] === true, idle: values.idle ? Number(values.idle) : undefined, global: values.global === true,
       args: cut < 0 ? [] : rest.slice(cut + 1),
     }))
@@ -110,9 +114,10 @@ if (command === 'serve') {
     },
   })
   const runtime = positionals[0]
-  if (runtime !== 'codex' && runtime !== 'pi') {
-    process.stderr.write('usage: quickdraw agent codex|pi|claude [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
-      + '         codex: [--voice NAME] [--voice-model M] [--no-voice]   pi: [--no-approval]\n')
+  if (runtime !== 'codex-app-server' && runtime !== 'pi') {
+    process.stderr.write('usage: quickdraw agent claude|codex [--board ID|URL] [--name NAME] [--allow-remote] [-- ARGS…]\n'
+      + '       quickdraw agent codex-app-server|pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
+      + '         codex-app-server: [--voice NAME] [--voice-model M] [--no-voice]   pi: [--no-approval]\n')
     process.exit(1)
   }
   const { basename } = await import('node:path')
@@ -122,7 +127,7 @@ if (command === 'serve') {
   const { linkPreview, serverOfBoard } = await import('../src/board/link-preview.ts')
   const cwd = process.cwd()
   const folder = basename(cwd)
-  const name = values.name ?? `${runtime === 'codex' ? 'Codex' : 'pi'} · ${folder}`
+  const name = values.name ?? `${runtime === 'codex-app-server' ? 'Codex' : 'pi'} · ${folder}`
   const id = values.id ?? (runtime + '-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
   const remote = values['allow-remote'] === true
   try {
@@ -139,7 +144,7 @@ if (command === 'serve') {
       await agent?.close()
       process.exit(code)
     }
-    if (runtime === 'codex') {
+    if (runtime === 'codex-app-server') {
       const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
       const { runVoice } = await import('../src/agent/voice.ts')
       const board = await openBoard({ url, name })

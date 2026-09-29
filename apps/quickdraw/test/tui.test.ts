@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureSkill, firstPrompt, quickdrawPath, runClaude } from '../src/agent/claude.ts'
+import { CODEX_RULE, ensureCodexRule, ensureSkill, firstPrompt, quickdrawPath, runTui } from '../src/agent/tui.ts'
 import { installSkill, SKILL_SOURCE } from '../src/commands/skill.ts'
 import { sessionFile } from '../src/session/client.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
@@ -11,7 +11,7 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 const temp = () => realpathSync(mkdtempSync(join(tmpdir(), 'qd-claude-')))
 const repo = () => { const dir = temp(); execFileSync('git', ['init', '-q'], { cwd: dir }); return dir }
 
-describe('quickdraw agent claude', () => {
+describe('quickdraw agent claude and codex', () => {
   let app: ReturnType<typeof createQuickdrawServer> | undefined
   afterEach(() => app?.close())
 
@@ -46,7 +46,7 @@ describe('quickdraw agent claude', () => {
     writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nquickdraw who > "${cwd}/who.txt"\nexit 3\n`)
     chmodSync(fake, 0o755)
     const said: string[] = []
-    const code = await runClaude({ url, name: 'Claude', cwd, home, claude: fake, args: ['--model', 'opus'], say: (l) => said.push(l) })
+    const code = await runTui('claude', { url, name: 'Claude', cwd, home, command: fake, args: ['--model', 'opus'], say: (l: string) => said.push(l) })
     expect(code).toBe(3)
     const args = readFileSync(join(cwd, 'args.txt'), 'utf8').trim().split('\n')
     expect(args).toEqual([firstPrompt('Claude', url), '--model', 'opus', '--allowedTools', 'Bash(quickdraw:*)'])
@@ -54,5 +54,29 @@ describe('quickdraw agent claude', () => {
     expect(said[0]).toMatch(/installed in this repository/)
     expect(said).toContain(`the board: Claude is on it (${url})`)
     expect(existsSync(sessionFile(cwd))).toBe(false) // left
+  }, 30_000)
+
+  it('for Codex: the Agent Skills copy, and a rule that lets quickdraw out of its sandbox', async () => {
+    const home = temp(), cwd = repo()
+    expect(ensureSkill({ cwd, home, tui: 'codex' })).toMatch(/installed in this repository/)
+    expect(existsSync(join(cwd, '.agents/skills/quickdraw/SKILL.md'))).toBe(true)
+    const sub = join(cwd, 'app')
+    execFileSync('mkdir', ['-p', sub])
+    expect(ensureCodexRule(sub)).toMatch(/written to/) // at the repository's root, from any folder in it
+    expect(readFileSync(join(cwd, '.codex/rules/quickdraw.rules'), 'utf8')).toBe(CODEX_RULE)
+    expect(ensureCodexRule(cwd)).not.toMatch(/written/)
+
+    app = createQuickdrawServer()
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('CX').id}`
+    const fake = join(temp(), 'codex')
+    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nquickdraw who > "${cwd}/who.txt"\n`)
+    chmodSync(fake, 0o755)
+    const said: string[] = []
+    expect(await runTui('codex', { url, name: 'Codex', cwd, home, command: fake, args: ['-m', 'gpt-6'], say: (l: string) => said.push(l) })).toBe(0)
+    expect(readFileSync(join(cwd, 'args.txt'), 'utf8').trim().split('\n')).toEqual(['-m', 'gpt-6', firstPrompt('Codex', url)])
+    expect(JSON.parse(readFileSync(join(cwd, 'who.txt'), 'utf8'))).toMatchObject({ you: 'Codex' })
+    expect(said.some((l) => l.startsWith('the rule:'))).toBe(true)
+    expect(existsSync(sessionFile(cwd))).toBe(false)
   }, 30_000)
 })
