@@ -47,7 +47,7 @@ async function page(url: string) {
   return { send: (m: object) => ws.send(packAgent(m)), events, agents, presences, voices, until }
 }
 
-describe('quickdraw agent codex', () => {
+describe('quickdraw agent codex-app-server', () => {
   it('hands the feedback on snapshots to Codex: what people wrote, and the pictures; and lets it look at the board', async () => {
     const app = createQuickdrawServer()
     cleanup.push(() => app.close())
