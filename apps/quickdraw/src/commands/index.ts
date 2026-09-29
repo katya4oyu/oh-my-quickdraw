@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
-import { applySteps, boardToMarkdown, describeBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
+import { applySteps, boardToMarkdown, describeBoard, lintBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
 import { openBoard } from '../board/open.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
@@ -19,6 +19,9 @@ Boards
 
 Reading
   read [--format md|json]                 the board as a Markdown outline (default) or data
+  lint [--frame ID] [--ids ID,…]          layout problems: shapes on top of each other, arrows across
+                                          shapes they do not connect, what sticks out of a frame or lies
+                                          across its edge, frames on top of each other; check after drawing
   export [--format json|md] [--out PATH]  the board as a quickdraw JSON file, or the outline
   export --format png --out PATH [--frame ID|all] [--ids ID,…] [--scale 2] [--transparent] [--theme dark]
                                           an image, drawn by a headless Chrome (needs Chrome installed);
@@ -40,7 +43,7 @@ Writing (each command is one operation, undoable as a whole)
                                           a sheet cut into its cells, laid out as on the sheet
   frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH]
   arrow FROM TO [--color C] [--line]
-  update ID [--text TEXT] [--color C]
+  update ID [--text TEXT] [--color C] [--size WxH]   --size: a shape's size (not a frame's)
   move ID (--to X,Y | --by DX,DY)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
@@ -123,7 +126,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['boards', 'new', 'read', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
+export const BOARD_COMMANDS = ['boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
 
 export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
@@ -153,6 +156,10 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     switch (cmd) {
       case 'read':
         return out(o.format === 'json' ? JSON.stringify(describeBoard(store), null, 2) : boardToMarkdown(store))
+      case 'lint': {
+        const issues = lintBoard(store, { frame: o.frame, ids: o.ids?.split(',') })
+        return out(JSON.stringify({ problems: issues.length, issues }, null, 2))
+      }
       case 'export': {
         if (o.format === 'png') return out(JSON.stringify({ wrote: await exportPng(store, o) }))
         const { exportJSON } = await import('quickdraw-export')
@@ -201,7 +208,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
       case 'arrow':
         done = runOp(store, o.name, (ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
       case 'update':
-        done = runOp(store, o.name, (ops) => ops.update(args[0], { text: o.text, color })); break
+        done = runOp(store, o.name, (ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}) })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = runOp(store, o.name, (ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break

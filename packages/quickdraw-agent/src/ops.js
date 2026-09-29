@@ -273,8 +273,14 @@ function operations(store, name, op, { area: startArea } = {}) {
       return id
     },
     // text / label / markdown / frame title, and color
-    update(id, { text, color } = {}) {
+    update(id, { text, color, w, h } = {}) {
       const s = need(id)
+      // a shape's size: boxes only (a frame keeps its size; fit_frame shrinks what is in it)
+      if (w != null || h != null) {
+        if (s.type !== 'geo' || isFrame(s)) throw new Error(`${id} (${isFrame(s) ? 'a frame' : s.type}) cannot be resized; only shapes (rectangle, diamond, …) can`)
+        const size = (v, was) => (v == null ? was : Math.max(24, Math.min(4000, Number(v) || was)))
+        store.update(id, { props: { w: size(w, s.props.w), h: size(h, s.props.h) } })
+      }
       if (text != null) {
         if (isFrame(s)) renameFrame(store, id, String(text))
         else if (s.type === 'geo') store.update(id, { props: { label: String(text) } })
@@ -442,7 +448,7 @@ export function applySteps(store, name, steps, { area } = {}) {
         case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r) }); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
-        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color }); break
+        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h }); break
         case 'move': out = ops.move(r(s.id), s); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break

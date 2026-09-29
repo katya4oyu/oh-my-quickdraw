@@ -17,7 +17,8 @@ export interface Operations {
   embed(what: { url?: string, html?: string, link?: boolean, title?: string, preview?: EmbedPreview }, opts?: Placement): string
   frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[] }): string
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
-  update(id: string, change: { text?: string, color?: ColorId }): string
+  /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames) */
+  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', cols?: number, gap?: number, at?: Point }): string[]
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
@@ -63,6 +64,13 @@ export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
 export function undoDiff(store: Store, diff: Diff): { reverted: number, skipped: string[] }
 export function parseRatio(s: string | number | null | undefined): number | null
+
+/** A problem in how the board is laid out, and the shapes it is about. */
+export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame' | 'straddles-frame' | 'touches-frame' | 'text-overflow' | 'arrow-crosses', ids: string[], text: string }
+/** Layout problems: shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. Narrowed to a frame, some shapes or an area. */
+export function lintBoard(store: Store, scope?: { frame?: string, ids?: string[], area?: Rect }): LintIssue[]
+/** Issues as a model or a person reads them. */
+export function lintText(issues: LintIssue[]): string
 
 /** A JSON Schema for a tool's arguments. */
 export type JsonSchema = Record<string, unknown>

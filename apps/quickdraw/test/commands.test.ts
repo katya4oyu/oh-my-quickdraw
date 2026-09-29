@@ -29,6 +29,22 @@ describe('the CLI on a file board', () => {
     expect(JSON.parse(await run('undo'))).toMatchObject({ reverted: 1 })
     expect(JSON.parse(readFileSync(file, 'utf8')).shapes).toHaveLength(0)
   })
+
+  it('lints the layout, all of it or a frame', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-lint-'))
+    const file = join(dir, 'board.json')
+    process.env.QUICKDRAW_LOG = join(dir, 'log.jsonl')
+    const run = async (...args: string[]) => { let s = ''; await main([...args, '--file', file, '--name', 'Claude'], (o) => { s += o }); return JSON.parse(s) }
+    const { ids: [frame] } = await run('frame', 'Keep', '--at', '0,0', '--size', '600x400')
+    await run('note', 'one', '--at', '30,30')
+    await run('note', 'two', '--at', '30,130') // on top of one
+    await run('note', 'three', '--at', '1000,0')
+    await run('note', 'four', '--at', '1000,100') // on top of three, outside the frame
+    expect(await run('lint')).toMatchObject({ problems: 2 })
+    const inFrame = await run('lint', '--frame', frame)
+    expect(inFrame).toMatchObject({ problems: 1, issues: [{ kind: 'overlap' }] })
+    expect(inFrame.issues[0].text).toMatch(/note "one".*note "two"/)
+  })
 })
 
 describe('images, embeds and grids from the CLI', () => {
