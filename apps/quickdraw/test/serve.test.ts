@@ -469,6 +469,67 @@ describe('agents', () => {
   })
 })
 
+describe('notes agents write to agents', () => {
+  const TS = (login: string) => ({ 'tailscale-user-login': login, 'x-forwarded-for': '100.64.0.9' })
+  async function join(url: string, id: string, headers?: Record<string, string>, extra = {}) {
+    const ws = await open(url, headers)
+    const inbox = agentInbox(ws)
+    ws.send(packAgent({ kind: 'join', agent: { id, name: id, knows: [], ...extra } }))
+    await inbox.take('joined')
+    return { ws, inbox }
+  }
+  const mention = (ws: WebSocket, id: string, text: string) => ws.send(packAgent({ kind: 'mention', note: { id, text, x: 100, y: 200 } }))
+
+  it('asks the agent a note mentions, when the one who started the writer started it too', async () => {
+    const url = await start()
+    const page = await open(url)
+    const pageIn = agentInbox(page)
+    page.send(packAgent({ kind: 'hello' }))
+    await pageIn.take('threads')
+    const codex = await join(url, 'Codex'), claude = await join(url, 'Claude')
+    mention(codex.ws, 'shape:n1', '@Claude draw the plan')
+    const { request, local } = await claude.inbox.take('request')
+    expect(request).toMatchObject({ to: 'Claude', text: 'draw the plan', from: 'Codex', context: { shapeIds: ['shape:n1'] }, anchor: { shapeId: 'shape:n1', x: 100, y: 200 } })
+    expect(local).toBe(true) // the server vouches: the same person started both
+    expect((await pageIn.take('thread')).thread.request.id).toBe(request.id) // people see it in the panel
+
+    mention(codex.ws, 'shape:n1', '@Claude draw the plan again') // a note already asking: once
+    mention(claude.ws, 'shape:n2', '@Claude talk to myself') // not itself
+    mention(codex.ws, 'shape:n3', 'a plain note')
+    await new Promise((r) => setTimeout(r, 150))
+    expect(claude.inbox.has('request')).toBe(false)
+    for (const ws of [page, codex.ws, claude.ws]) ws.close()
+  })
+
+  it('does not take one from an agent someone else started, unless it takes requests from anyone', async () => {
+    const url = await start()
+    const mine = await join(url, 'Claude')
+    const theirs = await join(url, 'Codex', TS('someone@example.com'))
+    mention(theirs.ws, 'shape:a', '@Claude do this')
+    await new Promise((r) => setTimeout(r, 150))
+    expect(mine.inbox.has('request')).toBe(false)
+
+    const open2 = await join(url, 'Open', undefined, { remote: true })
+    mention(theirs.ws, 'shape:b', '@Open do this')
+    expect((await open2.inbox.take('request')).request).toMatchObject({ from: 'Codex', text: 'do this' })
+
+    // the same tailnet login on both sides: the same person
+    const far = await join(url, 'Pi', TS('someone@example.com'))
+    mention(theirs.ws, 'shape:c', '@Pi do this')
+    expect((await far.inbox.take('request')).local).toBe(true)
+    for (const ws of [mine.ws, theirs.ws, open2.ws, far.ws]) ws.close()
+  })
+
+  it('does not let a page say an agent asked', async () => {
+    const url = await start()
+    const page = await open(url)
+    const claude = await join(url, 'Claude')
+    page.send(packAgent({ kind: 'request', request: { ...request('p1', 'Claude'), from: 'Codex' } }))
+    expect((await claude.inbox.take('request')).request.from).toBeUndefined()
+    page.close(); claude.ws.close()
+  })
+})
+
 describe('managing boards', () => {
   const send = (base: string, method: string, path: string, body?: object) =>
     fetch(base + path, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json() }))

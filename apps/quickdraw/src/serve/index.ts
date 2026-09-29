@@ -14,7 +14,8 @@ import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
 import { isLocal } from './local.ts'
-import type { AgentEvent, AgentParticipant, AgentRequest } from 'quickdraw-agent'
+import { detectAgentMention, hasAgentThreadForAnchor, type AgentEvent, type AgentParticipant, type AgentRequest } from 'quickdraw-agent'
+import { randomUUID } from 'node:crypto'
 import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE } from '../protocol.js'
 import { handlePreview } from './preview.ts'
 import { parseJSON } from 'quickdraw-import'
@@ -178,6 +179,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
   const local = new WeakSet<Duplex>() // connections from this computer (./local.ts)
+  // who is behind a connection, as far as the server can tell: the person at
+  // this computer, or a tailnet login (the header \`tailscale serve\` adds, trusted
+  // only on a connection it made, from this computer); else nobody known
+  const starter = new WeakMap<Duplex, string>()
+  const sameStarter = (a: Duplex, b: Duplex) => starter.has(a) && starter.get(a) === starter.get(b)
+  const names = new WeakMap<Duplex, string>() // what each says it is called (presence)
   // an agent takes requests and replies from this computer only, unless it was started with --allow-remote
   const mayAsk = (socket: Duplex, agent?: AgentParticipant) => !agent || agent.remote === true || local.has(socket)
   const onlyHere = (agent: AgentParticipant) => `${agent.name} takes requests only from the computer running quickdraw serve (unless it is started with --allow-remote).`
@@ -292,6 +299,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     } else if (m.kind === 'request' && !agent && str(m.request?.id, 100) && typeof m.request.text === 'string' && m.request.text.length <= 20_000) {
       const request = m.request as AgentRequest
       if (threads.get(request.id)) return
+      delete request.from // a page asks as itself: only the server says an agent asked
       // feedback it carries (snapshot frames): ids only, a few
       const fb = request.context?.feedback
       if (fb !== undefined && !(Array.isArray(fb) && fb.length <= 12 && fb.every((id) => str(id, 100)))) delete request.context.feedback
@@ -315,6 +323,29 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       if (target && sdp) talking.set(request.id, { page: socket, agent: target })
       if (target) send(target, { kind: 'request', request, local: local.has(socket), ...(sdp ? { sdp } : {}) })
       else record(room, { type: 'error', requestId: request.id, message: 'That agent is not on this board.' })
+    } else if (m.kind === 'mention' && str(m.note?.id, 100) && typeof m.note.text === 'string' && m.note.text.length <= 20_000) {
+      // a note an agent (or a command) wrote that starts with @AI or @<agent>: a
+      // request to that agent, as when a person writes one, if the one who
+      // started the writer started that agent too (or it takes requests from anyone)
+      const others = [...room].filter((s) => s !== socket && agentOf.has(s))
+      const found = detectAgentMention(m.note.text, others.map((s) => agentOf.get(s)!))
+      if (!found) return
+      const target = others.find((s) => agentOf.get(s)!.id === found.to)!
+      const agentTo = agentOf.get(target)!
+      const same = sameStarter(socket, target)
+      if (!same && agentTo.remote !== true) return
+      if (hasAgentThreadForAnchor(m.note.id, threads.list(board))) return // it is already a request
+      const x = Number.isFinite(m.note.x) ? m.note.x : 0, y = Number.isFinite(m.note.y) ? m.note.y : 0
+      const from = agent?.name ?? names.get(socket)
+      const request: AgentRequest = {
+        id: randomUUID(), to: agentTo.id, text: found.text,
+        context: { shapeIds: [m.note.id], frameIds: [], viewport: { x: x - 400, y: y - 300, w: 1000, h: 800 } },
+        anchor: { shapeId: m.note.id, x, y }, ...(from ? { from } : {}),
+      }
+      boards.saveVersion(board, `Before AI: ${request.text.replace(/\s+/g, ' ').slice(0, 60)}`, true)
+      const thread = threads.create(board, request)
+      toPages(room, { kind: 'thread', thread })
+      send(target, { kind: 'request', request, local: same || local.has(socket) })
     } else if (m.kind === 'reply' && !agent && str(m.requestId, 100)) {
       const t = threads.get(m.requestId)
       if (t?.board !== board) return
@@ -362,7 +393,11 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     const board = new URL(req.url ?? '/', 'http://x').pathname.match(/^\/ws\/([^/]+)$/)?.[1]
     // an unknown board is refused, never created: boards are made on purpose
     if (!board || !BOARD_ID.test(board) || !boards.get(board) || !accept(req, socket)) return socket.destroy()
-    if (isLocal(req)) local.add(socket)
+    if (isLocal(req)) { local.add(socket); starter.set(socket, 'here') }
+    else {
+      const login = req.headers['tailscale-user-login']
+      if (typeof login === 'string' && login && /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) starter.set(socket, 'tailnet:' + login)
+    }
     let room = rooms.get(board)
     if (!room) rooms.set(board, room = new Set())
     const peers = room
@@ -388,6 +423,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
           let out
           try { out = presence(id, JSON.parse(payload.subarray(1).toString())) } catch { continue }
           presences.set(socket, out)
+          try { const n = JSON.parse(payload.subarray(1).toString()).name; if (str(n, 100)) names.set(socket, n) } catch {}
           broadcast(peers, socket, out)
         } else if (payload[0] === LIVE) {
           onLiveFrame(board, peers, socket, payload)

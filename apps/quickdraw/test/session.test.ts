@@ -114,6 +114,22 @@ describe('a session: an agent with a shell, on the board', () => {
     ws.close()
   }, 20_000)
 
+  it('gets a request when another agent writes a note that mentions it', async () => {
+    const { url, page, run, dir } = await setup()
+    // another agent (a command from another directory, by the same person) writes the note
+    process.chdir(mkdtempSync(join(tmpdir(), 'qd-other-')))
+    const lines: string[] = []
+    await main(['note', '@Claude sort these ideas', '--board', url, '--name', 'Codex'], (l) => { lines.push(l) })
+    const [note] = JSON.parse(lines[0]).ids
+    process.chdir(dir)
+    const [got] = await run('next', '--timeout', '5')
+    expect(got).toMatchObject({ type: 'request', text: 'sort these ideas', from: 'Codex', about: [{ id: note, type: 'note' }] })
+    expect((await page.take((m) => m.kind === 'thread')).thread.request.from).toBe('Codex') // people see who asked
+    // and what the session itself writes to itself does not ask it
+    await run('note', '@Claude not me')
+    expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
+  }, 20_000)
+
   it('leaves when told, or when left idle; then the commands go back to working alone', async () => {
     const { page, run, dir } = await setup(0.005) // 0.3 seconds
     await new Promise((r) => setTimeout(r, 900))

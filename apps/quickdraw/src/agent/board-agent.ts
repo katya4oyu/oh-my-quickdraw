@@ -19,6 +19,7 @@ import { Renderer } from '../board/render.ts'
 import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
 import { imageSteps } from './images.ts'
+import { announceMentions } from '../board/mentions.ts'
 
 import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
@@ -433,6 +434,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const ids = (r as { ids?: string[] }).ids ?? [...new Set([(r as { result?: unknown }).result].flat(Infinity).filter((v): v is string => typeof v === 'string'))]
     if (requestId) emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids }) // first, so the panel can take the view there
     await putLive(board.store, r.diff, copy, board.cursor)
+    announceMentions(relay, r.diff) // a note to another agent ("@Claude …") asks it
     if (w) w.seen = snapshot(w.area) // its own work is not news
     return { r, grew: grew ? w!.area : undefined }
   }
