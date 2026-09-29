@@ -14,6 +14,7 @@ import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
 import { isLocal } from './local.ts'
+import { tailnetSelf, type Person } from './tailscale.ts'
 import { detectAgentMention, hasAgentThreadForAnchor, type AgentEvent, type AgentParticipant, type AgentRequest } from 'quickdraw-agent'
 import { randomUUID } from 'node:crypto'
 import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE } from '../protocol.js'
@@ -46,6 +47,8 @@ function inside(root: string, path: string): string | null {
 export interface ServeOptions {
   dbPath?: string
   compactEvery?: number
+  /** who the host is on its tailnet; by default read from `tailscale status` (null: no Tailscale) */
+  self?: Person | null
 }
 
 const json = (res: ServerResponse, status: number, body: unknown) =>
@@ -62,7 +65,7 @@ async function readJson(req: IncomingMessage, limit = 10_000): Promise<Record<st
   return v
 }
 
-export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 }: ServeOptions = {}) {
+export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500, self = tailnetSelf() }: ServeOptions = {}) {
   const web = fileURLToPath(new URL('../../web/', import.meta.url)).replace(/\/$/, '')
   const protocol = fileURLToPath(new URL('../protocol.js', import.meta.url))
   const mounts = new Map(PACKAGES.map((name) => [name.replace('@quickdrawjs/', ''), join(packageRoot(name), 'src')]))
@@ -179,22 +182,45 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
   // agents: a connection that joined as one; the others are pages
   const agentOf = new Map<Duplex, AgentParticipant>()
   const local = new WeakSet<Duplex>() // connections from this computer (./local.ts)
-  // who is behind a connection, as far as the server can tell: the person at
-  // this computer, or a tailnet login (the header \`tailscale serve\` adds, trusted
-  // only on a connection it made, from this computer); else nobody known
-  const starter = new WeakMap<Duplex, string>()
-  const sameStarter = (a: Duplex, b: Duplex) => starter.has(a) && starter.get(a) === starter.get(b)
+  // Who is behind a connection, as far as the server can tell: a tailnet login
+  // (the header \`tailscale serve\` adds, and strips from what comes in; trusted only
+  // on a connection it made, from this computer), or the host (straight to this
+  // computer: its own login when it has Tailscale); else nobody known.
+  const personOf = new WeakMap<Duplex, { key: string, name: string }>()
+  const hostPerson = self ? { key: 'tailnet:' + self.login, name: self.name ?? self.login } : { key: 'host', name: 'the host' }
   const names = new WeakMap<Duplex, string>() // what each says it is called (presence)
-  // an agent takes requests and replies from this computer only, unless it was started with --allow-remote
-  const mayAsk = (socket: Duplex, agent?: AgentParticipant) => !agent || agent.remote === true || local.has(socket)
-  const onlyHere = (agent: AgentParticipant) => `${agent.name} takes requests only from the computer running quickdraw serve (unless it is started with --allow-remote).`
+  const peerIdOf = new WeakMap<Duplex, number>() // its id in presence
+  // An agent is its owner's (who started it, on their own account): it takes
+  // requests, replies and approvals from them, and from whom they open it to:
+  // everyone (--allow-remote, or from the panel), or people they name.
+  const access = new WeakMap<AgentParticipant, { owner?: { key: string, name: string }, with: 'owner' | 'all' | Map<string, string> }>()
+  const mayAsk = (socket: Duplex, agent?: AgentParticipant) => {
+    if (!agent) return true
+    const a = access.get(agent)
+    if (!a || a.with === 'all') return true
+    const me = personOf.get(socket)?.key
+    return !!me && (me === a.owner?.key || (a.with instanceof Map && a.with.has(me)))
+  }
+  const onlyHere = (agent: AgentParticipant) => {
+    const owner = access.get(agent)?.owner?.name
+    return `${agent.name} runs on ${owner ? owner + '\'s' : 'someone else\'s'} account: only ${owner ?? 'they'} can ask it, unless they open it to you.`
+  }
+  // an agent as a page sees it: whose it is, and whether that page may ask it
+  const agentView = (a: AgentParticipant, page: Duplex) => {
+    const acc = access.get(a)
+    const mine = !!acc?.owner && acc.owner.key === personOf.get(page)?.key
+    return {
+      ...a, ...(acc?.owner ? { owner: { name: acc.owner.name } } : {}), mine, canAsk: mayAsk(page, a),
+      ...(mine ? { sharedWith: acc!.with instanceof Map ? [...acc!.with.values()] : acc!.with } : {}),
+    }
+  }
   let closing = false
   const agentMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([AGENT]), Buffer.from(JSON.stringify(value))]))
   const send = (to: Duplex, value: object) => { if (to.writable) to.write(agentMsg(value)) }
   const pages = (room: Set<Duplex>) => [...room].filter((s) => !agentOf.has(s))
   const agentsIn = (room: Set<Duplex>) => [...room].flatMap((s) => agentOf.get(s) ?? [])
   const toPages = (room: Set<Duplex>, value: object) => { const out = agentMsg(value); for (const p of pages(room)) if (p.writable) p.write(out) }
-  const announce = (room: Set<Duplex>) => toPages(room, { kind: 'agents', agents: agentsIn(room) })
+  const announce = (room: Set<Duplex>) => { for (const p of pages(room)) send(p, { kind: 'agents', agents: agentsIn(room).map((a) => agentView(a, p)) }) }
   function record(room: Set<Duplex>, event: AgentEvent) {
     if (threads.append(event.requestId, event)) toPages(room, { kind: 'event', event })
   }
@@ -241,8 +267,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     const agent = agentOf.get(socket)
     if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
       socket.write(sharingFor(board, socket))
-      send(socket, { kind: 'you', local: local.has(socket) })
-      send(socket, { kind: 'agents', agents: agentsIn(room) })
+      send(socket, { kind: 'you', local: local.has(socket), ...(personOf.has(socket) ? { person: personOf.get(socket)!.name } : {}) })
+      send(socket, { kind: 'agents', agents: agentsIn(room).map((a) => agentView(a, socket)) })
       send(socket, { kind: 'threads', threads: threads.list(board) })
     } else if (m.kind === 'join' && !agent && str(m.agent?.name, 100)) {
       // its id, unique on the board: what requests are addressed to
@@ -258,14 +284,16 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         const effort = efforts.length ? (str(x?.effort, 40) ? x.effort : '') : ''
         return str(x?.id, 100) && str(x?.name, 100) && (effort || !efforts.length) ? [{ id: x.id, name: x.name, efforts, effort }] : []
       }) : []
-      agentOf.set(socket, {
+      const participant: AgentParticipant = {
         id, name: m.agent.name, knows, status: 'idle',
         ...(models.length ? { models } : {}),
         ...(str(m.agent.model, 100) ? { model: m.agent.model } : {}),
         ...(str(m.agent.effort, 40) ? { effort: m.agent.effort } : {}),
         ...(m.agent.remote === true ? { remote: true } : {}),
         ...(m.agent.voice === true ? { voice: true } : {}),
-      })
+      }
+      agentOf.set(socket, participant)
+      access.set(participant, { owner: personOf.get(socket), with: m.agent.remote === true ? 'all' : 'owner' })
       send(socket, { kind: 'joined', id })
       announce(room)
     } else if (m.kind === 'status' && agent && ['idle', 'working', 'waiting'].includes(m.status)) {
@@ -321,7 +349,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       const thread = threads.create(board, request)
       broadcast(new Set(pages(room)), socket, agentMsg({ kind: 'thread', thread })) // the sender has it
       if (target && sdp) talking.set(request.id, { page: socket, agent: target })
-      if (target) send(target, { kind: 'request', request, local: local.has(socket), ...(sdp ? { sdp } : {}) })
+      if (target) send(target, { kind: 'request', request, local: true, ...(sdp ? { sdp } : {}) }) // `local`: the server checked who asks
       else record(room, { type: 'error', requestId: request.id, message: 'That agent is not on this board.' })
     } else if (m.kind === 'mention' && str(m.note?.id, 100) && typeof m.note.text === 'string' && m.note.text.length <= 20_000) {
       // a note an agent (or a command) wrote that starts with @AI or @<agent>: a
@@ -332,8 +360,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       if (!found) return
       const target = others.find((s) => agentOf.get(s)!.id === found.to)!
       const agentTo = agentOf.get(target)!
-      const same = sameStarter(socket, target)
-      if (!same && agentTo.remote !== true) return
+      if (!mayAsk(socket, agentTo)) return
       if (hasAgentThreadForAnchor(m.note.id, threads.list(board))) return // it is already a request
       const x = Number.isFinite(m.note.x) ? m.note.x : 0, y = Number.isFinite(m.note.y) ? m.note.y : 0
       const from = agent?.name ?? names.get(socket)
@@ -345,7 +372,25 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       boards.saveVersion(board, `Before AI: ${request.text.replace(/\s+/g, ' ').slice(0, 60)}`, true)
       const thread = threads.create(board, request)
       toPages(room, { kind: 'thread', thread })
-      send(target, { kind: 'request', request, local: same || local.has(socket) })
+      send(target, { kind: 'request', request, local: true })
+    } else if (m.kind === 'share' && !agent && str(m.agent, 100)) {
+      // its owner opens an agent to everyone, to people on the board (presence ids), or closes it again
+      const target = agentsIn(room).find((a) => a.id === m.agent)
+      const acc = target && access.get(target)
+      const me = personOf.get(socket)?.key
+      if (!acc || !me || acc.owner?.key !== me) return
+      if (m.with === 'all' || m.with === 'owner') acc.with = m.with
+      else if (Array.isArray(m.with)) {
+        const people = new Map<string, string>()
+        for (const s of room) {
+          const p = personOf.get(s)
+          if (p && p.key !== me && !agentOf.has(s) && m.with.includes(peerIdOf.get(s))) people.set(p.key, names.get(s) ?? p.name)
+        }
+        acc.with = people.size ? people : 'owner'
+      } else return
+      if (acc.with === 'all') target.remote = true // what the panel says of it follows
+      else delete target.remote
+      announce(room)
     } else if (m.kind === 'reply' && !agent && str(m.requestId, 100)) {
       const t = threads.get(m.requestId)
       if (t?.board !== board) return
@@ -358,16 +403,16 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
       }
       if (str(message, 20_000)) {
         record(room, { type: 'reply', requestId: m.requestId, text: message })
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message, local: local.has(socket) })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message, local: true })
       } else if (message && str(message.approval, 200) && typeof message.allow === 'boolean') {
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow }, local: local.has(socket) })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { approval: message.approval, allow: message.allow }, local: true })
       } else if (message?.stop === true) {
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { stop: true }, local: local.has(socket) })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { stop: true }, local: true })
       } else if (rect(message?.area)) {
         // everyone sees it moved at once; the agent builds there from its next step
         const area = rect(message.area)!
         record(room, { type: 'area', requestId: m.requestId, area, by: 'person' })
-        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { area }, local: local.has(socket) })
+        if (to) send(to, { kind: 'reply', requestId: m.requestId, message: { area }, local: true })
       } else if (message?.undo && Number.isInteger(message.undo.reverted) && Array.isArray(message.undo.skipped)) {
         record(room, { type: 'undo', requestId: m.requestId, reverted: message.undo.reverted, skipped: message.undo.skipped.filter((s: unknown) => str(s, 200)) })
       }
@@ -393,16 +438,19 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
     const board = new URL(req.url ?? '/', 'http://x').pathname.match(/^\/ws\/([^/]+)$/)?.[1]
     // an unknown board is refused, never created: boards are made on purpose
     if (!board || !BOARD_ID.test(board) || !boards.get(board) || !accept(req, socket)) return socket.destroy()
-    if (isLocal(req)) { local.add(socket); starter.set(socket, 'here') }
+    if (isLocal(req)) { local.add(socket); personOf.set(socket, hostPerson) }
     else {
-      const login = req.headers['tailscale-user-login']
-      if (typeof login === 'string' && login && /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) starter.set(socket, 'tailnet:' + login)
+      const login = req.headers['tailscale-user-login'], name = req.headers['tailscale-user-name']
+      if (typeof login === 'string' && login && /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) {
+        personOf.set(socket, { key: 'tailnet:' + login, name: typeof name === 'string' && name ? name : login })
+      }
     }
     let room = rooms.get(board)
     if (!room) rooms.set(board, room = new Set())
     const peers = room
     peers.add(socket)
     const id = nextId++
+    peerIdOf.set(socket, id)
     for (const peer of peers) { const p = presences.get(peer); if (p) socket.write(p) } // who is here already
     const read = reader()
     socket.on('data', (chunk: Buffer) => {
