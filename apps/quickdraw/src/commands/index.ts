@@ -19,7 +19,8 @@ The skill (so agents on this machine know this command)
   skill install [--project] [--for agents,claude] [--link]
                                           puts the quickdraw skill where agents look: ~/.agents/skills (Codex, pi
                                           and other Agent Skills agents) and ~/.claude/skills (Claude Code, a link
-                                          to it); --project: in this project's .agents/ and .claude/ instead.
+                                          to it); --project: in this project's .agents/ and .claude/ instead, at
+                                          the root of its git repository (to commit, for everyone's agents).
                                           A copy (install again after updating), or --link: a link to this checkout
   skill status | uninstall [--project]    where it is installed and whether it is up to date; or removes it
 

@@ -15,7 +15,7 @@ export const SKILL_SOURCE = fileURLToPath(new URL('../../../../skills/quickdraw'
 const NAME = 'quickdraw'
 
 export interface SkillOptions {
-  /** in this project (.agents/skills, .claude/skills here) rather than for you (in your home) */
+  /** in this project (.agents/skills, .claude/skills at its repository's root, else here) rather than for you (in your home) */
   project?: boolean
   /** which agents: 'agents' (Codex, pi, …), 'claude' (Claude Code); both by default */
   for?: string
@@ -33,7 +33,12 @@ type Target = keyof typeof WHO
 function targets(o: SkillOptions): { which: Target[], base: string } {
   const which = (o.for ?? 'agents,claude').split(',').map((s) => s.trim()).filter(Boolean)
   for (const w of which) if (!(w in WHO)) throw new Error(`unknown --for "${w}" (agents, claude)`)
-  return { which: which as Target[], base: o.project ? resolve(o.cwd ?? process.cwd()) : (o.home ?? homedir()) }
+  return { which: which as Target[], base: o.project ? projectRoot(resolve(o.cwd ?? process.cwd())) : (o.home ?? homedir()) }
+}
+// agents look for a project's skills from where they start up to the
+// repository's root: the root is where every one of them finds it
+function projectRoot(cwd: string) {
+  try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || cwd } catch { return cwd }
 }
 const dirOf = (base: string, t: Target) => join(base, t === 'agents' ? '.agents' : '.claude', 'skills', NAME)
 
@@ -88,6 +93,7 @@ export function installSkill(o: SkillOptions = {}) {
   return {
     installed: done, source: SKILL_SOURCE,
     ...(o.link ? {} : { note: 'A copy: run quickdraw skill install again after updating quickdraw (quickdraw skill status says when it is behind).' }),
+    ...(o.project && o.link ? { warning_link: `The skill links to ${SKILL_SOURCE}, on this machine only: do not commit it (install without --link for a copy others can use).` } : {}),
     ...(onPath() ? {} : { warning: 'quickdraw is not on your PATH, and the skill runs it by that name: npm link -w apps/quickdraw (from the quickdraw-extensions checkout) puts it there.' }),
   }
 }

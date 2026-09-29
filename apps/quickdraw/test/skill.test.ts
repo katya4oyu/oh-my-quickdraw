@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { installSkill, skillStatus, uninstallSkill, SKILL_SOURCE } from '../src/commands/skill.ts'
@@ -38,6 +39,18 @@ describe('quickdraw skill', () => {
     expect(existsSync(join(project, '.agents'))).toBe(false)
     expect(lstatSync(join(project, '.claude/skills/quickdraw')).isDirectory()).toBe(true) // alone, a copy
     expect(() => installSkill({ home, for: 'cursor' })).toThrow(/unknown --for/)
+  })
+
+  it('installs in a project at its repository\'s root, from any folder in it; and says a link is not for committing', () => {
+    const repo = temp()
+    execFileSync('git', ['init', '-q'], { cwd: repo })
+    const sub = join(repo, 'packages/app')
+    mkdirSync(sub, { recursive: true })
+    const r = installSkill({ project: true, cwd: sub })
+    expect(r.installed.map((i: any) => i.path)).toEqual([join(repo, '.agents/skills/quickdraw'), join(repo, '.claude/skills/quickdraw')])
+    expect(readlinkSync(join(repo, '.claude/skills/quickdraw'))).toBe('../../.agents/skills/quickdraw') // relative: commits as it is
+    expect(skillStatus({ project: true, cwd: sub }).skills.every((s) => s.current)).toBe(true)
+    expect(installSkill({ project: true, cwd: sub, link: true })).toHaveProperty('warning_link')
   })
 
   it('leaves another skill named quickdraw alone unless forced', () => {
