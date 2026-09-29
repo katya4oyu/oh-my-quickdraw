@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store, pageBounds, hitShape, FONTS } from '@quickdrawjs/core'
 import { scaleShape } from '../../../vendor/quickdraw/packages/core/src/shapes.js'
-import { parseMarkdown, parseInline, layoutMarkdown, createMarkdown, validateMarkdown, MAX_MD_LENGTH } from '../src/index.js'
+import { parseMarkdown, parseInline, layoutMarkdown, createMarkdown, validateMarkdown, MAX_MD_LENGTH, MAX_H, hiddenLines, linkAt } from '../src/index.js'
 import { exportJSON } from '../../quickdraw-export/src/index.js'
 import { importJSON } from '../../quickdraw-import/src/index.js'
 
@@ -70,6 +70,37 @@ describe('markdown shapes in the core', () => {
     expect(hitShape(s, 100, 30, 0)).toBe(true)
     expect(scaleShape(s, 2, 3).props.w).toBe(600)
     expect(pageBounds({ ...s, props: { ...s.props, md: '# Hi\n\ntext\n\nmore\n\nmore' } }).h).toBeGreaterThan(b.h)
+  })
+})
+
+describe('long cards, and links', () => {
+  const long = Array.from({ length: 60 }, (_, i) => `Line ${i + 1}`).join('\n\n')
+  it('stops at a height, and says how much more there is; a person can make it taller', () => {
+    const store = new Store()
+    const id = createMarkdown(store, { x: 0, y: 0, w: 300, md: long })
+    const s = store.get(id)
+    expect(pageBounds(s).h).toBe(MAX_H)
+    expect(hiddenLines(s)).toBeGreaterThan(30)
+    const taller = scaleShape(s, 1, 1.5) // from the bottom handle
+    expect(taller.props.h).toBe(MAX_H * 1.5)
+    expect(pageBounds(taller).h).toBe(MAX_H * 1.5)
+    expect(hiddenLines(taller)).toBeLessThan(hiddenLines(s))
+    expect(scaleShape(s, 2, 1).props.h).toBeUndefined() // a side handle: the width only
+    const short = store.get(createMarkdown(store, { x: 0, y: 0, w: 300, md: '# Hi' }))
+    expect(hiddenLines(short)).toBe(0)
+    expect(pageBounds(short).h).toBeLessThan(MAX_H)
+    expect(validateMarkdown({ props: { md: 'x', w: 300, h: -1 } })).toBe('bad props.h')
+  })
+
+  it('finds the link under a point, only where it shows, and only http(s)', () => {
+    const store = new Store()
+    const s = store.get(createMarkdown(store, { x: 0, y: 0, w: 400, md: 'See [the docs](https://example.com/docs) and [this](javascript:alert(1))' }))
+    // "See " is 4 characters of 15px: the link starts about 14 + 4 × 9 = 50 from the card's left
+    const hits = []
+    for (let x = 0; x < 400; x += 4) { const h = linkAt(s, x, 14 + 12); if (h) hits.push([x, h]) }
+    expect(hits.length).toBeGreaterThan(5)
+    expect(new Set(hits.map(([, h]) => h))).toEqual(new Set(['https://example.com/docs']))
+    expect(linkAt(s, 200, 200)).toBeNull()
   })
 })
 
