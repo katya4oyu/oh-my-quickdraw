@@ -71,6 +71,10 @@ export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame
 export function lintBoard(store: Store, scope?: { frame?: string, ids?: string[], area?: Rect }): LintIssue[]
 /** Issues as a model or a person reads them. */
 export function lintText(issues: LintIssue[]): string
+/** Fixes, as one operation on what agents made, what needs no judgement: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Null when there is nothing it can fix. */
+export function fixLayout(store: Store, name: string, scope?: { frame?: string, ids?: string[], area?: Rect }): (Operation<unknown> & { fixed: string[], left: LintIssue[] }) | null
+/** What fixLayout did and what is left, as text. */
+export function fixText(result: { fixed: string[], left: LintIssue[] }): string
 
 /** A JSON Schema for a tool's arguments. */
 export type JsonSchema = Record<string, unknown>
@@ -83,7 +87,7 @@ export interface BoardTool {
   run(store: Store, args: any, context?: { name?: string, area?: Rect }): string | BoardDescription | ToolOperation
 }
 
-export interface ToolOperation { op: string, diff: Diff, focus: Point | null, ids: string[], area?: Rect }
+export interface ToolOperation { op: string, diff: Diff, focus: Point | null, ids: string[], area?: Rect, /** for the model: what check_board fixed and what is left */ text?: string }
 
 export const BOARD_TOOLS: BoardTool[]
 

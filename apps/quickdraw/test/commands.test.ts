@@ -44,6 +44,13 @@ describe('the CLI on a file board', () => {
     const inFrame = await run('lint', '--frame', frame)
     expect(inFrame).toMatchObject({ problems: 1, issues: [{ kind: 'overlap' }] })
     expect(inFrame.issues[0].text).toMatch(/note "one".*note "two"/)
+    // --fix: one operation, logged (undo reverts it), and what is left
+    const fixed = await run('lint', '--fix')
+    expect(fixed).toMatchObject({ op: expect.stringMatching(/^op:/), problems: 0 })
+    expect(fixed.fixed.length).toBeGreaterThan(0)
+    expect(await run('lint')).toMatchObject({ problems: 0 })
+    expect(await run('undo')).toMatchObject({ undone: fixed.op })
+    expect(await run('lint')).toMatchObject({ problems: 2 })
   })
 })
 

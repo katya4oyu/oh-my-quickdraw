@@ -222,6 +222,15 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const a = (args ?? {}) as Record<string, unknown>
       if (typeof a.url === 'string' && a.html == null) args = { ...a, preview: await preview(a.url) }
     }
+    if (name === 'check_board' && (args as { fix?: boolean } | null)?.fix) {
+      // fixing: tried on a copy first; nothing to fix is just the report
+      const ctx = { name: me.name, area: work.get(requestId)?.area }
+      const tried = tool.run(copyOf(board.store) as never, args as never, ctx) as unknown
+      if (typeof tried === 'string') return tried
+      let text = ''
+      const done = await put(requestId, (store) => { const r = tool.run(store as never, args as never, ctx) as never as { text: string }; text = r.text; return r as never })
+      return done + '\n\n' + text
+    }
     if (name === 'read_board' || name === 'check_board') { // reading: by default, check_board checks its work area
       const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name, area: work.get(requestId)?.area }) as unknown
       return typeof result === 'string' ? result : JSON.stringify(result)

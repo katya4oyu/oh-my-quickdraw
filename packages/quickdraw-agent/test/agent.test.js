@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -422,3 +422,60 @@ describe('checking the layout', () => {
     expect(check.run(store, {}, { name: 'C' })).toMatch(/^2 layout problems:/)
   })
 })
+
+describe('fixing the layout', () => {
+  it('pulls notes piled in a small frame apart and fits them in, as one undoable operation', () => {
+    const store = board()
+    const { result: [f] } = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 0 }, w: 280, h: 460 }])
+    const notes = [1, 2, 3].map((i) => applySteps(store, 'C', [{ do: 'note', text: `n${i}`, at: { x: 40, y: 40 } }]).result[0])
+    expect(lintBoard(store, { frame: f }).length).toBeGreaterThan(0)
+    const r = fixLayout(store, 'C', { frame: f })
+    expect(r.left).toEqual([])
+    expect(lintBoard(store)).toEqual([])
+    for (const id of notes) expect(store.get(id).frameId).toBe(f)
+    expect(fixText(r)).toMatch(/^Fixed \d+ by itself:[\s\S]*No layout problems left\.$/)
+    undoDiff(store, r.diff) // one undo
+    expect(notes.map((id) => [store.get(id).x, store.get(id).y])).toEqual([[40, 40], [40, 40], [40, 40]])
+  })
+
+  it('grows a shape for its label, and moves a heading off a frame\'s title', () => {
+    const store = board()
+    const { result: [box] } = applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'Not yet: resend link\nand check email', w: 210, h: 70, at: { x: 0, y: 600 } }])
+    applySteps(store, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 100 }, w: 400, h: 300 }])
+    const { result: [t] } = applySteps(store, 'C', [{ do: 'text', text: 'A big heading', at: { x: 0, y: 70 } }])
+    const y0 = store.get(t).y
+    const r = fixLayout(store, 'C')
+    expect(store.get(box).props.h).toBeGreaterThan(70)
+    expect(store.get(t).y).toBeLessThan(y0)
+    expect(r.left).toEqual([])
+  })
+
+  it('moves only what agents made, and leaves what needs judgement', () => {
+    const store = board()
+    store.put(human('shape:p', 'Mine', 0, 0))
+    const { result: [n] } = applySteps(store, 'C', [{ do: 'note', text: 'Agent', at: { x: 50, y: 50 } }])
+    applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
+      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
+      { do: 'arrow', from: '@a', to: '@c' },
+    ])
+    const r = fixLayout(store, 'C')
+    expect(store.get('shape:p')).toMatchObject({ x: 0, y: 0 })
+    expect(store.get(n).x !== 50 || store.get(n).y !== 50).toBe(true)
+    expect(r.left.map((i) => i.kind)).toEqual(['arrow-crosses'])
+    expect(fixText(r)).toMatch(/^NOT DONE: 1 problem left for you to fix[\s\S]*runs across diamond "Wall"/)
+    expect(fixLayout(store, 'C')).toBeNull() // nothing more it can fix
+  })
+
+  it('is check_board with fix', () => {
+    const store = board()
+    applySteps(store, 'C', [{ do: 'note', text: 'One', at: { x: 0, y: 0 } }, { do: 'note', text: 'Two', at: { x: 0, y: 100 } }])
+    const check = BOARD_TOOLS.find((t) => t.name === 'check_board')
+    const r = check.run(store, { fix: true }, { name: 'C' })
+    expect(r).toMatchObject({ op: expect.stringMatching(/^op:/), ids: expect.any(Array) })
+    expect(r.text).toMatch(/No layout problems left/)
+    expect(check.run(store, { fix: true }, { name: 'C' })).toBe('No layout problems found.')
+  })
+})
+

@@ -4,7 +4,7 @@
 // the same step in a list of steps.
 import { COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard } from './ops.js'
-import { lintBoard, lintText } from './lint.js'
+import { fixLayout, fixText, lintBoard, lintText } from './lint.js'
 
 const str = (description) => ({ type: 'string', ...(description ? { description } : {}) })
 const num = { type: 'number' }
@@ -42,9 +42,15 @@ export const BOARD_TOOLS = [
   {
     name: 'check_board',
     description: 'Checks the layout of what you made: shapes on top of each other, an arrow across a shape it does not connect, something sticking out of its frame or across a frame\'s edge, frames on top of each other. '
-      + 'Call it once you think a piece of work is done, narrowed to what you worked on (`frame`, or `ids`; by default your work area, else the whole board), then fix what it reports and check again.',
-    inputSchema: object({ frame: str('a frame id: check it and what is in it'), ids: ids('shapes to check (instead of a frame)') }),
-    run: (store, { frame, ids: only } = {}, { area } = {}) => lintText(lintBoard(store, { frame, ids: only, area: frame || only?.length ? undefined : area })),
+      + 'Call it once you think a piece of work is done, narrowed to what you worked on (`frame`, or `ids`; by default your work area, else the whole board). '
+      + 'With `fix`, it fixes what it can itself, as one step (one undo), on what agents made: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame\'s edge. It reports the rest (an arrow across a shape) for you to fix.',
+    inputSchema: object({ frame: str('a frame id: check it and what is in it'), ids: ids('shapes to check (instead of a frame)'), fix: { type: 'boolean', description: 'fix what can be fixed without you' } }),
+    run(store, { frame, ids: only, fix = false } = {}, { name = 'Agent', area } = {}) {
+      const scope = { frame, ids: only, area: frame || only?.length ? undefined : area }
+      const r = fix ? fixLayout(store, name, scope) : null
+      if (!r) return lintText(lintBoard(store, scope))
+      return { op: r.op, diff: r.diff, focus: r.focus, ids: Object.keys(r.diff.updated), text: fixText(r) }
+    },
   },
   step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), ...placement }, ['text']),
   step('add_text', 'text', 'A line of text, such as a heading.', { text: str(), ...placement }, ['text']),

@@ -5,7 +5,7 @@
 // to what was just made (what else is there still counts, as what it runs into).
 import { pageBounds, FONT_SIZES } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
-import { textOf } from './ops.js'
+import { runOp, textOf } from './ops.js'
 import { estimateWidth } from './measure.js'
 
 const MIN = 6 // overlaps thinner than this are touching, not covering
@@ -183,4 +183,145 @@ export function lintText(issues) {
   if (!issues.length) return 'No layout problems found.'
   return `${issues.length} layout problem${issues.length === 1 ? '' : 's'}:\n` + issues.map((i) => `- ${i.text}`).join('\n')
     + '\nFix yours (move_shape, arrange_shapes, fit_frame), then check again. Leave what people made where it is: move yours around it.'
+}
+
+// ---- fixing ----------------------------------------------------------------------
+
+const GAP = 16
+const FIXABLE = new Set(['text-overflow', 'frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame'])
+const centre = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
+// mostly in r: three quarters of it or more
+const mostlyIn = (b, r) => { const m = meet(b, r); return m.w > 0 && m.h > 0 && m.w * m.h >= 0.75 * b.w * b.h }
+// the way out of b for a: along the axis it is least into b, away from b's centre, clear by GAP
+function apart(a, b) {
+  const m = meet(a, b), ca = centre(a), cb = centre(b)
+  return m.w <= m.h
+    ? { dx: (ca.x < cb.x ? -1 : 1) * (m.w + GAP), dy: 0 }
+    : { dx: 0, dy: (ca.y < cb.y ? -1 : 1) * (m.h + GAP) }
+}
+
+// the way to push a shape off another: of the four, the one that lands on the
+// fewest other shapes, then sticks out of its frame least (fit_frame brings it
+// back in, shrinking less when it sticks out less: a tall frame fills downwards),
+// then moves it least
+function bestWay(store, s, sb, ob) {
+  const f = s.frameId && store.get(s.frameId)
+  const fb = f && pageBounds(f)
+  const others = store.shapes().filter((t) => t.id !== s.id && !isLine(t) && !isFrame(t) && !isFree(t)).map(pageBounds)
+  const frames = store.shapes().filter((g) => isFrame(g) && g.id !== s.frameId).map(pageBounds) // not into another frame
+  const ways = [
+    { dx: ob.x - (sb.x + sb.w) - GAP, dy: 0 }, { dx: ob.x + ob.w + GAP - sb.x, dy: 0 },
+    { dx: 0, dy: ob.y - (sb.y + sb.h) - GAP }, { dx: 0, dy: ob.y + ob.h + GAP - sb.y },
+  ]
+  const score = ({ dx, dy }) => {
+    const r = { x: sb.x + dx, y: sb.y + dy, w: sb.w, h: sb.h }
+    const lands = others.concat(frames).filter((o) => { const m = meet(r, o); return m.w > 0 && m.h > 0 }).length
+    const out = fb ? Math.max(0, fb.x - r.x) + Math.max(0, r.x + r.w - fb.x - fb.w) + Math.max(0, fb.y - r.y) + Math.max(0, r.y + r.h - fb.y - fb.h) : 0
+    return lands * 1e6 + out * 10 + Math.abs(dx) + Math.abs(dy)
+  }
+  return ways.reduce((a, b) => (score(b) < score(a) ? b : a))
+}
+
+/**
+ * Fixes what can be fixed without a judgement, as one operation by `name`, on
+ * what agents made only (never people's): labels too big for their shapes
+ * (the shape grows), shapes and frames on top of each other (pushed apart),
+ * what hangs over a frame's edge (brought in with fit_frame when it belongs
+ * there — in it by its centre, or lined up with what is — else moved clear).
+ * What is left, such as an arrow across a shape, is for the agent to fix.
+ * Returns null when there is nothing it can fix, else the operation with
+ * `fixed` (what it did, as text) and `left` (the issues still there).
+ */
+export function fixLayout(store, name, scope = {}) {
+  const mine = (id) => { const s = store.get(id); return s?.agent && !isTitle(s) ? s : null }
+  const can = (i) => FIXABLE.has(i.kind) && i.ids.some((id) => mine(id) && (i.kind === 'frames-overlap' || !isFrame(store.get(id))))
+  if (!lintBoard(store, scope).some(can)) return null
+  const fixed = []
+  const short = (s) => { const t = String(textOf(store, s) ?? '').split('\n')[0].trim(); return `${isFrame(s) ? 'frame' : s.type === 'geo' ? s.props.geo : s.type}${t ? ` "${t.slice(0, 30)}"` : ''} (${s.id})` }
+  const op = runOp(store, name, (ops) => {
+    const issues = () => lintBoard(store, scope)
+    // labels: the shape grows to hold its label
+    for (const i of issues().filter((i) => i.kind === 'text-overflow')) {
+      const s = mine(i.ids[0])
+      if (!s) continue
+      ops.update(s.id, { h: Math.ceil(labelHeight(s) / roomFor(s)) + 8 })
+      fixed.push(`made ${short(s)} taller for its label`)
+    }
+    // frames on top of each other: the later one moves, with what is in it
+    for (const i of issues().filter((i) => i.kind === 'frames-overlap')) {
+      const [f, g] = i.ids.map((id) => store.get(id))
+      const move = mine(g.id) ?? mine(f.id)
+      if (!move) continue
+      const other = move === g ? f : g
+      ops.move(move.id, apart(withTitle(store, move), withTitle(store, other)))
+      fixed.push(`moved ${short(move)} off ${short(other)}`)
+    }
+    // a frame whose contents are on top of each other, all an agent's: laid out
+    // afresh, in reading order, as the grid that suits the frame's shape best
+    // (a tall frame: a column); fit_frame, below, shrinks it in if need be
+    const crowded = new Set(issues().filter((i) => i.kind === 'overlap').map((i) => i.ids.map((id) => store.get(id)))
+      .filter(([a, b]) => mine(a.id) && mine(b.id) && a.frameId && a.frameId === b.frameId).map(([a]) => a.frameId))
+    for (const fid of crowded) {
+      const f = store.get(fid), fb = pageBounds(f)
+      const inside = (m) => mostlyIn(pageBounds(m), fb)
+      const members = store.shapes().filter((m) => m.frameId === fid && !isTitle(m) && !isLine(m) && !isFree(m) && inside(m)) // not a heading that strayed onto it
+      if (members.some((m) => !mine(m.id))) continue // people's work in it: pushed apart one by one instead
+      const bs = members.map(pageBounds)
+      const w = Math.max(...bs.map((b) => b.w)), h = Math.max(...bs.map((b) => b.h)), n = members.length, gap = 24
+      let cols = 1, best = 0
+      for (let c = 1; c <= n; c++) {
+        const rows = Math.ceil(n / c)
+        const k = Math.min((fb.w - 48 + gap) / (c * (w + gap)), (fb.h - 48 + gap) / (rows * (h + gap)))
+        if (k > best + 1e-6) { best = k; cols = c }
+      }
+      ops.arrange(members.map((m) => m.id), { cols, gap, at: { x: fb.x + 24, y: fb.y + 24 } })
+      fixed.push(`laid out what is in ${short(f)} afresh, ${Math.ceil(n / cols)} × ${cols}`)
+    }
+
+    // shapes on top of each other: pushed apart, a few rounds (one push may land on another)
+    for (let round = 0; round < 30; round++) {
+      const pair = issues().find((i) => i.kind === 'overlap' && i.ids.some(mine))
+      if (!pair) break
+      const [a, b] = pair.ids.map((id) => store.get(id))
+      // the one to move: an agent's, the later of two in reading order
+      const later = (pageBounds(a).y - pageBounds(b).y || pageBounds(a).x - pageBounds(b).x) > 0 ? a : b
+      const move = mine(later.id) ? later : mine(a.id) ? a : b
+      const other = move === a ? b : a
+      const mb = pageBounds(move), ob = pageBounds(other)
+      // off a frame's title, from outside the frame: up, above the title (not into the frame)
+      const frameOf = isTitle(other) && store.get(other.frameId)
+      const upward = frameOf && mb.y + mb.h / 2 < pageBounds(frameOf).y + GAP
+      ops.move(move.id, upward ? { dx: 0, dy: ob.y - (mb.y + mb.h) - GAP } : bestWay(store, move, mb, ob))
+      if (!fixed.includes(`moved ${short(move)} off ${short(other)}`)) fixed.push(`moved ${short(move)} off ${short(other)}`)
+    }
+    // over a frame's edge: brought in when it belongs there, else moved clear
+    const bring = new Map() // frame id -> ids to fit in
+    for (const i of issues().filter((i) => ['outside-frame', 'straddles-frame', 'touches-frame'].includes(i.kind))) {
+      const [s, f] = i.ids.map((id) => store.get(id))
+      if (!mine(s.id)) continue
+      const sb = pageBounds(s), fb = pageBounds(f), c = centre(sb)
+      const members = store.shapes().filter((m) => m.frameId === f.id && m.id !== s.id && !isTitle(m)).map(pageBounds)
+      const lined = members.some((m) => meet(m, sb).w > sb.w / 2 || meet(m, sb).h > sb.h / 2)
+      // in it by its centre, or lined up with what is in it (a member by position alone may be a heading that strayed)
+      const belongs = (c.x > fb.x && c.x < fb.x + fb.w && c.y > fb.y && c.y < fb.y + fb.h) || lined
+      if (belongs) bring.set(f.id, [...(bring.get(f.id) ?? []), s.id])
+      else { ops.move(s.id, apart(sb, fb)); fixed.push(`moved ${short(s)} clear of ${short(f)}`) }
+    }
+    for (const [f, ids] of bring) {
+      try {
+        ops.fit(f, { ids })
+        fixed.push(`fitted ${ids.map((id) => short(store.get(id))).join(', ')} into ${short(store.get(f))}`)
+      } catch { /* it would take shrinking too far: left for the agent (a bigger frame, or several) */ }
+    }
+  })
+  return { ...op, fixed, left: lintBoard(store, scope) }
+}
+
+/** what fixLayout did and what is left, as the model or a person reads it */
+export function fixText(result) {
+  const done = result.fixed.length ? `Fixed ${result.fixed.length} by itself:\n` + result.fixed.map((f) => `- ${f}`).join('\n') : 'Nothing could be fixed without you.'
+  if (!result.left.length) return done + '\n\nNo layout problems left.'
+  // what is left needs the agent: said first and plainly, so it is not taken for done
+  return `NOT DONE: ${result.left.length} problem${result.left.length === 1 ? '' : 's'} left for you to fix, then call check_board again:\n`
+    + result.left.map((i) => `- ${i.text}`).join('\n') + '\n\n' + done
 }
