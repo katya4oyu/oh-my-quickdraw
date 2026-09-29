@@ -334,6 +334,43 @@ describe('tickets', () => {
   })
 })
 
+describe('where things go, and gathering frames', () => {
+  it('puts what has no place near where people look, clear of what is there, the next below the last', () => {
+    const store = board()
+    store.put(human('shape:there', 'In the way', 900, 480))
+    const { result: [a, b] } = applySteps(store, 'Claude', [{ do: 'note', text: 'A' }, { do: 'note', text: 'B' }], { prefer: { x: 1000, y: 580 } })
+    const [pa, pb, there] = [a, b, 'shape:there'].map((id) => pageBounds(store.get(id)))
+    for (const p of [pa, pb]) {
+      expect(Math.hypot(p.x + p.w / 2 - 1000, p.y + p.h / 2 - 580)).toBeLessThan(700) // near, not off to the right of everything
+      expect(p.x < there.x + there.w && p.x + p.w > there.x && p.y < there.y + there.h && p.y + p.h > there.y).toBe(false)
+    }
+    expect(pb.y).toBeGreaterThan(pa.y)
+  })
+
+  it('gathers spread-out frames in reading order, in rows, each with what is in it and its title', () => {
+    const store = board()
+    const { result: [f1, n1, f2, f3] } = applySteps(store, 'Claude', [
+      { do: 'frame', title: 'One', at: { x: 0, y: 0 }, w: 400, h: 300, ref: 'a' }, { do: 'note', text: 'in one', in: '@a' },
+      { do: 'frame', title: 'Two', at: { x: 5000, y: 3000 }, w: 400, h: 300 },
+      { do: 'frame', title: 'Three', at: { x: 9000, y: -2000 }, w: 400, h: 300 },
+    ])
+    const before = store.get(n1).x - store.get(f1).x
+    const { result: moved, diff } = runOp(store, 'Claude', (ops) => ops.tidy({ width: 900 }))
+    expect(moved).toHaveLength(3)
+    const [a, b, c] = [f1, f2, f3].map((id) => store.get(id))
+    // reading order: Three (highest) first, then One, then Two; two to a row of 900
+    expect([c.x, c.y]).toEqual([9000, -2000]) // the first stays where it is
+    expect(a.y).toBe(c.y)
+    expect(a.x).toBe(c.x + 400 + 80)
+    expect(b.x).toBe(c.x)
+    expect(b.y).toBeGreaterThan(c.y + 300)
+    expect(store.get(n1).x - a.x).toBe(before) // its note came along
+    expect(store.get(f1 + '-title').x).toBe(a.x)
+    expect(undoDiff(store, diff).skipped).toEqual([])
+    expect(store.get(f2).x).toBe(5000)
+  })
+})
+
 describe('a work area', () => {
   const inside = (b, a) => b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h
   it('finds free space near where it is wanted, clear of what is there', () => {

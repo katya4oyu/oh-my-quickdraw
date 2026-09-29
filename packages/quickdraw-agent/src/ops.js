@@ -136,9 +136,10 @@ function checkColor(color) {
 // The operations, bound to one op: what it adds is marked with it. `area`: a
 // work area ({ x, y, w, h }) where what is added without a place goes; it
 // grows downwards (unlike a frame) when full, see area().
-function operations(store, name, op, { area: startArea } = {}) {
+function operations(store, name, op, { area: startArea, prefer } = {}) {
   const agent = { name, op }
   let column = null // where this op's unplaced shapes stack: { x, y, w, count }
+  let nearLast = null // the last one placed near `prefer`
   let focus = null
   const area = startArea ? { ...startArea } : null
 
@@ -176,6 +177,14 @@ function operations(store, name, op, { area: startArea } = {}) {
       throw new Error(`frame ${inFrame} is full: add without --in (it goes in free space), then fit ${inFrame} ID… shrinks everything to fit`)
     }
     if (area) return inArea(w, h)
+    // near where people look (a request's view, where people are): the free spot nearest to
+    // it; what the same operation adds next goes below the last, and around what is there
+    if (prefer) {
+      const want = nearLast ? { x: nearLast.x, y: nearLast.y + nearLast.h + GAP } : { x: prefer.x - w / 2, y: prefer.y - h / 2 }
+      const at = freeSpot(store, w, h, want, { gap: GAP, above: 0 })
+      nearLast = { ...at, h }
+      return at
+    }
     if (!column) {
       const all = store.shapes().filter((s) => s.typeName === 'shape').map(pageBounds)
       const right = all.length ? Math.max(...all.map((b) => b.x + b.w)) + GAP * 2 : 0
@@ -389,6 +398,39 @@ function operations(store, name, op, { area: startArea } = {}) {
       focus = { x: f.x, y: f.y }
       return shapes.map((s) => s.id)
     },
+    // Lays frames out close together, in reading order, in rows from `at` (by
+    // default where the first of them is) no wider than `width`: a board that
+    // grew outwards, gathered. A frame brings what is in it and its title; a
+    // kanban's columns go together. What is in no frame stays where it is.
+    tidy({ ids, at, gap = GAP * 2, width = 2400 } = {}) {
+      const frames = ids?.length ? ids.map(need) : store.shapes().filter(isFrame)
+      for (const f of frames) if (!isFrame(f)) throw new Error(`${f.id} is not a frame`)
+      // what moves together: a frame, or all the columns of its kanban
+      const units = new Map()
+      for (const f of frames) {
+        const key = f.kanban?.id ?? f.id
+        const all = f.kanban?.id ? store.shapes().filter((c) => isFrame(c) && c.kanban?.id === f.kanban.id) : [f]
+        if (!units.has(key)) units.set(key, all)
+      }
+      const boxes = [...units.values()].map((fs) => {
+        const bs = fs.map((f) => withTitle(store, f))
+        const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y))
+        return { fs, x, y, w: Math.max(...bs.map((b) => b.x + b.w)) - x, h: Math.max(...bs.map((b) => b.y + b.h)) - y }
+      }).sort(byPosition)
+      if (!boxes.length) return []
+      const x0 = at?.x ?? boxes[0].x, y0 = at?.y ?? boxes[0].y
+      const rowW = Math.max(width, ...boxes.map((b) => b.w))
+      let x = x0, y = y0, rowH = 0
+      for (const b of boxes) {
+        if (x > x0 && x + b.w > x0 + rowW) { x = x0; y += rowH + gap; rowH = 0 }
+        const dx = x - b.x, dy = y - b.y
+        for (const f of b.fs) if (dx || dy) store.update(f.id, { x: f.x + dx, y: f.y + dy })
+        x += b.w + gap
+        rowH = Math.max(rowH, b.h)
+      }
+      focus = { x: x0, y: y0 }
+      return boxes.flatMap((b) => b.fs.map((f) => f.id))
+    },
     // only what an agent added; a frame goes with its title, its members stay
     delete(ids) {
       for (const id of ids) {
@@ -442,9 +484,9 @@ function route(store, [ra, rb]) {
 // The diff compares each touched record before and after, rather than composing
 // the diffs as they are emitted: a listener that edits in response (frame
 // membership) emits its diff before the one that caused it, out of order.
-export function runOp(store, name, fn, { area } = {}) {
+export function runOp(store, name, fn, { area, prefer } = {}) {
   const op = 'op:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  const { ops, focus, reroute, area: grown } = operations(store, name, op, { area })
+  const { ops, focus, reroute, area: grown } = operations(store, name, op, { area, prefer })
   const before = new Map(store.all().map((r) => [r.id, r]))
   const touched = new Set()
   const off = store.listen((d) => {
@@ -476,7 +518,7 @@ export function runOp(store, name, fn, { area } = {}) {
 // Runs a list of steps as one operation. Steps may name what they add
 // (`ref: 'a'`) and point at it later as '@a'.
 // [{ do: 'note', text, color?, in?, ref? }, { do: 'arrow', from: '@a', to: '@b' }, …]
-export function applySteps(store, name, steps, { area } = {}) {
+export function applySteps(store, name, steps, { area, prefer } = {}) {
   if (!Array.isArray(steps)) throw new Error('steps must be an array')
   return runOp(store, name, (ops) => {
     const refs = {}
@@ -499,13 +541,14 @@ export function applySteps(store, name, steps, { area } = {}) {
         case 'move': out = ops.move(r(s.id), s); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
+        case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: s.at, gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break
         default: throw new Error(`step ${i + 1}: unknown "do": ${JSON.stringify(s.do)}`)
       }
       if (s.ref) refs[s.ref] = out
       return out
     })
-  }, { area })
+  }, { area, prefer })
 }
 
 // ---- undo ------------------------------------------------------------------------

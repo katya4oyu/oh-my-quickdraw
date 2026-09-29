@@ -166,6 +166,17 @@ describe('a session: an agent with a shell, on the board', () => {
     await person.close()
   }, 20_000)
 
+  it('puts what has no place by the people, not off to the right of everything', async () => {
+    const { ws, run } = await setup()
+    await run('note', 'far away', '--at', '0,0')
+    ws.send(packPresence({ name: 'Ann', color: '#e03131', x: 3000, y: 2000 }))
+    await new Promise((r) => setTimeout(r, 100))
+    const [made] = await run('note', 'here')
+    const d = (await run('read', '--format', 'json'))[0]
+    const it = d.items.find((i: any) => i.id === made.ids[0])
+    expect(Math.hypot(it.x + it.w / 2 - 3000, it.y + it.h / 2 - 2000)).toBeLessThan(600)
+  }, 20_000)
+
   it('moves a frame with what is in it', async () => {
     const { run } = await setup()
     const [f] = await run('frame', 'Plan', '--at', '0,0', '--size', '600x400')
