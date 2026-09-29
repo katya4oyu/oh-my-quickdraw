@@ -63,6 +63,10 @@ Writing (each command is one operation, undoable as a whole)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
                                           to fit inside it (the frame keeps its size)
+  tidy [FRAME,…] [--at X,Y] [--gap N] [--width N]
+                                          gathers frames (by default all) close together in reading order, in rows
+                                          about --width wide (2400): each brings what is in it and its title, a
+                                          kanban's columns stay together; for a board that has spread out
   delete ID…                               only shapes an agent added
   apply STEPS.json                          several steps as one operation (see SKILL.md)
 
@@ -73,7 +77,7 @@ Tickets (work people leave on the board for agents)
   ticket TITLE [--body TEXT] [--to NAME] [--in FRAME] [--at X,Y]
                                           a ticket (for NAME, else any agent), in the Todo column of the
                                           board's kanban if it has one
-  wait [--take] [--timeout SECONDS]       waits until a ticket for you (--name) or any agent is to do, and
+  wait [--take] [--timeout SECONDS]       (not on the board) waits until a ticket for you (--name) or any agent is to do, and
                                           prints it: at once if one is. --take: takes it too (if another
                                           agent took it first, it waits for the next). Live boards only
   take ID                                 takes a ticket: doing, and yours (--name); fails if taken
@@ -87,10 +91,12 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
                                           joins the board and stays: in its AI panel, with a cursor. The commands
                                           after it, from this directory, run as you on it; leaves after --idle
                                           minutes (30) without one
-  next [--timeout SECONDS]                waits for what is for you and prints it: a request from the panel (with
-                                          what it is about, and what changed on the board), a person's reply,
-                                          Stop, or a ticket. A request becomes the one you work on: what you draw
-                                          goes in its thread, where people can undo it
+  wait [--timeout SECONDS] [--take]       waits for what is for you and prints it: a request (from the panel or a
+                                          note that mentions you; with what it is about, and what changed on the
+                                          board), a person's reply, Stop, or a ticket (--take: taken). A request
+                                          becomes the one you work on: what you draw goes in its thread, where
+                                          people can undo it. Meanwhile your cursor stays by the people on the
+                                          board, ready for a request. (next: the same)
   say [REQ] TEXT [--progress]             a message in the request's thread (--progress: a step, as you go)
   finish [REQ] [TEXT]                     the request is done (TEXT: what you did, in a line)
   area W H [--title T] [--at X,Y]         marks out where you will draw for the request; what you add without a
@@ -98,7 +104,7 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
   who                                     who is on the board: people and agents, their cursors, what they look at
   changes                                 what changed on the board since you last looked
   leave                                   leaves the board
-  Results say what waits for you as "inbox": take it with next.
+  Results say what waits for you as "inbox": take it with wait.
 
 History
   log                                       this board's operations, newest last
@@ -178,7 +184,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -195,7 +201,7 @@ export interface CommandContext {
    * on a copy and then put on the board a piece at a time, in the thread of the
    * request being worked on.
    */
-  operate<T>(make: (store: Store, where: { area?: { x: number, y: number, w: number, h: number } }) => Operation<T>): Promise<Operation<T>>
+  operate<T>(make: (store: Store, where: { area?: { x: number, y: number, w: number, h: number }, prefer?: { x: number, y: number } }) => Operation<T>): Promise<Operation<T>>
   /** stdin's text, for `apply -` */
   stdin(): Promise<string>
   /** in a session: its operations show themselves as they are put, so no pause after */
@@ -271,7 +277,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
     let done: Operation<unknown>
     // the operations of a command, in a work area when it has one
-    const op = <T>(fn: (ops: Operations) => T) => operate((s, where) => runOp(s, o.name, fn, where.area ? { area: where.area } : {}))
+    // where what has no place goes: a work area, else near where people look (in a session), else right of everything
+    const op = <T>(fn: (ops: Operations) => T) => operate((s, where) => runOp(s, o.name, fn, where))
     // takes a ticket; on a live board, null when another agent's take won
     // (the peers agree on one once each has the other's change)
     const take = async (id: string) => {
@@ -335,7 +342,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
           w: o.width ? Number(o.width) : undefined, at: point(o.at), in: o.in, frame: o.frame,
           split: grid && { cols: grid[0], rows: grid[1], inset: o.inset ? Number(o.inset) : undefined },
         }, [process.cwd()])
-        done = await operate((s, where) => applySteps(s, o.name, steps as never, where.area ? { area: where.area } : {})); break
+        done = await operate((s, where) => applySteps(s, o.name, steps as never, where)); break
       }
       case 'frame':
         done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
@@ -351,6 +358,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await op((ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
       case 'fit':
         done = await op((ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
+      case 'tidy':
+        done = await op((ops) => ops.tidy({ ids: args.join(',').split(',').filter(Boolean), at: point(o.at), gap: o.gap ? Number(o.gap) : undefined, width: o.width ? Number(o.width) : undefined })); break
       case 'delete':
         done = await op((ops) => ops.delete(args)); break
       case 'tickets': {
@@ -390,7 +399,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
       case 'apply': {
         const steps = JSON.parse(args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8'))
-        done = await operate((s, where) => applySteps(s, o.name, steps, where.area ? { area: where.area } : {})); break
+        done = await operate((s, where) => applySteps(s, o.name, steps, where)); break
       }
       default:
         throw new Error(`unknown command "${cmd}" (see --help)`)
