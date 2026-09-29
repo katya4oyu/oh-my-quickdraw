@@ -151,12 +151,13 @@ if (command === 'serve') {
       // the voices it can talk in, for the board's picker; --voice is the one it uses unless a person picks another
       const { realtimeVoices } = await import('../src/agent/voice.ts')
       const voices = voice ? await realtimeVoices(codex) : null
+      if (values.voice && voices && !voices.voices.includes(values.voice)) process.stderr.write(`--voice ${values.voice}: not a voice it can talk in (${voices.voices.join(', ')}); using ${voices.default ?? 'the default'}\n`)
       const talk = voices ? { voices: voices.voices, defaultVoice: values.voice && voices.voices.includes(values.voice) ? values.voice : voices.default } : {}
       agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice, ...talk }, { imageRoots: [cwd, generatedImages], preview })
       codex.onExit(() => leave(1, 'codex app-server stopped'))
       board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
       const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
-      if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: values.voice, voices: voices?.voices })
+      if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: voices ? talk.defaultVoice : values.voice, voices: voices?.voices })
     } else {
       const { initPi, runPi } = await import('../src/agent/pi.ts')
       const sdk = await import('@earendil-works/pi-coding-agent').catch(() => {

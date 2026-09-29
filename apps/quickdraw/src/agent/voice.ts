@@ -24,11 +24,16 @@ export interface VoiceOptions {
   voices?: string[]
 }
 
-/** The voices app-server offers for the voice model (its v2 list, which the realtime conversation takes), and its default; null when it offers none. */
+/**
+ * The voices a conversation can be in, and the default; null when app-server
+ * offers none. It lists two sets, v1 and v2: the realtime v3 conversation
+ * this starts takes the v1 set ("realtime voice `marin` is not supported for
+ * v3; supported voices: juniper, …, cove", as app-server says).
+ */
 export async function realtimeVoices(server: AppServer): Promise<{ voices: string[], default?: string } | null> {
   const r = await server.request('thread/realtime/listVoices', {}).catch(() => null)
-  const voices = r?.voices?.v2
-  return Array.isArray(voices) && voices.length ? { voices, ...(voices.includes(r.voices.defaultV2) ? { default: r.voices.defaultV2 } : {}) } : null
+  const voices = r?.voices?.v1
+  return Array.isArray(voices) && voices.length ? { voices, ...(voices.includes(r.voices.defaultV1) ? { default: r.voices.defaultV1 } : {}) } : null
 }
 
 export const VOICE_MODEL = 'gpt-live-1-codex'
