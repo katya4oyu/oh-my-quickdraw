@@ -65,6 +65,15 @@ export interface BoardAgent {
   picture(what: { frame?: string, ids?: string[] }): Promise<Buffer | null>
   /** feedback on snapshots (their frame ids), for the model: a text, and image files (each: as drawn over, then the screen as it was) */
   feedback(frameIds: string[]): Promise<{ text: string, images: string[] }>
+  /**
+   * An operation of the agent's own making (a command, say), done as a tool's:
+   * tried on a copy, then put on the board a piece at a time with the cursor
+   * on each. With a request, it goes in the request's thread (to undo) and in
+   * its work area; with null, it is only put on the board.
+   */
+  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect }) => T): Promise<T>
+  /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
+  peopleSince(requestId: string): string
   /** leaves the board */
   close(): Promise<void>
 }
@@ -394,6 +403,11 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
         images,
       }
     },
+    async operate(requestId, make) {
+      const area = requestId ? work.get(requestId)?.area : undefined
+      return (await putOp(requestId, (store) => make(store, { area }))).r
+    },
+    peopleSince,
     close: async () => {
       clearTimeout(hideTimer)
       await renderer?.close()
@@ -404,18 +418,23 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
   async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect }) {
+    const { r, grew } = await putOp(requestId, make)
+    return JSON.stringify({ op: r.op, ids: r.ids, ...(grew ? { area: grew } : {}) })
+  }
+  async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T) {
     const copy = copyOf(board.store)
     const r = make(copy)
     holdCursor()
-    const w = work.get(requestId)
+    const w = requestId ? work.get(requestId) : undefined
     // the area grows to take in what it added (when full, or put beside it): people see so before it lands
     const next = w && takeIn(r.area ?? w.area, Object.values(r.diff.added) as BoardRecord[])
     const grew = w && next && (next.x !== w.area.x || next.y !== w.area.y || next.w !== w.area.w || next.h !== w.area.h)
-    if (grew) { w.area = next!; emit(requestId, { type: 'area', area: w.area, ...(w.title ? { title: w.title } : {}) }) }
-    emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids: r.ids }) // first, so the panel can take the view there
+    if (grew) { w.area = next!; emit(requestId!, { type: 'area', area: w.area, ...(w.title ? { title: w.title } : {}) }) }
+    const ids = (r as { ids?: string[] }).ids ?? [...new Set([(r as { result?: unknown }).result].flat(Infinity).filter((v): v is string => typeof v === 'string'))]
+    if (requestId) emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids }) // first, so the panel can take the view there
     await putLive(board.store, r.diff, copy, board.cursor)
     if (w) w.seen = snapshot(w.area) // its own work is not news
-    return JSON.stringify({ op: r.op, ids: r.ids, ...(grew ? { area: w!.area } : {}) })
+    return { r, grew: grew ? w!.area : undefined }
   }
 
   async function imageStep(requestId: string, args: Record<string, any>) {

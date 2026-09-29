@@ -2,7 +2,7 @@
 // any browser tab: it sends what it has, asks for the rest, and shows a cursor
 // while it works (a presence saying it is an agent, see quickdraw-presence). An agent also speaks AGENT messages on the same connection.
 import * as Y from 'yjs'
-import { AGENT, SV, UPDATE, pack, packAgent, packPresence, unpackAgent } from '../protocol.js'
+import { AGENT, PRESENCE, SV, UPDATE, pack, packAgent, packPresence, unpackAgent, unpackPresence } from '../protocol.js'
 
 export interface Relay {
   /** shows the cursor at a page point (null hides it) */
@@ -15,13 +15,20 @@ export interface Relay {
   send(message: object): void
   /** AGENT messages from the server; returns a function that stops listening */
   onMessage(fn: (message: any) => void): () => void
-  /** called once if the connection drops (not after close()) */
+  /** the others on the board, by the id the server gives them: their latest presence */
+  peers(): Map<string | number, PeerPresence>
+  /** fn is called once if the connection drops (not after close()) */
   onClose(fn: () => void): void
   /** waits for pending sends to leave, then disconnects (peers drop the cursor) */
   close(): Promise<void>
 }
 
 export interface Presence { name?: string, color?: string }
+/** what another peer last said about itself (quickdraw-presence's; see ../protocol.js) */
+export interface PeerPresence extends Presence {
+  id: string | number, x?: number | null, y?: number | null, view?: { x: number, y: number, w: number, h: number },
+  status?: string, agent?: boolean, agentStatus?: string, agentActivity?: string | null, agentNote?: string,
+}
 
 // Resolves once the server's state is in ydoc; local updates go out as they happen.
 export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color = '#0c8599', timeout = 10_000 }: Presence & { timeout?: number } = {}): Promise<Relay> {
@@ -31,8 +38,9 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
     const timer = setTimeout(() => { ws.close(); reject(new Error(`no answer from ${url}`)) }, timeout)
     let ready = false, closing = false
     const listeners = new Set<(message: any) => void>()
-    let closed: (() => void) | null = null
-    ws.onclose = () => { if (ready && !closing) closed?.() }
+    const peers = new Map<string | number, PeerPresence>() // the server sends who is here as we connect, before the board
+    const closed = new Set<() => void>()
+    ws.onclose = () => { if (ready && !closing) for (const fn of closed) fn() }
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin !== 'relay' && ws.readyState === WebSocket.OPEN) ws.send(pack(UPDATE, update))
     }
@@ -44,6 +52,14 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
         let message
         try { message = unpackAgent(m) } catch { return }
         for (const fn of listeners) fn(message)
+        return
+      }
+      if (m[0] === PRESENCE) {
+        let p
+        try { p = unpackPresence(m) } catch { return }
+        if (p?.id == null) return
+        if (p.gone) peers.delete(p.id)
+        else peers.set(p.id, { ...peers.get(p.id), ...p })
         return
       }
       if (m[0] !== UPDATE) return
@@ -72,7 +88,8 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
         },
         send(message) { if (ws.readyState === WebSocket.OPEN) ws.send(packAgent(message)) },
         onMessage(fn) { listeners.add(fn); return () => listeners.delete(fn) },
-        onClose(fn) { closed = fn },
+        peers: () => peers,
+        onClose(fn) { closed.add(fn) },
         async close() {
           closing = true
           ydoc.off('update', onUpdate)
