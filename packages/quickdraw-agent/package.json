@@ -22,7 +22,8 @@
   "dependencies": {
     "quickdraw-embed": "*",
     "quickdraw-frames": "*",
-    "quickdraw-markdown": "*"
+    "quickdraw-markdown": "*",
+    "quickdraw-tickets": "*"
   },
   "peerDependencies": {
     "@quickdrawjs/core": "*"

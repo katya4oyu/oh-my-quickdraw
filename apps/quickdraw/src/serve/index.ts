@@ -20,6 +20,7 @@ import { handlePreview } from './preview.ts'
 import { parseJSON } from 'quickdraw-import'
 import { validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+import { validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
 import { BOARD_ID, openBoards, type BoardInfo } from './boards.ts'
 import { openThreads } from './threads.ts'
 import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts'
@@ -27,7 +28,7 @@ import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-tickets', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -105,7 +106,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500 
         if (typeof b.from === 'string') return json(res, 201, boards.duplicate(b.from, t))
         if (b.file !== undefined) {
           let parsed
-          try { parsed = parseJSON(b.file, { types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed } }) } catch (e) { return json(res, 400, { error: (e as Error).message }) }
+          try { parsed = parseJSON(b.file, { types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket } }) } catch (e) { return json(res, 400, { error: (e as Error).message }) }
           return json(res, 201, boards.createFrom(t ?? 'Imported', [...parsed.shapes, ...Object.values(parsed.assets)] as never))
         }
         return json(res, 201, boards.create(t))

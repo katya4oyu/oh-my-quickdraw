@@ -15,6 +15,10 @@ export interface Operations {
   image(src: string, natural: { w: number, h: number }, opts?: Placement): string
   /** A web page (live where allowed, else its link card), a link card (`link`), or inline HTML (runs when a viewer presses Run). */
   embed(what: { url?: string, html?: string, link?: boolean, title?: string, preview?: EmbedPreview }, opts?: Placement): string
+  /** A ticket for an agent (`to`, or any): in the Todo column of the board's first kanban unless placed. */
+  ticket(title: string, what?: { body?: string, to?: string | null }, opts?: Placement): string
+  /** Moves a ticket on; in a kanban it changes column. `by` defaults to this agent. */
+  status(id: string, status: TicketStatus, change?: { by?: string | null, result?: string }): string
   frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[] }): string
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames) */
@@ -44,13 +48,19 @@ export interface Rect { x: number, y: number, w: number, h: number }
 /** A link card's preview, as quickdraw-embed stores it (the image an inline data URL). */
 export interface EmbedPreview { title?: string, description?: string, siteName?: string, image?: string }
 
+export type TicketStatus = 'todo' | 'doing' | 'done' | 'failed'
+
 export interface Step { do: string, ref?: string, [field: string]: unknown }
 
 export interface BoardDescription {
   frames: { id: string, title: string, aspect?: number, x: number, y: number, w: number, h: number, members: string[],
     /** a snapshot of a shared screen (quickdraw-screenshare): when and by whom */
-    snapshot?: { at: number, by: string } }[]
-  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, x: number, y: number, w: number, h: number }[]
+    snapshot?: { at: number, by: string },
+    /** a kanban's column (quickdraw-tickets) */
+    kanban?: { id: string, status: 'todo' | 'doing' | 'done' } }[]
+  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, x: number, y: number, w: number, h: number,
+    /** a ticket's state: who it is for (null: any agent), who has it, and how it went */
+    ticket?: { status: TicketStatus, to: string | null, by: string | null, result?: string } }[]
   arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string }[]
 }
 

@@ -23,20 +23,22 @@ const ROOTS: Record<string, string> = {
   frames: pkgRoot('quickdraw-frames'),
   markdown: pkgRoot('quickdraw-markdown'),
   embed: pkgRoot('quickdraw-embed'),
+  tickets: pkgRoot('quickdraw-tickets'),
 }
 const TYPES: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/core/src/quickdraw.css">
 <style>html,body{margin:0;width:100%;height:100%}#b{position:fixed;inset:0}</style>
-<script type="importmap">{ "imports": { "@quickdrawjs/core": "/core/src/index.js" } }</script>
+<script type="importmap">{ "imports": { "@quickdrawjs/core": "/core/src/index.js", "quickdraw-frames": "/frames/src/index.js" } }</script>
 </head><body><div id="b"></div><script type="module">
 import { createQuickdraw } from '@quickdrawjs/core'
 import { registerMarkdown } from '/markdown/src/index.js'
 import { registerEmbed } from '/embed/src/index.js'
+import { registerTicket } from '/tickets/src/index.js'
 import { exportFrame } from '/frames/src/index.js'
 import { assetImage } from '/core/src/shapes.js'
-registerMarkdown(); registerEmbed() // embeds draw as their placeholders: no iframes here
+registerMarkdown(); registerEmbed(); registerTicket() // embeds draw as their placeholders: no iframes here
 const { editor } = createQuickdraw({ container: document.getElementById('b'), watermark: false })
 window.render = async ({ records, frame, ids, background, scale, theme }) => {
   editor.store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })
