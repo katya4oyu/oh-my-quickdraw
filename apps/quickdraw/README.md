@@ -139,6 +139,10 @@ Agents learn the commands from the [Agent Skill](../../skills/quickdraw/SKILL.md
 
 A board from the old example server (`examples/quickdraw-yjs/board.sqlite`) carries over: copy the file to `~/.quickdraw/board.sqlite`. The next `quickdraw serve` takes it in as a board called "Board" and renames the file to `board.sqlite.imported`.
 
+## Windows
+
+Meant to work, but not tried there yet (the tests run on macOS). What is done for it: programs that are `.cmd` files, as npm installs them (`codex.cmd`), start through `cmd.exe` with their arguments escaped as [cross-spawn](https://github.com/moxystudio/node-cross-spawn) does ([`src/agent/spawn.ts`](src/agent/spawn.ts)); a session talks over a named pipe and runs without a console window of its own; the skill's link for Claude Code is a junction (no privilege needed); the `quickdraw` shim is written for cmd.exe and for Git Bash (which Claude Code uses); Chrome is looked for where Windows installs it. Images are shrunk and cut by Pillow through `uv` (macOS's `sips` is not there).
+
 ## Development
 
 The Node side is TypeScript that Node runs as is (type stripping, Node ≥ 23.6): no build, and only erasable syntax (no `enum`, no parameter properties). Node does not strip types under `node_modules`, so the command runs from a checkout or `npm link`, not from a registry install. The page stays plain JavaScript that the browser loads as served.

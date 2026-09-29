@@ -9,7 +9,8 @@
 //   on the PATH; for Codex, a rule that lets `quickdraw` out of its sandbox
 //   (it reaches the board: a local socket and the board's server)
 // - this folder is on the board (quickdraw join), and leaves it when it exits
-import { spawn, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import { spawnCommand } from './spawn.ts'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,9 +93,11 @@ export function quickdrawPath(cwd: string, env = process.env): { path: string, s
   if (onPath('quickdraw', env)) return { path }
   const dir = join(cwd, '.quickdraw', 'bin')
   mkdirSync(dir, { recursive: true })
-  const shim = join(dir, process.platform === 'win32' ? 'quickdraw.cmd' : 'quickdraw')
-  if (process.platform === 'win32') writeFileSync(shim, `@"${process.execPath}" "${BIN}" %*\r\n`)
-  else { writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`); chmodSync(shim, 0o755) }
+  const shim = join(dir, 'quickdraw')
+  // for a POSIX shell (and Git Bash, which Claude Code uses on Windows); and for cmd.exe and PowerShell on Windows
+  writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`)
+  chmodSync(shim, 0o755)
+  if (process.platform === 'win32') writeFileSync(shim + '.cmd', `@"${process.execPath}" "${BIN}" %*\r\n`)
   return { path: dir + delimiter + path, shim }
 }
 
@@ -128,7 +131,7 @@ export async function runTui(tui: Tui, o: TuiOptions): Promise<number> {
   const keep = () => {}
   process.on('SIGINT', keep)
   const code = await new Promise<number>((resolve, reject) => {
-    const child = spawn(command, argsFor(tui, firstPrompt(o.name, o.url), o.args ?? []), {
+    const child = spawnCommand(command, argsFor(tui, firstPrompt(o.name, o.url), o.args ?? []), {
       cwd: o.cwd, stdio: 'inherit', env: { ...process.env, PATH: path },
     })
     child.on('error', reject)

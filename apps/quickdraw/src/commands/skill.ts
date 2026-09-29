@@ -86,7 +86,8 @@ export function installSkill(o: SkillOptions = {}) {
     mkdirSync(dirname(path), { recursive: true })
     const viaAgents = t === 'claude' && which.includes('agents')
     const to = o.link ? SKILL_SOURCE : viaAgents ? agentsDir : null
-    if (to) symlinkSync(relative(dirname(path), to), path, 'dir')
+    // a relative link (it commits as it is); on Windows a junction, which needs no privilege but an absolute path
+    if (to) symlinkSync(process.platform === 'win32' ? to : relative(dirname(path), to), path, process.platform === 'win32' ? 'junction' : 'dir')
     else cpSync(SKILL_SOURCE, path, { recursive: true })
     done.push({ for: WHO[t], path, ...(to ? { link: to } : {}) })
   }

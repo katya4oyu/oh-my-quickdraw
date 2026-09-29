@@ -224,7 +224,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
 
   // ---- the socket ----
   const socket = socketPath(cwd)
-  rmSync(socket, { force: true }) // left by a session that did not end well
+  if (process.platform !== 'win32') rmSync(socket, { force: true }) // left by a session that did not end well (a Windows pipe goes with its process)
   let busy = 0
   let idleTimer: ReturnType<typeof setTimeout> | undefined
   const idleFrom = () => { clearTimeout(idleTimer); if (!busy) idleTimer = setTimeout(() => void close(), idle * 60_000) }
@@ -284,7 +284,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     offTickets()
     for (const fn of [...wake]) fn()
     server.close()
-    rmSync(socket, { force: true })
+    if (process.platform !== 'win32') rmSync(socket, { force: true })
     rmSync(sessionFile(cwd), { force: true })
     await agent.close().catch(() => {})
     ended!()

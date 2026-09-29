@@ -9,7 +9,8 @@
 // (steering the turn if one is running). Codex's approval requests go to the
 // panel and wait for a person. A voice conversation (./voice.ts) is a request
 // too, on a thread of its own.
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess } from 'node:child_process'
+import { spawnCommand } from './spawn.ts'
 import { createInterface } from 'node:readline'
 import type { AgentLimit, AgentRequest } from 'quickdraw-agent'
 import type { Activity, BoardAgent } from './board-agent.ts'
@@ -30,7 +31,7 @@ export interface AppServer {
 
 /** `codex app-server` (or `command`, for tests) as a JSON-RPC connection over stdio */
 export function startAppServer(cwd: string, command = ['codex', 'app-server']): AppServer {
-  const child: ChildProcess = spawn(command[0], command.slice(1), { cwd, stdio: ['pipe', 'pipe', 'inherit'] })
+  const child: ChildProcess = spawnCommand(command[0], command.slice(1), { cwd, stdio: ['pipe', 'pipe', 'inherit'] }) // codex.cmd on Windows too
   let nextId = 1
   const pending = new Map<number, { ok: (v: Json) => void, fail: (e: Error) => void }>()
   const onNote = new Set<(method: string, params: Json) => void>()

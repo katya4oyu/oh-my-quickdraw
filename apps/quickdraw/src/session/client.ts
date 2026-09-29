@@ -94,7 +94,7 @@ export async function joinSession(url: string, { name = 'Agent', idle, remote = 
   if (!existsSync(join(cwd, '.quickdraw', '.gitignore'))) writeFileSync(join(cwd, '.quickdraw', '.gitignore'), '*\n')
   const log = openSync(join(cwd, '.quickdraw', 'session.log'), 'a')
   const child = spawn(process.execPath, [BIN, 'session', '--board', url, '--name', name, ...(idle ? ['--idle', String(idle)] : []), ...(remote ? ['--allow-remote'] : [])], {
-    cwd, detached: true, stdio: ['ignore', 'pipe', log], env: process.env,
+    cwd, detached: true, stdio: ['ignore', 'pipe', log], env: process.env, windowsHide: true, // no console window of its own on Windows
   })
   // its first line says it is on the board (or why not); after that it is on its own
   const first = await new Promise<string>((resolve, reject) => {
