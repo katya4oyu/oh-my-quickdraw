@@ -16,6 +16,15 @@ import { linkPreview, serverOfBoard } from '../board/link-preview.ts'
 
 export const BOARD_USAGE = `Board commands: [--board ID | --file board.json] [--server URL] [--name Agent]
 
+The skill (so agents on this machine know this command)
+  skill install [--project] [--for agents,claude] [--link]
+                                          puts the quickdraw skill where agents look: ~/.agents/skills (Codex, pi
+                                          and other Agent Skills agents) and ~/.claude/skills (Claude Code, a link
+                                          to it); --project: in this project's .agents/ and .claude/ instead, at
+                                          the root of its git repository (to commit, for everyone's agents).
+                                          A copy (install again after updating), or --link: a link to this checkout
+  skill status | uninstall [--project]    where it is installed and whether it is up to date; or removes it
+
 Boards
   boards                                  the boards on the server, oldest first
   new [TITLE]                             a new board; prints its id and page URL
@@ -161,13 +170,14 @@ const OPTIONS = {
   cols: { type: 'string' }, link: { type: 'boolean' }, title: { type: 'string' }, 'html-file': { type: 'string' },
   width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
   frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
+  project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -202,6 +212,15 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   if (!cmd || o.help || cmd === 'help') return out(BOARD_USAGE)
 
   const server = serverOf(o.server)
+  if (cmd === 'skill') {
+    const { installSkill, skillStatus, uninstallSkill } = await import('./skill.ts')
+    const opts = { project: o.project, for: o.for, link: o.link, force: o.force }
+    const sub = args[0] ?? 'status'
+    if (sub === 'install') return out(JSON.stringify(installSkill(opts), null, 2))
+    if (sub === 'status') return out(JSON.stringify(skillStatus(opts), null, 2))
+    if (sub === 'uninstall') return out(JSON.stringify(uninstallSkill(opts), null, 2))
+    throw new Error(`unknown "skill ${sub}" (install, status, uninstall)`)
+  }
   if (cmd === 'boards') return out(JSON.stringify(await listBoards(server), null, 2))
   if (cmd === 'new') {
     const b = await createBoard(server, args.join(' ') || undefined)
