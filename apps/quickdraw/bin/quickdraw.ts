@@ -6,9 +6,12 @@ import { parseArgs } from 'node:util'
 
 const USAGE = `quickdraw <command>
 
-  serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw]
+  serve [--port 8795] [--host 127.0.0.1] [--data ~/.quickdraw] [--trust-lan-ip]
         the boards: their list (/) and pages (/b/ID), a relay per board (/ws/ID),
-        SQLite persistence (<data>/boards.sqlite), link previews (/preview)
+        SQLite persistence (<data>/boards.sqlite), link previews (/preview).
+        --trust-lan-ip (with --host 0.0.0.0): a device on the local network that
+        connects straight here is a person, known by its address, so what
+        people start on their own computers is theirs (see the README)
   agent claude|codex [--board ID|URL] [--server URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- ARGS…]
         Claude Code or Codex joins a board in its own TUI, from this folder,
         where you can talk with it too: this makes sure it reads a current
@@ -51,13 +54,14 @@ if (command === 'serve') {
       port: { type: 'string', default: process.env.PORT ?? '8795' },
       host: { type: 'string', default: '127.0.0.1' },
       data: { type: 'string', default: process.env.QUICKDRAW_DATA ?? join(homedir(), '.quickdraw') },
+      'trust-lan-ip': { type: 'boolean' },
     },
   })
   const { createQuickdrawServer } = await import('../src/serve/index.ts')
   const { importSingleBoard } = await import('../src/serve/boards.ts')
   const data = resolve(values.data)
   mkdirSync(data, { recursive: true })
-  const app = createQuickdrawServer({ dbPath: join(data, 'boards.sqlite') })
+  const app = createQuickdrawServer({ dbPath: join(data, 'boards.sqlite'), trustLanIp: values['trust-lan-ip'] === true })
   // a board from before there were several: kept as a board of its own
   const imported = importSingleBoard(app.boards, join(data, 'board.sqlite'))
   if (imported) console.log(`imported board.sqlite as the board "${imported.title}" (${imported.id})`)
