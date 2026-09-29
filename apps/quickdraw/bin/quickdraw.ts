@@ -129,8 +129,13 @@ if (command === 'serve') {
 } else {
   const { BOARD_COMMANDS, BOARD_USAGE, main } = await import('../src/commands/index.ts')
   if (command && BOARD_COMMANDS.includes(command)) {
+    // Ctrl-C ends wait and watch cleanly: they leave the board as they would
+    const stop = new AbortController()
+    process.once('SIGINT', () => stop.abort())
+    process.once('SIGTERM', () => stop.abort())
     try {
-      await main(process.argv.slice(2))
+      await main(process.argv.slice(2), undefined, { signal: stop.signal })
+      process.exit(0) // a board that stays open (wait, watch) must not keep the command alive
     } catch (e) {
       process.stderr.write(JSON.stringify({ error: (e as Error).message }) + '\n')
       process.exit(1) // a half-open board must not keep the command alive

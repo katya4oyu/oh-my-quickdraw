@@ -1,7 +1,7 @@
 // Opens a board: live through the relay of `quickdraw serve`, or from a JSON
 // file. Either way the result is a core Store bound exactly as a browser's
-// is — Yjs sync, frame rules, Markdown and embed types — so what gets written
-// behaves like any peer's edit.
+// is — Yjs sync, frame and kanban rules, Markdown, embed and ticket types —
+// so what gets written behaves like any peer's edit.
 import { readFile, writeFile } from 'node:fs/promises'
 import type { BoardRecord, Store as StoreType } from '@quickdrawjs/core'
 import { installMeasure } from 'quickdraw-agent'
@@ -13,6 +13,7 @@ const { Store } = await import('@quickdrawjs/core')
 const { bindFrames } = await import('quickdraw-frames')
 const { registerMarkdown } = await import('quickdraw-markdown')
 const { registerEmbed } = await import('quickdraw-embed')
+const { registerTicket, bindKanban } = await import('quickdraw-tickets')
 
 export interface Board {
   store: StoreType
@@ -27,6 +28,7 @@ export type BoardSource = ({ url: string, file?: undefined } | { file: string, u
 export async function openBoard({ url, file, name = 'Agent', color }: BoardSource): Promise<Board> {
   registerMarkdown()
   registerEmbed()
+  registerTicket()
   const store = new Store()
   if (url) {
     const Y = await import('yjs')
@@ -36,6 +38,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     const relay = await connectRelay(ydoc, url, { name, color })
     bindYjs(store, ydoc) // the doc already holds the board: the store loads it
     bindFrames(store)
+    bindKanban(store)
     return { store, cursor: relay.cursor, close: relay.close, relay }
   }
   if (!file) throw new Error('open a board with { url } or { file }')
@@ -45,6 +48,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     : data ? [...(data.shapes || []), ...Object.values(data.assets || {})] : [] // quickdraw-export's format
   store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })
   bindFrames(store)
+  bindKanban(store)
   return {
     store,
     cursor() {},

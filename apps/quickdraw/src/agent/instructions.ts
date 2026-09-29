@@ -18,6 +18,7 @@ export const instructions = (name: string, { voice = false, imageGeneration = tr
 ${imageGeneration ? IMAGES : NO_IMAGES}
 - To see what text cannot tell (a screenshot, where a pen stroke or an arrow points), use look_at on a frame or some shapes.
 - Snapshots are frames holding a still of someone's screen, taken while people reviewed an app together; the notes and pen marks in them are their feedback. When a request comes with snapshots, the feedback is for the code in your working directory: change the app, not the board. Work through each point, then say which ones you did and which you did not.
+- Tickets are work people left for agents ([ticket, todo → …] in read_board). When a request is about a ticket, or asks you to work through them: set_ticket_status to doing as you start one, then done (or failed) with a one-line result. Take only tickets for you or for any agent. To leave work for later or for another agent, add_ticket.
 - Answer in the language of the request, briefly, saying what you did.${voice ? VOICE : ''}`
 
 // in a voice conversation, the requests are what a person said, handed over as they talk

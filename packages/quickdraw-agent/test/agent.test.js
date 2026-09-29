@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
+import { bindKanban, createKanban, createTicket } from 'quickdraw-tickets'
 import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
@@ -284,6 +285,52 @@ describe('snapshots', () => {
     const md = boardToMarkdown(store)
     expect(md).toMatch(/## 10:32 · Ann \(snapshot of a shared screen; its notes and marks are feedback; id /)
     expect(md).toMatch(/Button is cut off/)
+  })
+})
+
+describe('tickets', () => {
+  const tool = (name) => BOARD_TOOLS.find((t) => t.name === name)
+
+  it('reads tickets with who they are for and where they stand, and a kanban\'s columns', () => {
+    const store = board()
+    const { columns } = createKanban(store, { x: 0, y: 0 })
+    const a = createTicket(store, { x: 20, y: 20, title: 'Fix login', body: 'on Safari', to: 'Codex' })
+    const b = createTicket(store, { x: 2000, y: 0, title: 'Tidy' })
+    const d = describeBoard(store)
+    expect(d.frames.find((f) => f.id === columns.doing).kanban.status).toBe('doing')
+    expect(d.items.find((it) => it.id === a)).toMatchObject({ type: 'ticket', text: 'Fix login\non Safari', frame: columns.todo, ticket: { status: 'todo', to: 'Codex', by: null } })
+    const md = boardToMarkdown(store)
+    expect(md).toMatch(/## Todo \(kanban column: todo tickets; id /)
+    expect(md).toContain(`- [ticket, todo → Codex] Fix login / on Safari (id ${a})`)
+    expect(md).toContain(`- [ticket, todo → any agent] Tidy (id ${b})`)
+  })
+
+  it('adds a ticket to the kanban\'s Todo column, and moves it on as one undo each', () => {
+    const store = board()
+    bindKanban(store)
+    const { columns } = createKanban(store, { x: 0, y: 0 })
+    const add = tool('add_ticket').run(store, { title: 'Write the README', to: 'pi' }, { name: 'Codex' })
+    const [id] = add.ids
+    expect(store.get(id)).toMatchObject({ frameId: columns.todo, agent: { name: 'Codex' }, props: { from: 'Codex', to: 'pi', status: 'todo' } })
+    const take = tool('set_ticket_status').run(store, { id, status: 'doing' }, { name: 'pi' })
+    expect(store.get(id)).toMatchObject({ frameId: columns.doing, props: { status: 'doing', by: 'pi' } })
+    const done = tool('set_ticket_status').run(store, { id, status: 'done', result: 'Written' }, { name: 'pi' })
+    expect(store.get(id)).toMatchObject({ frameId: columns.done, props: { status: 'done', by: 'pi', result: 'Written' } })
+    expect(boardToMarkdown(store)).toContain('[ticket, done, pi] Write the README — Written')
+    expect(undoDiff(store, done.diff).skipped).toEqual([])
+    expect(store.get(id)).toMatchObject({ frameId: columns.doing, props: { status: 'doing', result: null } })
+    undoDiff(store, take.diff)
+    expect(store.get(id)).toMatchObject({ frameId: columns.todo, props: { status: 'todo', by: null } })
+  })
+
+  it('puts a ticket in free space without a kanban, and refuses what is not a ticket', () => {
+    const store = board()
+    const { result: [id, note] } = applySteps(store, 'Codex', [{ do: 'ticket', title: 'Look into it' }, { do: 'note', text: 'hi' }])
+    expect(store.get(id).frameId).toBeUndefined()
+    expect(() => applySteps(store, 'Codex', [{ do: 'status', id: note, status: 'done' }])).toThrow(/is not a ticket/)
+    expect(() => applySteps(store, 'Codex', [{ do: 'status', id, status: 'later' }])).toThrow(/unknown status/)
+    applySteps(store, 'Codex', [{ do: 'update', id, text: 'Look into it now\nfirst thing' }])
+    expect(store.get(id).props).toMatchObject({ title: 'Look into it now', body: 'first thing' })
   })
 })
 

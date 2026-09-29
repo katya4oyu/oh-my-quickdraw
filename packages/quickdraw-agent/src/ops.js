@@ -8,6 +8,7 @@ import { createFrame, frameTitle, freeSpot, isFrame, renameFrame } from 'quickdr
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
 
 const GAP = 40
@@ -25,6 +26,7 @@ export function textOf(store, s) {
     case 'text': case 'note': return s.props.text
     case 'geo': return isFrame(s) ? frameTitle(store, s.id) : s.props.label
     case MARKDOWN: return s.props.md
+    case TICKET: return s.props.title + (s.props.body ? '\n' + s.props.body : '')
     case EMBED: return s.props.title || s.props.preview?.title || s.props.url || (s.props.kind === 'html' ? '(HTML)' : '')
     case 'image': return '(image)'
     case 'draw': case 'highlight': return '(drawing)'
@@ -61,6 +63,7 @@ export function describeBoard(store) {
   const frames = shapes.filter(isFrame).map((f) => ({
     id: f.id, title: frameTitle(store, f.id), ...(f.aspect ? { aspect: f.aspect } : {}), ...box(f),
     ...(typeof f.snapshot?.at === 'number' ? { snapshot: { at: f.snapshot.at, by: f.snapshot.by ?? '' } } : {}),
+    ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s)).map((s) => ({
@@ -68,6 +71,7 @@ export function describeBoard(store) {
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
     ...(s.agent ? { by: s.agent.name } : {}),
+    ...(s.type === TICKET ? { ticket: { status: s.props.status, to: s.props.to ?? null, by: s.props.by ?? null, ...(s.props.result ? { result: s.props.result } : {}) } } : {}),
   })).sort(byPosition)
   const arrows = shapes.filter(isLine).map((s) => {
     const from = shapeAt(solid, s.x, s.y), to = shapeAt(solid, s.x + s.props.dx, s.y + s.props.dy)
@@ -83,12 +87,18 @@ export function boardToMarkdown(store) {
   const line = (it) => {
     const text = String(it.text ?? '').trim()
     const tag = `[${it.type}${it.by ? `, by ${it.by}` : ''}] `
+    if (it.ticket) {
+      const t = it.ticket
+      const who = t.status === 'todo' ? ` → ${t.to ?? 'any agent'}` : t.by ? `, ${t.by}` : ''
+      return `- [ticket, ${t.status}${who}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
+    }
     if (it.type === MARKDOWN) return `- ${tag}(id ${it.id})\n` + text.split('\n').map((l) => '  > ' + l).join('\n')
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`
   }
   const out = ['# Board', '']
   for (const f of frames) {
-    const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback' : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
+    const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback'
+      : f.kanban ? `kanban column: ${f.kanban.status} tickets` : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
     out.push(`## ${f.title || 'Frame'} (${kind}; id ${f.id})`, '')
     const members = f.members.map((id) => byId.get(id)).filter(Boolean)
     out.push(...(members.length ? members.map(line) : ['- (empty)']), '')
@@ -131,6 +141,12 @@ function operations(store, name, op, { area: startArea } = {}) {
   let column = null // where this op's unplaced shapes stack: { x, y, w, count }
   let focus = null
   const area = startArea ? { ...startArea } : null
+
+  // the Todo column of the kanban highest up and furthest left, if any
+  const firstKanbanTodo = () => {
+    const first = store.shapes().filter(isColumn).sort(byPosition)[0]
+    return first ? kanbanColumn(store, first.kanban.id, 'todo') : null
+  }
 
   const need = (id) => {
     const s = store.get(id)
@@ -247,6 +263,30 @@ function operations(store, name, op, { area: startArea } = {}) {
       focus = at
       return id
     },
+    // a ticket for an agent (`to`, or any): in the frame or at the point given,
+    // else in the Todo column of the board's first kanban, else in free space
+    ticket(title, { body = '', to = null } = {}, opts = {}) {
+      const w = opts.w ?? 240
+      const what = { w, title: String(title), body: String(body ?? ''), to: to || null, from: name }
+      registerTicket()
+      const h = pageBounds({ type: TICKET, x: 0, y: 0, rot: 0, props: { ...what, status: 'todo' } }).h
+      const target = opts.inFrame ? need(opts.inFrame) : !opts.at && firstKanbanTodo()
+      const at = opts.at ?? (target && isColumn(target) ? placeInColumn(store, target.id, h) : place(w, h, opts))
+      const id = createTicket(store, { ...what, x: at.x, y: at.y })
+      store.update(id, { agent })
+      focus = at
+      return id
+    },
+    // todo | doing | done | failed; `by` who has it (doing: this agent unless
+    // said), `result` how it went. In a kanban the ticket moves column.
+    status(id, status, { by, result } = {}) {
+      const s = need(id)
+      if (s.type !== TICKET) throw new Error(`${id} (${s.type}) is not a ticket`)
+      const who = by !== undefined ? by : status === 'todo' ? undefined : s.props.by || name
+      setTicketStatus(store, id, status, { by: who, result: result ?? undefined })
+      focus = { x: store.get(id).x, y: store.get(id).y }
+      return id
+    },
     // title; aspect ('16:9'…); around: ids to enclose, or at/w/h
     frame(title = 'Frame', opts = {}) {
       const aspect = parseRatio(opts.aspect)
@@ -289,6 +329,7 @@ function operations(store, name, op, { area: startArea } = {}) {
         if (isFrame(s)) renameFrame(store, id, String(text))
         else if (s.type === 'geo') store.update(id, { props: { label: String(text) } })
         else if (s.type === MARKDOWN) store.update(id, { props: { md: String(text) } })
+        else if (s.type === TICKET) { const [title, ...rest] = String(text).split('\n'); store.update(id, { props: { title, body: rest.join('\n').trim() } }) }
         else if (s.type === 'text' || s.type === 'note') store.update(id, { props: { text: String(text) } })
         else throw new Error(`${id} (${s.type}) has no text`)
       }
@@ -450,6 +491,8 @@ export function applySteps(store, name, steps, { area } = {}) {
         case 'markdown': out = ops.markdown(s.text ?? s.md ?? '', opts(s)); break
         case 'image': out = ops.image(s.src, s.natural, opts(s)); break
         case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
+        case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
+        case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r) }); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h }); break

@@ -65,7 +65,13 @@ export const BOARD_TOOLS = [
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
   }, ['title']),
   step('add_arrow', 'arrow', 'An arrow between two shapes; it follows them when they move later.', { from: str('shape id'), to: str('shape id'), color, line: { type: 'boolean', description: 'a line, no arrowhead' } }, ['from', 'to']),
-  step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card or frame title) or the color, or a shape\'s size (`w`, `h`: rectangles, diamonds and the like, for a label that does not fit).', { id: str(), text: str(), color, w: num, h: num }, ['id']),
+  step('add_ticket', 'ticket', 'A ticket: work for an agent to take later (`to` an agent\'s name, or any agent). It goes in the Todo column of the board\'s kanban if there is one.', {
+    title: str('what to do, in a line'), body: str('details'), to: str('the agent it is for; omit for any agent'), w: num, ...placement,
+  }, ['title']),
+  step('set_ticket_status', 'status', 'Moves a ticket on: `doing` when you take it, `done` or `failed` when you finish, with `result` saying in a line what came of it (or why not). `todo` puts it back for anyone. In a kanban the ticket moves to that column.', {
+    id: str('ticket id'), status: { type: 'string', enum: ['todo', 'doing', 'done', 'failed'] }, result: str('what came of it, in a line'),
+  }, ['id', 'status']),
+  step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card, ticket or frame title) or the color, or a shape\'s size (`w`, `h`: rectangles, diamonds and the like, for a label that does not fit).', { id: str(), text: str(), color, w: num, h: num }, ['id']),
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
   step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),
@@ -73,7 +79,7 @@ export const BOARD_TOOLS = [
   {
     name: 'apply_steps',
     description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
-      + 'Each step is { do: note|text|shape|markdown|embed|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
+      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
     run(store, { steps }, { name: who = 'Agent', area } = {}) {

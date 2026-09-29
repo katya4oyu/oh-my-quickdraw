@@ -33,9 +33,10 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-embed`](packages/quickdraw-embed) | Allowed web pages and sandboxed inline HTML as live iframes; link cards with Open Graph previews | **Yes** — `registerShapeType` | — |
 | [`quickdraw-screenshare`](packages/quickdraw-screenshare) | One person shares a screen, everyone watches it live, and snapshots land on the board to write feedback on | No | `quickdraw-frames` |
 | [`quickdraw-presence`](packages/quickdraw-presence) | Who is on a board: cursors with names, colours and statuses (an agent's says what it is doing), following someone, arrows at the edge for those out of sight | No | — |
+| [`quickdraw-tickets`](packages/quickdraw-tickets) | Tickets people leave for agents, and a kanban (Todo / Doing / Done frames) that follows their status | **Yes** — `registerShapeType` | `quickdraw-frames` |
 | [`quickdraw-voice`](packages/quickdraw-voice) | Talk with an agent on a board: a microphone, a WebRTC call straight to a voice model, and a bar with what is said while it works | No | — |
 
-"Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown` and `quickdraw-embed` still load: `isMarkdownSupported()` / `isEmbedSupported()` are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.
+"Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown`, `quickdraw-embed` and `quickdraw-tickets` still load: `isMarkdownSupported()` / `isEmbedSupported()` are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.
 
 ## Examples
 
@@ -53,6 +54,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | `examples/quickdraw-toolbar` | The toolbar with two items of its own |
 | `examples/quickdraw-screenshare` | A presenter and a viewer side by side: share a tab (or a demo app), watch it live, snapshot it onto the board |
 | `examples/quickdraw-presence` | Two people side by side and an agent going from note to note: name yourself, follow someone, find them by the arrow at the edge |
+| `examples/quickdraw-tickets` | A kanban with tickets: add one from the rail, drag it between columns, and a stand-in agent that takes and finishes them |
 | `examples/quickdraw-voice` | The voice bar on a made-up call: calling, what is said as it comes, mute and hang up (no microphone or agent needed) |
 
 ## App

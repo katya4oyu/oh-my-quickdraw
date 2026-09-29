@@ -9,6 +9,8 @@ import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parse
 import { openBoard } from '../board/open.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
+import { cannotTake, nextTicket, waitFor, watchTickets } from './tickets.ts'
+const { describeTicket, listTickets } = await import('quickdraw-tickets')
 import { linkPreview, serverOfBoard } from '../board/link-preview.ts'
 
 export const BOARD_USAGE = `Board commands: [--board ID | --file board.json] [--server URL] [--name Agent]
@@ -52,6 +54,22 @@ Writing (each command is one operation, undoable as a whole)
                                           to fit inside it (the frame keeps its size)
   delete ID…                               only shapes an agent added
   apply STEPS.json                          several steps as one operation (see SKILL.md)
+
+Tickets (work people leave on the board for agents)
+  tickets [--status todo,doing,…] [--to NAME | --mine]
+                                          the tickets, oldest first, as JSON; --to: those for NAME or for
+                                          any agent; --mine: for you (--name)
+  ticket TITLE [--body TEXT] [--to NAME] [--in FRAME] [--at X,Y]
+                                          a ticket (for NAME, else any agent), in the Todo column of the
+                                          board's kanban if it has one
+  wait [--take] [--timeout SECONDS]       waits until a ticket for you (--name) or any agent is to do, and
+                                          prints it: at once if one is. --take: takes it too (if another
+                                          agent took it first, it waits for the next). Live boards only
+  take ID                                 takes a ticket: doing, and yours (--name); fails if taken
+  done ID [--result TEXT]                 closes a ticket; --result: what came of it, in a line
+  fail ID [--result TEXT]                 closes it as not done, and why
+  watch [--to NAME | --mine]              prints each change to the tickets (added, status, changed,
+                                          removed) as a line of JSON, until stopped. Live boards only
 
 History
   log                                       this board's operations, newest last
@@ -124,13 +142,18 @@ const OPTIONS = {
   cols: { type: 'string' }, link: { type: 'boolean' }, title: { type: 'string' }, 'html-file': { type: 'string' },
   width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
   frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
+  status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply']
+export const BOARD_COMMANDS = ['boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch']
 
-export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }) {
+const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// signal: stops wait and watch
+export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }, { signal }: { signal?: AbortSignal } = {}) {
   const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
   if (!cmd || o.help || cmd === 'help') return out(BOARD_USAGE)
 
@@ -155,6 +178,14 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     const color = o.color as ColorId | undefined
     const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
     let done: Operation<unknown>
+    // takes a ticket; on a live board, null when another agent's take won
+    // (the peers agree on one once each has the other's change)
+    const take = async (id: string) => {
+      const op = runOp(store, o.name, (ops) => ops.status(id, 'doing', { by: o.name }))
+      if (live) await sleep(800)
+      return (store.get(id) as { props?: { by?: string } } | undefined)?.props?.by === o.name ? op : null
+    }
+    const needsLive = () => { if (!live) throw new Error(`${cmd} needs a live board (--board), not a file`) }
     switch (cmd) {
       case 'read':
         return out(o.format === 'json' ? JSON.stringify(describeBoard(store), null, 2) : boardToMarkdown(store))
@@ -228,6 +259,41 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         done = runOp(store, o.name, (ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
       case 'delete':
         done = runOp(store, o.name, (ops) => ops.delete(args)); break
+      case 'tickets': {
+        const status = o.status?.split(',').filter(Boolean)
+        return out(JSON.stringify(listTickets(store, { status, for: o.mine ? o.name : o.to }).map(describeTicket), null, 2))
+      }
+      case 'ticket':
+        if (!args.length) throw new Error('ticket needs a title')
+        done = runOp(store, o.name, (ops) => ops.ticket(args.join(' '), { body: o.body, to: o.to }, common)); break
+      case 'take': {
+        const why = cannotTake(store, args[0], o.name)
+        if (why) throw new Error(why)
+        const took = await take(args[0])
+        if (!took) throw new Error(cannotTake(store, args[0], o.name) ?? 'taken by another agent')
+        done = took; break
+      }
+      case 'done': case 'fail':
+        done = runOp(store, o.name, (ops) => ops.status(args[0], cmd === 'done' ? 'done' : 'failed', { result: o.result })); break
+      case 'wait': {
+        needsLive()
+        board.relay!.status('waiting')
+        board.relay!.activity('waiting', 'for a ticket')
+        const until = o.timeout ? Date.now() + Number(o.timeout) * 1000 : null
+        let took = null
+        while (!took) {
+          const t = await waitFor(board, () => nextTicket(store, o.name), { timeout: until == null ? undefined : Math.max(0, until - Date.now()), signal })
+          if (!t) return out(JSON.stringify({ ticket: null, ...(signal?.aborted ? { stopped: true } : { timeout: true }) }))
+          if (!o.take) return out(JSON.stringify({ ticket: describeTicket(t) }))
+          took = await take(t.id)
+        }
+        done = took; break
+      }
+      case 'watch':
+        needsLive()
+        board.relay!.status('waiting')
+        board.relay!.activity('waiting', 'on the tickets')
+        return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
       case 'apply': {
         const steps = JSON.parse(args[0] === '-' ? await readStream(process.stdin) : await readFile(args[0], 'utf8'))
         done = applySteps(store, o.name, steps); break
@@ -239,7 +305,8 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     // show where the work happened, briefly, to anyone watching the board
     if (live && done.focus) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
     const ids = [...new Set([done.result].flat(Infinity).filter((v) => typeof v === 'string'))]
-    out(JSON.stringify({ op: done.op, ids }))
+    const ticket = TICKET_COMMANDS.has(cmd) && store.get(ids[0]) ? { ticket: describeTicket(store.get(ids[0])) } : {}
+    out(JSON.stringify({ op: done.op, ids, ...ticket }))
   } finally {
     await board.close()
   }

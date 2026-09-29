@@ -1,6 +1,6 @@
 ---
 name: quickdraw
-description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), tidy it up, act on the feedback people wrote on snapshots of a shared screen, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames or snapshots, or asks to put something on the board.
+description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), tidy it up, act on the feedback people wrote on snapshots of a shared screen, take and close the tickets people leave for agents (or wait for the next one), and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames, snapshots, tickets or kanban, or asks to put something on the board or to work through its tickets.
 ---
 
 # Quickdraw board
@@ -77,6 +77,29 @@ When people review an app together they share a screen, and snapshots of it land
 2. Look at each one: `quickdraw export --format png --frame FRAME_ID --out snap.png`, then view the PNG — it shows what a circle or an arrow points at, which text cannot.
 3. Change the code for each point, then say which points you did and which you did not (and why). Do not "answer" on the board unless asked.
 
+## Tickets: work left for agents
+
+People leave work for agents on the board as **tickets**: cards with a title (what to do), details, whom they are for (an agent's name, or any agent) and a status — `todo`, `doing`, `done` or `failed`. A board may have a **kanban**: three frames, Todo / Doing / Done; a ticket in it moves column with its status. `read` shows them as `[ticket, todo → Codex] …`.
+
+```sh
+quickdraw tickets --mine                  # tickets for you (--name) or any agent, oldest first; --status todo,doing
+quickdraw wait --take [--timeout 600]     # waits for a ticket to do (at once if there is one), takes it, prints it
+quickdraw take ID                         # takes one you chose: doing, and yours; fails if another agent has it
+quickdraw done ID --result "What came of it, in a line"
+quickdraw fail ID --result "Why not"      # could not do it: say why, so a person can help
+quickdraw ticket "Title" [--body "…"] [--to NAME]   # leave work for later, or for another agent
+quickdraw watch --mine                    # each change to the tickets as a line of JSON, until stopped
+```
+
+Working through tickets:
+
+1. `quickdraw wait --take --name YOU` (or `tickets --mine` and `take ID`). The ticket's title and body are the request, from a person; the board around it is context.
+2. Do the work — in the working directory, on the board, or both.
+3. Close it: `done ID --result "…"` (what you did, in a line), or `fail ID --result "…"` (why not). Every ticket you take gets one or the other.
+4. Asked to keep going: wait for the next one. Stop when the person says, or when `wait --timeout` prints `"ticket": null`.
+
+Take only tickets for you or for any agent. Put a ticket back for others with `apply` and `{ "do": "status", "id": ID, "status": "todo" }`.
+
 ## Frames keep their size
 
 A frame never grows by itself: its size may be the point (a 16:9 slide), and a bigger frame would cover its neighbours. Work as a person would:
@@ -105,12 +128,12 @@ Write the steps as JSON and apply them as **one** operation (one undo). Name wha
 quickdraw apply steps.json      # or: … apply - < steps.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
+Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
 
 ## Change and tidy
 
 ```sh
-quickdraw update ID --text "New text" [--color green]   # notes, text, shape labels, Markdown, frame titles
+quickdraw update ID --text "New text" [--color green]   # notes, text, shape labels, Markdown, tickets (title, then details), frame titles
 quickdraw update ID --size 240x100                     # a shape's size (a rectangle, a diamond…), for a label that does not fit
 quickdraw move ID --to X,Y        # or --by DX,DY; moving a frame moves what is in it
 quickdraw arrange ID,ID,ID --layout grid|row|column [--cols 4] [--gap 24] [--at X,Y]

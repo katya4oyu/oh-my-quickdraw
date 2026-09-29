@@ -24,6 +24,7 @@
     "quickdraw-markdown": "*",
     "quickdraw-presence": "*",
     "quickdraw-screenshare": "*",
+    "quickdraw-tickets": "*",
     "quickdraw-toolbar": "*",
     "quickdraw-voice": "*",
     "quickdraw-yjs": "*",

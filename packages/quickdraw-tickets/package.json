@@ -1,0 +1,24 @@
+{
+  "name": "quickdraw-tickets",
+  "version": "0.1.0",
+  "description": "Tickets for agents on a Quickdraw board: a card people write and agents take, and a kanban of frames that follows their status.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "quickdraw-frames": "*"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}
