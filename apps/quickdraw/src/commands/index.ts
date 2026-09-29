@@ -5,8 +5,9 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
-import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, undoDiff, type Operation } from 'quickdraw-agent'
-import { openBoard } from '../board/open.ts'
+import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
+import { openBoard, type Board } from '../board/open.ts'
+import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
 import { cannotTake, nextTicket, waitFor, watchTickets } from './tickets.ts'
@@ -80,6 +81,24 @@ Tickets (work people leave on the board for agents)
   watch [--to NAME | --mine]              prints each change to the tickets (added, status, changed,
                                           removed) as a line of JSON, until stopped. Live boards only
 
+On the board, as a participant (for an agent that has only a shell: see SKILL.md)
+  join --name NAME [--allow-remote] [--idle MINUTES]
+                                          joins the board and stays: in its AI panel, with a cursor. The commands
+                                          after it, from this directory, run as you on it; leaves after --idle
+                                          minutes (30) without one
+  next [--timeout SECONDS]                waits for what is for you and prints it: a request from the panel (with
+                                          what it is about, and what changed on the board), a person's reply,
+                                          Stop, or a ticket. A request becomes the one you work on: what you draw
+                                          goes in its thread, where people can undo it
+  say [REQ] TEXT [--progress]             a message in the request's thread (--progress: a step, as you go)
+  finish [REQ] [TEXT]                     the request is done (TEXT: what you did, in a line)
+  area W H [--title T] [--at X,Y]         marks out where you will draw for the request; what you add without a
+                                          place goes in it
+  who                                     who is on the board: people and agents, their cursors, what they look at
+  changes                                 what changed on the board since you last looked
+  leave                                   leaves the board
+  Results say what waits for you as "inbox": take it with next.
+
 History
   log                                       this board's operations, newest last
   undo [OP]                                 the last operation (or OP), where untouched since
@@ -152,19 +171,44 @@ const OPTIONS = {
   width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
   frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
   project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
+  idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** What a command runs against: an open board, and how its operations are made. */
+export interface CommandContext {
+  board: Board
+  /** the board's live URL; none for a file */
+  url?: string
+  /** what the op log files it under */
+  boardKey: string
+  /**
+   * Makes an operation: here and now by default; in a session (../session),
+   * on a copy and then put on the board a piece at a time, in the thread of the
+   * request being worked on.
+   */
+  operate<T>(make: (store: Store, where: { area?: { x: number, y: number, w: number, h: number } }) => Operation<T>): Promise<Operation<T>>
+  /** stdin's text, for `apply -` */
+  stdin(): Promise<string>
+  /** in a session: its operations show themselves as they are put, so no pause after */
+  session?: boolean
+}
+
+export const parseCommand = (argv: string[]) => {
+  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
+  return { o, cmd, args }
+}
+
 // signal: stops wait and watch
 export async function main(argv: string[], out = (s: string) => { process.stdout.write(s + '\n') }, { signal }: { signal?: AbortSignal } = {}) {
-  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
+  const { o, cmd, args } = parseCommand(argv)
   if (!cmd || o.help || cmd === 'help') return out(BOARD_USAGE)
 
   const server = serverOf(o.server)
@@ -186,23 +230,51 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   const env = process.env.QUICKDRAW_BOARD
   const envFile = env && !/^(wss?|https?):\/\//.test(env) && /[./\\]/.test(env) ? env : undefined
   const file = o.file ?? (o.board ? undefined : envFile)
+
+  // joined (quickdraw join): the session in this directory runs it, on its board
+  if (cmd === 'join') {
+    if (file) throw new Error('join needs a live board (--board), not a file')
+    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name: o.name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'] })))
+  }
+  if (!file) {
+    const s = await findSession(process.cwd())
+    if (s && (!o.board || s.url.includes(o.board) || o.board.includes(s.url.split('/').pop()!))) return viaSession(s, argv, out, { signal })
+  }
+  if (SESSION_COMMANDS.has(cmd)) throw new Error(`${cmd} works once you are on a board: quickdraw join --board ID --name NAME first`)
+
   const url = file ? undefined : await resolveBoard(o.board ?? env, server)
   const board = await openBoard(url ? { url, name: o.name } : { file: file!, name: o.name })
-  const live = !!url
-  const boardKey = url ?? resolve(file!)
   try {
+    await runCommand({
+      board, url, boardKey: url ?? resolve(file!),
+      operate: async (make) => make(board.store, {}),
+      stdin: () => readStream(process.stdin),
+    }, argv, out, { signal })
+  } finally {
+    await board.close()
+  }
+}
+
+/** Runs a board command against an open board (see CommandContext). */
+export async function runCommand(ctx: CommandContext, argv: string[], out: (s: string) => void, { signal }: { signal?: AbortSignal } = {}) {
+  const { o, cmd, args } = parseCommand(argv)
+  const { board, url, boardKey, operate } = ctx
+  const live = !!url
+  {
     const { store } = board
     const size = pair(o.size, 'size')
     // strings from the command line: the operations check them
     const color = o.color as ColorId | undefined
     const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
     let done: Operation<unknown>
+    // the operations of a command, in a work area when it has one
+    const op = <T>(fn: (ops: Operations) => T) => operate((s, where) => runOp(s, o.name, fn, where.area ? { area: where.area } : {}))
     // takes a ticket; on a live board, null when another agent's take won
     // (the peers agree on one once each has the other's change)
     const take = async (id: string) => {
-      const op = runOp(store, o.name, (ops) => ops.status(id, 'doing', { by: o.name }))
+      const took = await op((ops) => ops.status(id, 'doing', { by: o.name }))
       if (live) await sleep(800)
-      return (store.get(id) as { props?: { by?: string } } | undefined)?.props?.by === o.name ? op : null
+      return (store.get(id) as { props?: { by?: string } } | undefined)?.props?.by === o.name ? took : null
     }
     const needsLive = () => { if (!live) throw new Error(`${cmd} needs a live board (--board), not a file`) }
     switch (cmd) {
@@ -238,12 +310,12 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         return out(JSON.stringify({ undone: entry.op, ...r }))
       }
       case 'note': case 'text':
-        done = runOp(store, o.name, (ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
+        done = await op((ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
       case 'shape':
-        done = runOp(store, o.name, (ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
+        done = await op((ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
-        done = runOp(store, o.name, (ops) => ops.markdown(md, common)); break
+        done = await op((ops) => ops.markdown(md, common)); break
       }
       case 'embed': {
         const html = o['html-file'] ? await readFile(o['html-file'], 'utf8') : undefined
@@ -251,7 +323,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         if (html == null && !link) throw new Error('embed needs a URL, or --html-file PAGE.html')
         // a card's title and picture, fetched by the server as the page does; a file board has none
         const preview = html == null && url ? await linkPreview(serverOfBoard(url), link) : undefined
-        done = runOp(store, o.name, (ops) => ops.embed({ url: link, html, link: o.link, title: o.title, preview }, common)); break
+        done = await op((ops) => ops.embed({ url: link, html, link: o.link, title: o.title, preview }, common)); break
       }
       case 'image': {
         if (!args[0]) throw new Error('image needs a file')
@@ -260,31 +332,31 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
           w: o.width ? Number(o.width) : undefined, at: point(o.at), in: o.in, frame: o.frame,
           split: grid && { cols: grid[0], rows: grid[1], inset: o.inset ? Number(o.inset) : undefined },
         }, [process.cwd()])
-        done = applySteps(store, o.name, steps as never); break
+        done = await operate((s, where) => applySteps(s, o.name, steps as never, where.area ? { area: where.area } : {})); break
       }
       case 'frame':
-        done = runOp(store, o.name, (ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
+        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
       case 'arrow':
-        done = runOp(store, o.name, (ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
+        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
       case 'update':
-        done = runOp(store, o.name, (ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}) })); break
+        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}) })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
-        done = runOp(store, o.name, (ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
+        done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
       }
       case 'arrange':
-        done = runOp(store, o.name, (ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
+        done = await op((ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
       case 'fit':
-        done = runOp(store, o.name, (ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
+        done = await op((ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
       case 'delete':
-        done = runOp(store, o.name, (ops) => ops.delete(args)); break
+        done = await op((ops) => ops.delete(args)); break
       case 'tickets': {
         const status = o.status?.split(',').filter(Boolean)
         return out(JSON.stringify(listTickets(store, { status, for: o.mine ? o.name : o.to }).map(describeTicket), null, 2))
       }
       case 'ticket':
         if (!args.length) throw new Error('ticket needs a title')
-        done = runOp(store, o.name, (ops) => ops.ticket(args.join(' '), { body: o.body, to: o.to }, common)); break
+        done = await op((ops) => ops.ticket(args.join(' '), { body: o.body, to: o.to }, common)); break
       case 'take': {
         const why = cannotTake(store, args[0], o.name)
         if (why) throw new Error(why)
@@ -293,7 +365,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         done = took; break
       }
       case 'done': case 'fail':
-        done = runOp(store, o.name, (ops) => ops.status(args[0], cmd === 'done' ? 'done' : 'failed', { result: o.result })); break
+        done = await op((ops) => ops.status(args[0], cmd === 'done' ? 'done' : 'failed', { result: o.result })); break
       case 'wait': {
         needsLive()
         board.relay!.status('waiting')
@@ -314,19 +386,17 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
         board.relay!.activity('waiting', 'on the tickets')
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
       case 'apply': {
-        const steps = JSON.parse(args[0] === '-' ? await readStream(process.stdin) : await readFile(args[0], 'utf8'))
-        done = applySteps(store, o.name, steps); break
+        const steps = JSON.parse(args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8'))
+        done = await operate((s, where) => applySteps(s, o.name, steps, where.area ? { area: where.area } : {})); break
       }
       default:
         throw new Error(`unknown command "${cmd}" (see --help)`)
     }
     await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: [cmd, ...args].join(' ').split('\n')[0].slice(0, 120), diff: done.diff })
     // show where the work happened, briefly, to anyone watching the board
-    if (live && done.focus) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
+    if (live && done.focus && !ctx.session) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
     const ids = [...new Set([done.result].flat(Infinity).filter((v) => typeof v === 'string'))]
     const ticket = TICKET_COMMANDS.has(cmd) && store.get(ids[0]) ? { ticket: describeTicket(store.get(ids[0])) } : {}
     out(JSON.stringify({ op: done.op, ids, ...ticket }))
-  } finally {
-    await board.close()
   }
 }

@@ -108,7 +108,7 @@
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
       // an agent takes requests from the computer running quickdraw serve only, unless started with --allow-remote
       cannotAsk: (agent) => (agent.remote || here ? undefined : `${agent.name} takes requests only on the computer running quickdraw serve (or start it with --allow-remote).`),
-      join: () => ({ text: `Run this in the folder the agent should work in (agent pi instead of agent codex for pi${here ? '' : '; --allow-remote: so you can ask it from here'}):`, command: agentCommand() }),
+      join: () => ({ text: `Run this in the folder the agent should work in (agent pi instead of agent codex for pi${here ? '' : '; --allow-remote: so you can ask it from here'}). Another agent with the quickdraw skill (Claude Code…) joins with quickdraw join --board ${boardId} --name NAME:`, command: agentCommand() }),
     } })
     // `quickdraw agent codex` for this board: its id where that is enough (the
     // default server), else its page URL, which says the server too; from
