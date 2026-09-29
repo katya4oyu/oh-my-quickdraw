@@ -9,7 +9,7 @@
 // { error }. Closing the socket stops a command that waits (next, wait, watch).
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -90,6 +90,8 @@ export async function joinSession(url: string, { name = 'Agent', idle, remote = 
     throw new Error(`already on ${had.url} as ${had.name} from this directory: quickdraw leave first`)
   }
   mkdirSync(join(cwd, '.quickdraw'), { recursive: true })
+  // what quickdraw keeps here (the session, its log, the op log) is this computer's, not the project's
+  if (!existsSync(join(cwd, '.quickdraw', '.gitignore'))) writeFileSync(join(cwd, '.quickdraw', '.gitignore'), '*\n')
   const log = openSync(join(cwd, '.quickdraw', 'session.log'), 'a')
   const child = spawn(process.execPath, [BIN, 'session', '--board', url, '--name', name, ...(idle ? ['--idle', String(idle)] : []), ...(remote ? ['--allow-remote'] : [])], {
     cwd, detached: true, stdio: ['ignore', 'pipe', log], env: process.env,
