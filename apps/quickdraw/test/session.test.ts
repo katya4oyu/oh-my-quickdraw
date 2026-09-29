@@ -130,6 +130,31 @@ describe('a session: an agent with a shell, on the board', () => {
     expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
   }, 20_000)
 
+  it('hears of a ticket again when a person gives it to it, and is working while it holds one', async () => {
+    const { url, page, run } = await setup()
+    const [left] = await run('ticket', 'Tidy the board') // left for any agent, by itself: not news to it
+    expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
+    const person = await openBoard({ url, name: 'Ann' })
+    person.store.update(left.ids[0], { props: { to: 'Claude' } } as never) // Ann gives it to Claude
+    const [got] = await run('next', '--timeout', '5')
+    expect(got).toMatchObject({ type: 'ticket', ticket: { id: left.ids[0], to: 'Claude' } })
+    await run('take', left.ids[0])
+    expect((await page.take((m) => m.kind === 'agents' && m.agents[0]?.status === 'working')).agents[0].status).toBe('working')
+    await run('done', left.ids[0], '--result', 'Tidied')
+    expect((await page.take((m) => m.kind === 'agents' && m.agents[0]?.status === 'idle')).agents[0].status).toBe('idle')
+    await person.close()
+  }, 20_000)
+
+  it('moves a frame with what is in it', async () => {
+    const { run } = await setup()
+    const [f] = await run('frame', 'Plan', '--at', '0,0', '--size', '600x400')
+    const [n] = await run('note', 'one', '--in', f.ids[0])
+    await run('move', f.ids[0], '--by', '700,0')
+    const d = (await run('read', '--format', 'json'))[0]
+    expect(d.frames[0]).toMatchObject({ x: 700, members: [n.ids[0]] })
+    expect(d.items.find((i: any) => i.id === n.ids[0]).x).toBe(724)
+  }, 20_000)
+
   it('leaves when told, or when left idle; then the commands go back to working alone', async () => {
     const { page, run, dir } = await setup(0.005) // 0.3 seconds
     await new Promise((r) => setTimeout(r, 900))

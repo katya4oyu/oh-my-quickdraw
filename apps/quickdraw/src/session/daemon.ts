@@ -57,6 +57,12 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
   const open = new Set<string>() // requests taken and not finished
   let current: string | null = null // the one its commands work on
   let waiting = 0 // `next`s waiting now
+  // working while it has a request it took and did not finish, or a ticket it took and did not close
+  const holding = () => open.size > 0 || listTickets(store, { status: 'doing' }).some((t: { props: { by?: string } }) => t.props.by === name)
+  const settle = (justDone = false) => {
+    if (holding()) { agent.status('working'); agent.activity('thinking') } // between its commands, it is at work
+    else { agent.status('idle'); agent.activity(justDone ? 'done' : null) }
+  }
   const push = (item: Item) => { inbox.push(item); for (const fn of [...wake]) fn() }
   agent.onRequest = (request) => {
     requests.set(request.id, request)
@@ -65,9 +71,17 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
   }
   agent.onReply = (requestId, text) => push({ type: 'reply', requestId, text })
   agent.onStop = (requestId) => push({ type: 'stop', requestId })
-  // tickets for it (or any agent) still to do, each once
+  // tickets for it (or any agent) still to do: each once for whom it is for, so one
+  // given to it later is news again; not one it left for any agent itself
   const told = new Set<string>()
-  const tickets = () => { for (const t of listTickets(store, { status: 'todo', for: name })) if (!told.has(t.id)) { told.add(t.id); push({ type: 'ticket', id: t.id }) } }
+  const tickets = () => {
+    for (const t of listTickets(store, { status: 'todo', for: name })) {
+      const p = (t as unknown as { props: { to?: string | null, from?: string | null } }).props
+      if (!p.to && p.from === name) continue
+      const key = `${t.id}:${p.to ?? ''}`
+      if (!told.has(key)) { told.add(key); push({ type: 'ticket', id: t.id }) }
+    }
+  }
   tickets()
   const offTickets = store.listen(tickets)
 
@@ -135,7 +149,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       const left = until - Date.now()
       if (left <= 0) return { type: null, timeout: true }
       waiting++
-      if (!open.size) agent.status('idle')
+      if (!holding()) agent.status('idle')
       await new Promise<void>((resolve) => {
         const t = setTimeout(done, Math.min(left, 1000)) // looks at `closed` now and then
         function done() { clearTimeout(t); wake.delete(done); resolve() }
@@ -164,7 +178,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     agent.emit(requestId, { type: 'done', ...(text ? { text } : {}) })
     open.delete(requestId)
     if (current === requestId) current = [...open].at(-1) ?? null
-    if (!open.size) { agent.status('idle'); agent.activity('done') }
+    settle(true)
   }
 
   // ---- commands ----
@@ -218,7 +232,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
         operate: async (make) => { const done = await agent.operate(request, make); saw(done.diff); return done },
         stdin: async () => stdin ?? '',
       }, [...argv, '--name', name], out, { signal })
-    } finally { agent.activity(open.size ? 'thinking' : null) }
+    } finally { settle(cmd === 'done' || cmd === 'fail') }
     if (people) out(JSON.stringify({ people }))
   }
 
