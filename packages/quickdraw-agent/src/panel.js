@@ -17,10 +17,13 @@ export const feedbackToSend = (items, skipped = new Set()) => (items || []).filt
 /** The model and effort a request to `agent` runs on: the person's choice where the agent offers it, else its defaults. */
 export function agentOptions(agent, choice = {}) {
   const models = agent?.models
-  if (!models?.length) return undefined
+  // the voice it talks with, for an agent that talks and offers voices
+  const voices = agent?.voices
+  const voice = voices?.length ? { voice: voices.includes(choice.voice) ? choice.voice : voices.includes(agent.defaultVoice) ? agent.defaultVoice : voices[0] } : {}
+  if (!models?.length) return voices?.length ? voice : undefined
   const model = models.find((m) => m.id === choice.model) ?? models.find((m) => m.id === agent.model) ?? models[0]
   const fallback = model.id === agent.model && model.efforts.includes(agent.effort) ? agent.effort : model.effort
-  return { model: model.id, effort: model.efforts.includes(choice.effort) ? choice.effort : fallback }
+  return { model: model.id, effort: model.efforts.includes(choice.effort) ? choice.effort : fallback, ...voice }
 }
 
 /** "9% · resets in 6d": how much of a usage limit an agent has used, and when it starts again. */
@@ -320,8 +323,11 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   modelPick.setAttribute('aria-label', 'Model')
   const effortPick = el('select')
   effortPick.setAttribute('aria-label', 'Effort')
+  const voicePick = el('select') // the voice it talks with, when you talk with it (the microphone)
+  voicePick.setAttribute('aria-label', 'Voice')
+  voicePick.title = 'The voice it talks with (the microphone)'
   const usage = el('span', 'qda-muted') // the chosen agent's most-used limit
-  opts.append(picker, modelPick, effortPick, usage)
+  opts.append(picker, modelPick, effortPick, voicePick, usage)
   const send = iconButton(ICONS.send, 'Send', 'qda-send')
   send.type = 'submit'
   const mark = iconButton(ICONS.area, 'Mark out where it should work', 'qda-mark')
@@ -539,8 +545,10 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     // the model and effort, for an agent that offers them
     const agent = agents.find((a) => a.id === picker.value) ?? agents[0]
     const chosen = agentOptions(agent, choices[agent?.id])
-    modelPick.hidden = effortPick.hidden = inThread || !chosen
-    if (chosen) {
+    modelPick.hidden = effortPick.hidden = inThread || !chosen?.model
+    voicePick.hidden = inThread || !chosen?.voice
+    if (chosen?.voice) fill(voicePick, agent.voices.map((v) => [v, `Voice: ${v}`]), chosen.voice)
+    if (chosen?.model) {
       const model = agent.models.find((m) => m.id === chosen.model)
       fill(modelPick, agent.models.map((m) => [m.id, m.name]), chosen.model)
       fill(effortPick, model.efforts.map((e) => [e, e]), chosen.effort)
@@ -553,7 +561,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       usage.dataset.level = limitLevel(top)
       usage.title = [agent.account, ...agent.limits.map((l) => `${l.name}: ${limitText(l)}`)].filter(Boolean).join('\n')
     }
-    opts.hidden = picker.hidden && modelPick.hidden && usage.hidden
+    opts.hidden = picker.hidden && modelPick.hidden && voicePick.hidden && usage.hidden
     // feedback (e.g. snapshots written on) that the next request carries, each set aside with its ×
     const feedback = inThread ? [] : (host.feedback?.() || [])
     for (const id of skipped) if (!feedback.some((f) => f.id === id)) skipped.delete(id)
@@ -882,6 +890,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   picker.addEventListener('change', renderFoot)
   modelPick.addEventListener('change', () => choose(currentAgent(), { model: modelPick.value }))
   effortPick.addEventListener('change', () => choose(currentAgent(), { effort: effortPick.value }))
+  voicePick.addEventListener('change', () => choose(currentAgent(), { voice: voicePick.value }))
   chipClear.addEventListener('click', () => { pendingShapeIds = null; renderFoot() })
   areaClear.addEventListener('click', () => { pendingArea = null; renderFoot(); renderMarked() })
   mark.addEventListener('click', pickArea)
@@ -910,6 +919,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   renderPins()
 
   return {
+    /** what a request to an agent goes with, as chosen here: its model, effort and voice */
+    optionsFor,
     askSelection,
     openForSelection,
     askText,

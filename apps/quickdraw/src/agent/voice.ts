@@ -18,8 +18,17 @@ type Json = any
 export interface VoiceOptions {
   /** the voice model (VOICE_MODEL when not given) */
   model?: string
-  /** its voice (`codex app-server`: thread/realtime/listVoices) */
+  /** its voice unless a person picks another (`codex app-server`: thread/realtime/listVoices) */
   voice?: string
+  /** the voices a person may pick from (the board's AI panel): a request to talk says which in `options.voice` */
+  voices?: string[]
+}
+
+/** The voices app-server offers for the voice model (its v2 list, which the realtime conversation takes), and its default; null when it offers none. */
+export async function realtimeVoices(server: AppServer): Promise<{ voices: string[], default?: string } | null> {
+  const r = await server.request('thread/realtime/listVoices', {}).catch(() => null)
+  const voices = r?.voices?.v2
+  return Array.isArray(voices) && voices.length ? { voices, ...(voices.includes(r.voices.defaultV2) ? { default: r.voices.defaultV2 } : {}) } : null
 }
 
 export const VOICE_MODEL = 'gpt-live-1-codex'
@@ -33,7 +42,7 @@ function about(request: AgentRequest): string {
 }
 
 /** Lets people talk with the agent: set up after runCodex, on the same app-server. */
-export function runVoice(server: AppServer, agent: BoardAgent, codex: Codex, { model = VOICE_MODEL, voice }: VoiceOptions = {}) {
+export function runVoice(server: AppServer, agent: BoardAgent, codex: Codex, { model = VOICE_MODEL, voice, voices = [] }: VoiceOptions = {}) {
   const threadOf = new Map<string, string>() // request -> Codex thread, while the conversation lasts
   const ended = (requestId: string, reason: string | null) => {
     if (!threadOf.delete(requestId)) return
@@ -58,6 +67,8 @@ export function runVoice(server: AppServer, agent: BoardAgent, codex: Codex, { m
     } else if (method === 'thread/realtime/closed') ended(requestId, p.reason ?? null)
   })
 
+  // the voice the person picked in the panel, if it is one on offer; else the agent's own
+  const voiceFor = (request: AgentRequest) => (request.options?.voice && voices.includes(request.options.voice) ? request.options.voice : voice)
   agent.onVoice = async (request: AgentRequest, sdp: string) => {
     try {
       agent.lookAt(request)
@@ -69,7 +80,7 @@ export function runVoice(server: AppServer, agent: BoardAgent, codex: Codex, { m
         transport: { type: 'webrtc', sdp },
         version: 'v3',
         model,
-        ...(voice ? { voice } : {}),
+        ...(voiceFor(request) ? { voice: voiceFor(request) } : {}),
         includeStartupContext: false, // the board is what matters, and the thread has its tools
         ...(about(request) ? { realtimeStartInstructions: about(request) } : {}),
       } satisfies Json)

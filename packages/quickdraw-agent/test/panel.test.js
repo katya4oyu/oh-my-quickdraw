@@ -30,6 +30,15 @@ describe('agent panel request model', () => {
     expect(buildAgentRequest({ id: 'r', to: 'codex', text: 'x', editor, options: { model: 'a', effort: 'low' } }).options).toEqual({ model: 'a', effort: 'low' })
   })
 
+  it('talks in the voice picked, falling back to the agent\'s own and then its first', () => {
+    const agent = { id: 'codex', name: 'Codex', knows: [], status: 'idle', voice: true, voices: ['alloy', 'marin', 'cedar'], defaultVoice: 'marin' }
+    expect(agentOptions(agent)).toEqual({ voice: 'marin' }) // no models: only the voice
+    expect(agentOptions(agent, { voice: 'cedar' })).toEqual({ voice: 'cedar' })
+    expect(agentOptions(agent, { voice: 'gone' })).toEqual({ voice: 'marin' })
+    expect(agentOptions({ ...agent, defaultVoice: undefined })).toEqual({ voice: 'alloy' })
+    expect(agentOptions({ ...agent, models: [{ id: 'a', name: 'A', efforts: ['low'], effort: 'low' }] }, { voice: 'cedar' })).toEqual({ model: 'a', effort: 'low', voice: 'cedar' })
+  })
+
   it('sends the feedback the host offers, less what was set aside', () => {
     const items = [{ id: 'f1', label: '10:32', count: 2 }, { id: 'f2', label: '10:40', count: 1 }]
     expect(feedbackToSend(items)).toEqual(['f1', 'f2'])
