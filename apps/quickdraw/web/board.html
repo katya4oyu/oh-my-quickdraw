@@ -107,7 +107,7 @@
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
       // an agent is its owner's (it runs on their account): the server says whom it takes requests from
       cannotAsk: (agent) => (agent.canAsk === false ? `${agent.name} runs on ${agent.owner?.name ? agent.owner.name + '\'s' : 'someone else\'s'} account: only ${agent.owner?.name ?? 'they'} can ask it, unless they open it to you.` : undefined),
-      join: () => ({ text: `Bring your own: run this on your computer, in the folder the agent should work in (agent pi for pi; an agent with the quickdraw skill, like Claude Code: quickdraw join --board ${boardRef()} --name NAME). Only you can ask it, unless you open it to others.`, command: agentCommand() }),
+      join: () => ({ text: `Bring your own: run this on your computer, in the folder the agent should work in (agent pi for pi, agent claude for Claude Code; another agent with the quickdraw skill: quickdraw join --board ${boardRef()} --name NAME). Only you can ask it, unless you open it to others.`, command: agentCommand() }),
       // its owner opens an agent to everyone, or to people here (their presence ids), or closes it
       share: (agentId, withWhom) => sendAgent({ kind: 'share', agent: agentId, with: withWhom }),
       people: () => presence.peers().filter((p) => !p.agent && p.name).map((p) => ({ id: p.id, name: p.name })),

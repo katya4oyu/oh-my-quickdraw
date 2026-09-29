@@ -23,6 +23,13 @@ const USAGE = `quickdraw <command>
         People can also talk with it (the microphone in the board's AI tools):
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
         hands the work to Codex; --voice picks its voice, --no-voice turns it off
+  agent claude [--board ID|URL] [--server URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- CLAUDE ARGS…]
+        Claude Code joins a board in its own TUI, from this folder: this
+        makes sure Claude Code reads a current quickdraw skill (installing it
+        in this repository, or for you with --global, when it has none) and can
+        run quickdraw, joins the board (quickdraw join), starts claude telling
+        it to take the board's requests, and leaves the board when it exits.
+        What follows -- goes to claude (--model opus, say)
   agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
            [--no-approval]
         pi joins a board the same way, with your pi settings and sign-ins; the
@@ -70,6 +77,28 @@ if (command === 'serve') {
     process.stdout.write(JSON.stringify({ error: (e as Error).message }) + '\n')
     process.exit(1)
   }
+} else if (command === 'agent' && rest[0] === 'claude') {
+  // Claude Code in its own TUI, with the skill and the board made ready (src/agent/claude.ts)
+  const cut = rest.indexOf('--')
+  const { values } = parseArgs({
+    args: rest.slice(1, cut < 0 ? undefined : cut),
+    options: { board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, global: { type: 'boolean' } },
+  })
+  const { basename } = await import('node:path')
+  const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
+  const { runClaude } = await import('../src/agent/claude.ts')
+  try {
+    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, 'quickdraw agent claude') : undefined
+    const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
+    process.exit(await runClaude({
+      url, name: values.name ?? `Claude · ${basename(process.cwd())}`, cwd: process.cwd(),
+      remote: values['allow-remote'] === true, idle: values.idle ? Number(values.idle) : undefined, global: values.global === true,
+      args: cut < 0 ? [] : rest.slice(cut + 1),
+    }))
+  } catch (e) {
+    process.stderr.write((e as Error).message + '\n')
+    process.exit(1)
+  }
 } else if (command === 'agent') {
   const { values, positionals } = parseArgs({
     args: rest,
@@ -82,7 +111,7 @@ if (command === 'serve') {
   })
   const runtime = positionals[0]
   if (runtime !== 'codex' && runtime !== 'pi') {
-    process.stderr.write('usage: quickdraw agent codex|pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
+    process.stderr.write('usage: quickdraw agent codex|pi|claude [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
       + '         codex: [--voice NAME] [--voice-model M] [--no-voice]   pi: [--no-approval]\n')
     process.exit(1)
   }

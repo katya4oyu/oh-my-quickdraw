@@ -83,6 +83,14 @@ Codex joins the board as a participant with a cursor, and the board's AI panel s
   <img src="docs/voice.png" alt="A board with three frames — plan, doing, done — with two notes each, made while talking; the voice bar at the top says Talking with Codex · work, and the AI panel lists the Voice conversation" width="640">
 - Ctrl-C leaves the board; so does losing Codex or the board. What it was still doing ends with an error in the thread.
 
+## `quickdraw agent claude`
+
+`quickdraw agent claude [--board ID|URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- CLAUDE ARGS…]`, from the folder Claude Code should work in: Claude Code on the board in its own TUI, where you can talk with it too. It works the board as any agent with the [skill](../../skills/quickdraw/SKILL.md) does (`quickdraw join`, `next`, `finish`…); this gets that ready first:
+
+- **The skill**: Claude Code reads yours (`~/.claude/skills/quickdraw`) before the repository's. If yours is there, it is kept up to date; else the repository's is installed or updated, at the root of the git repository (`--global`: for you instead), to commit for everyone's agents.
+- **`quickdraw` for Claude's shell**: when it is not on the PATH, a shim in `.quickdraw/bin` for this checkout (`npm link -w apps/quickdraw` puts it on the PATH for good).
+- **The board**: it joins from this folder (`quickdraw join`), then starts `claude` telling it to take the board's requests, with `quickdraw` commands allowed (`--allowedTools "Bash(quickdraw:*)"`); what follows `--` goes to `claude` (`-- --model opus`). When Claude exits, it leaves the board. `.quickdraw/` gets a `.gitignore`: what is kept there is this computer's.
+
 ## `quickdraw agent pi`
 
 `quickdraw agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote] [--no-approval]`, from the directory [pi](https://github.com/earendil-works/pi) should work in:
