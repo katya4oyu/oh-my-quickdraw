@@ -30,6 +30,8 @@ export interface Operations {
   delete(ids: string[]): string[]
   /** A hand-drawn pen stroke: around a shape, under it, or through page points; red unless said. */
   pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string }): string
+  /** Gathers frames (default: all) close together in reading order, in rows about `width` wide from `at`; a frame brings its contents, a kanban's columns go together. */
+  tidy(opts?: { ids?: string[], at?: Point, gap?: number, width?: number }): string[]
 }
 
 export interface Operation<T = unknown> {
@@ -60,7 +62,8 @@ export interface BoardDescription {
     snapshot?: { at: number, by: string },
     /** a kanban's column (quickdraw-tickets) */
     kanban?: { id: string, status: 'todo' | 'doing' | 'done' } }[]
-  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, x: number, y: number, w: number, h: number,
+  /** `by`: who made it; `edited_by`: who changed it last, when someone else */
+  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, edited_by?: string, x: number, y: number, w: number, h: number,
     /** a ticket's state: who it is for (null: any agent), who has it, and how it went */
     ticket?: { status: TicketStatus, to: string | null, by: string | null, result?: string } }[]
   arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string }[]
@@ -69,8 +72,9 @@ export interface BoardDescription {
 export function describeBoard(store: Store): BoardDescription
 export function boardToMarkdown(store: Store): string
 export function textOf(store: Store, shape: object): string
-export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect }): Operation<T>
-export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect }): Operation<unknown[]>
+/** `area`: where what has no place goes (see Rect); else `prefer`: near that page point (where people look), in free space; else right of everything. */
+export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect, prefer?: Point }): Operation<T>
+export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]>
 /** Free space for a w × h box (and a frame's title above it), clear of every shape: at `prefer` (its top-left) if free, else the nearest free spot. */
 export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts?: { gap?: number, above?: number }): Point
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
@@ -96,7 +100,7 @@ export interface BoardTool {
   description: string
   inputSchema: JsonSchema
   /** Reading tools return the board; writing tools make one operation. */
-  run(store: Store, args: any, context?: { name?: string, area?: Rect }): string | BoardDescription | ToolOperation
+  run(store: Store, args: any, context?: { name?: string, area?: Rect, prefer?: Point }): string | BoardDescription | ToolOperation
 }
 
 export interface ToolOperation { op: string, diff: Diff, focus: Point | null, ids: string[], area?: Rect, /** for the model: what check_board fixed and what is left */ text?: string }

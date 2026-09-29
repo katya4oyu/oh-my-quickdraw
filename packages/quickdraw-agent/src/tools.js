@@ -25,8 +25,8 @@ function step(name, verb, description, properties, required) {
     name,
     description,
     inputSchema: object(properties, required),
-    run(store, args, { name: who = 'Agent', area } = {}) {
-      const { op, diff, result, focus, area: grown } = applySteps(store, who, [{ ...args, do: verb }], { area })
+    run(store, args, { name: who = 'Agent', area, prefer } = {}) {
+      const { op, diff, result, focus, area: grown } = applySteps(store, who, [{ ...args, do: verb }], { area, prefer })
       return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
     },
   }
@@ -79,15 +79,18 @@ export const BOARD_TOOLS = [
     kind: { type: 'string', enum: ['circle', 'underline', 'points'] }, id: str('the shape to circle or underline'),
     points: { type: 'array', items: { type: 'array', items: num }, description: 'page points [[x, y], …], for kind points' }, color,
   }),
+  step('tidy_frames', 'tidy', 'Gathers frames close together in reading order, in rows (about `width` wide) from `at` or where the first one is: for a board that has spread out, or when asked to tidy up. Each frame brings what is in it and its title; a kanban\'s columns stay together; what is in no frame stays put. By default all the frames.', {
+    ids: ids('frames to lay out (default: all)'), at: point, gap: num, width: { type: 'number', description: 'how wide a row may get (default 2400)' },
+  }),
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
     description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
-      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|pen|delete, …the fields of that tool }. '
+      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|tidy|pen|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
-    run(store, { steps }, { name: who = 'Agent', area } = {}) {
-      const { op, diff, result, focus, area: grown } = applySteps(store, who, steps, { area })
+    run(store, { steps }, { name: who = 'Agent', area, prefer } = {}) {
+      const { op, diff, result, focus, area: grown } = applySteps(store, who, steps, { area, prefer })
       return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
     },
   },

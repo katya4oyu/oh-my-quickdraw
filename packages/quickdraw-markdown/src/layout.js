@@ -17,7 +17,7 @@ export function fontFor(run, size, fonts) {
   return `${run.italic ? 'italic ' : ''}${run.bold ? 'bold ' : ''}${size}px ${fonts.sans}`
 }
 
-// op: { op: 'text', x, y (baseline), text, font, style: 'body' | 'link' | 'code' | 'muted' }
+// op: { op: 'text', x, y (baseline), text, font, style: 'body' | 'link' | 'code' | 'muted', href? (a link's), size? }
 //   | { op: 'rect', x, y, w, h, style: 'code' | 'quote' | 'rule' }
 export function layoutMarkdown(blocks, width, measure, fonts) {
   const ops = []
@@ -50,7 +50,7 @@ export function layoutMarkdown(blocks, width, measure, fonts) {
             newline()
           }
           if (r.code && !space) ops.push({ op: 'rect', x: x - 2, y: y + size * 0.1, w: sw + 4, h: size * 1.25, style: 'code' })
-          ops.push({ op: 'text', x, y: y + size, text: seg, font, style: s })
+          ops.push({ op: 'text', x, y: y + size, text: seg, font, style: s, ...(r.link ? { href: r.link, size } : {}) })
           x += sw
           empty = false
         }

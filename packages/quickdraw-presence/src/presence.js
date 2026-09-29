@@ -18,6 +18,7 @@ const AGENT_STATUS = { working: 'working', waiting: 'waiting for you', idle: 'id
 export const ACTIVITIES = {
   thinking: 'thinking', reading: 'reading the board', searching: 'searching the web', running: 'running a command',
   editing: 'editing files', imaging: 'making an image', drawing: 'drawing', waiting: 'waiting for you', done: 'done',
+  available: 'ready for a request', // here, with nothing to do: it stays where people are
 }
 
 const STYLE = `
@@ -36,11 +37,13 @@ const STYLE = `
 .qdp-cursor[data-act=running] svg,.qdp-cursor[data-act=editing] svg,.qdp-cursor[data-act=imaging] svg{animation:qdp-nod .9s ease-in-out infinite}
 .qdp-cursor[data-act=waiting] svg{animation:qdp-bob 1.4s ease-in-out infinite}
 .qdp-cursor[data-act=done] svg{animation:qdp-hop 500ms cubic-bezier(.2,.9,.3,1.4)}
+.qdp-cursor[data-act=available] svg{animation:qdp-sway 3.2s ease-in-out infinite}
 @keyframes qdp-mull{from{transform:rotate(0) translateX(3px) rotate(0)}to{transform:rotate(360deg) translateX(3px) rotate(-360deg)}}
 @keyframes qdp-scan{0%,100%{transform:translate(0,0)}25%{transform:translate(22px,2px)}50%{transform:translate(0,8px)}75%{transform:translate(22px,10px)}}
 @keyframes qdp-glance{0%,100%{transform:translateX(0)}30%{transform:translateX(-7px)}70%{transform:translateX(7px)}}
 @keyframes qdp-nod{50%{transform:translateY(3px)}}
 @keyframes qdp-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes qdp-sway{0%,100%{transform:translate(0,0) rotate(0)}30%{transform:translate(3px,-2px) rotate(4deg)}70%{transform:translate(-3px,1px) rotate(-3deg)}}
 @keyframes qdp-hop{40%{transform:translateY(-10px) scale(1.15)}}
 .qdp-edge{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif}
 .qdp-edge i{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-sizing:border-box}
@@ -90,7 +93,8 @@ const localStore = {
 export function presenceLabel(p) {
   const act = p.agent && ACTIVITIES[p.agentActivity]
   const status = act ? act + (p.agentNote ? `: ${p.agentNote}` : '') : p.agent ? AGENT_STATUS[p.agentStatus] : p.status
-  return status ? `${p.name} · ${status}` : p.name
+  const name = p.agent && p.owner ? `${p.name} (${p.owner})` : p.name // an agent: and whose it is, as the host says
+  return status ? `${name} · ${status}` : name
 }
 
 /** Live presence over a board; the host carries it (see above). */
@@ -102,6 +106,7 @@ export function createPresence({ editor, container = editor.container, host, def
 
   // you: kept in this browser, so you are the same person next time
   const saved = storage.get(key) || {}
+  let named = !!saved.name // you chose a name (here, or before): no suggestion replaces it
   const me = {
     name: String(saved.name || defaults.name || 'Guest').slice(0, 40),
     color: saved.color || defaults.color || COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -184,6 +189,7 @@ export function createPresence({ editor, container = editor.container, host, def
       x: m.x ?? null, y: m.y ?? null, view: m.view || null, agent: !!m.agent, agentStatus: m.agentStatus || null,
       agentActivity: ACTIVITIES[m.agentActivity] ? m.agentActivity : null, agentNote: String(m.agentNote ?? '').slice(0, 80),
       laser: lasersOf(m.laser),
+      owner: m.agent && m.owner ? String(m.owner).slice(0, 60) : undefined, // an agent's: who started it, as the host says
     })
     showLasers()
     // its motion; set only when it changes, so an animation is not restarted
@@ -298,7 +304,7 @@ export function createPresence({ editor, container = editor.container, host, def
 
   // ---- you: name, colour, status ------------------------------------------------
   function setMe(patch) {
-    if (patch.name != null) me.name = String(patch.name).trim().slice(0, 40) || 'Guest'
+    if (patch.name != null) { me.name = String(patch.name).trim().slice(0, 40) || 'Guest'; named = true }
     if (patch.color != null) me.color = String(patch.color)
     if (patch.status != null) me.status = String(patch.status).trim().slice(0, 60)
     storage.set(key, { ...me })
@@ -343,6 +349,13 @@ export function createPresence({ editor, container = editor.container, host, def
   return {
     /** you, as others see you */
     me: () => ({ ...me }),
+    /** a name for you until you choose one (the host knows who you are): not kept */
+    suggestName(name) {
+      if (named || !name || me.name === name) return
+      me.name = String(name).trim().slice(0, 40) || me.name
+      renderRow()
+      send()
+    },
     setMe,
     /** follow someone by id (null stops) */
     follow,

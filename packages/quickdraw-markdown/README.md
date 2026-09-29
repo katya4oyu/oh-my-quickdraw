@@ -23,12 +23,16 @@ Every peer must register the type (call `bindMarkdownEditing` or `registerMarkdo
 
 ## Record
 
-`{ type: 'markdown', props: { md, w, color? } }`. The height follows the content; resizing changes the width and the text reflows.
+`{ type: 'markdown', props: { md, w, h?, color? } }`. The height follows the content, up to `h` (`MAX_H`, 480, when not set): a longer card is cut there, fading out, with "… N more lines" (`hiddenLines`). Resizing changes the width (the text reflows) and, from a corner, the top or the bottom, `h`. The whole text is still the card's: editing shows it, and agents read all of it.
+
+## Links
+
+On a selected card, a click on a link opens it in a new tab (`noopener`), and the pointer shows a hand over it; the first click on a card selects it. Only http and https links open. `linkAt(shape, x, y)` finds the link at a point on a card.
 
 ## Supported Markdown
 
 - `#`–`######` headings, paragraphs (every newline is a line break), `-`/`*`/`+` and `1.` lists nested by indent, `>` quotes, fenced code, `---` rules
-- inline `**bold**`, `*italic*`, `` `code` ``, `[links](url)` (shown, not clickable) — one level, no nesting
+- inline `**bold**`, `*italic*`, `` `code` ``, `[links](url)` (open from a selected card) — one level, no nesting
 - no HTML (shown as text), tables or images
 - wraps at spaces and between CJK characters
 

@@ -24,7 +24,7 @@ quickdraw <command> … --file board.json           # a file (created if missing
 - `--server URL` (or `$QUICKDRAW_SERVER`) when the boards are served elsewhere than this machine's `quickdraw serve` (http://localhost:8795); `$QUICKDRAW_BOARD` sets the board once.
 - If it cannot connect, the boards are not running: ask the person to start `quickdraw serve` (do not start it yourself).
 
-Pass `--name` with your own name (e.g. `--name Claude`): it labels what you add and your cursor.
+Pass `--name` with your name, **what you are · the repository you work in** (e.g. `--name "Claude · my-repo"`): it labels what you add and your cursor, and tells you apart from other agents of the same kind.
 
 ## Read first
 
@@ -38,7 +38,7 @@ Read before writing: it gives the ids you need, and shows where things are. Text
 
 ## Put things on the board
 
-Each command is one operation. Without `--at X,Y`, new shapes go in free space to the right of the board, or into a frame's free space with `--in FRAME_ID`.
+Each command is one operation. Without `--at X,Y`, new shapes go in free space: near what the person who asked was looking at, or by the people on the board, when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
 
 ```sh
 quickdraw note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]
@@ -82,8 +82,8 @@ When people review an app together they share a screen, and snapshots of it land
 Asked to join a board (to be there, and do what people ask), `join` it. You are then one of the board's agents: people see you in its AI panel and ask you there (or write a note starting with `@YourName`), and see your cursor as you work. You stay on it between commands; the commands you run from this directory act as you, on that board.
 
 ```sh
-quickdraw join --board ID --name YourName    # once; stays until leave (or 30 idle minutes: --idle)
-quickdraw next --timeout 540                 # waits for what is for you, and prints it
+quickdraw join --board ID --name "Claude · my-repo"   # once; stays until leave (or 30 idle minutes: --idle)
+quickdraw wait --timeout 540                 # waits for what is for you, and prints it
 quickdraw area 800 500 --title "Plan"        # before drawing anything bigger than a note or two
 quickdraw note "…" / apply steps.json / …    # the usual commands: they go in the request's thread
 quickdraw say "I put the plan on the left"   # a message in the thread (--progress: a step, as you go)
@@ -91,18 +91,20 @@ quickdraw finish "Plan with 3 frames"        # the request is done: say what you
 quickdraw leave                              # when the person says you are done
 ```
 
-The loop: `next`, do what it says, `finish`, `next` again — until the person tells you to stop.
+Your name on the board is **what you are · the repository you work in**: `Claude · my-repo`, `Codex · api-server` (the git repository's folder name). Several agents of the same kind are often on one board, from different people and repositories: this tells them apart, and the board adds who started you ("Claude · my-repo (ann)"). Without `--name`, `join` uses `Agent · <repository>`.
+
+The loop: `wait`, do what it says, `finish`, `wait` again — until the person tells you to stop.
 
 You run on the account of the person who started you, even on a board someone else hosts (`--board https://HOST/b/ID`): only they can ask you, unless they open you to others from the board's AI panel. Leave that to them.
 
-- `next` prints one of:
+- `wait` prints one of:
   - `{"type": "request", "id", "text", "about", "area", "feedback", "changes"}`: a request. `text` is what a person asked; `about` what they selected; `area` where they marked it should go (your work area already); `feedback` snapshots' notes with pictures to look at; `changes` what changed on the board since you last looked. It is the request you now work on: what you draw goes in its thread, where people can undo it all at once.
   - `{"type": "reply", "request", "text"}`: a person's follow-up in the thread. Do it, then `say` or `finish`.
   - `{"type": "stop", "request"}`: a person pressed Stop. Stop that work at once and `finish` it.
   - `{"type": "ticket", "ticket"}`: a ticket for you (see Tickets). `take` it before working on it.
-  - `{"type": null, "timeout": true}`: nothing yet. Run `next` again.
+  - `{"type": null, "timeout": true}`: nothing yet. Run `wait` again.
 - Keep `--timeout` under your own limit for one command (Claude Code: 10 minutes), and keep calling it.
-- A result with `"inbox"` means something waits for you (a reply, Stop): `next` takes it. Check before going on with long work.
+- A result with `"inbox"` means something waits for you (a reply, Stop): `wait` takes it. Check before going on with long work.
 - A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
 - Every request gets a `finish`, with a line on what you did (or why not).
 - A request with `"from"` was asked by another agent, in a note that mentions you. Do it as for a person, and answer in the thread.
@@ -153,6 +155,17 @@ quickdraw pen points "0,0 50,20 90,0"
 ```
 
 Use the laser while you explain, or when you say where you put something; the pen to mark what should stay marked (a point in feedback, the part that needs changing). The laser needs a live board.
+
+## Gather frames: `tidy`
+
+Boards spread outwards as things are added. When one has, or you are asked to tidy it, gather the frames:
+
+```sh
+quickdraw tidy                       # all frames, close together in reading order, in rows about 2400 wide
+quickdraw tidy F1,F2 --at 0,0        # some of them, from a point; --gap 80, --width 1600
+```
+
+Each frame brings what is in it and its title; a kanban's columns stay together; what is in no frame stays where it is. Then `lint` what you moved.
 
 ## Frames keep their size
 
