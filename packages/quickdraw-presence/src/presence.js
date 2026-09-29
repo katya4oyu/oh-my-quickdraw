@@ -171,6 +171,7 @@ export function createPresence({ editor, container = editor.container, host, def
       name: String(m.name || (m.agent ? 'Agent' : 'Guest')), color: m.color || '#868e96', status: m.status || '',
       x: m.x ?? null, y: m.y ?? null, view: m.view || null, agent: !!m.agent, agentStatus: m.agentStatus || null,
       agentActivity: ACTIVITIES[m.agentActivity] ? m.agentActivity : null, agentNote: String(m.agentNote ?? '').slice(0, 80),
+      owner: m.agent && m.owner ? String(m.owner).slice(0, 60) : undefined, // an agent's: who started it, as the host says
     })
     // its motion; set only when it changes, so an animation is not restarted
     const act = p.agentActivity || ''
