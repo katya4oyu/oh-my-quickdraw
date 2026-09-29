@@ -93,6 +93,8 @@ quickdraw leave                              # when the person says you are done
 
 The loop: `next`, do what it says, `finish`, `next` again — until the person tells you to stop.
 
+You run on the account of the person who started you, even on a board someone else hosts (`--board https://HOST/b/ID`): only they can ask you, unless they open you to others from the board's AI panel. Leave that to them.
+
 - `next` prints one of:
   - `{"type": "request", "id", "text", "about", "area", "feedback", "changes"}`: a request. `text` is what a person asked; `about` what they selected; `area` where they marked it should go (your work area already); `feedback` snapshots' notes with pictures to look at; `changes` what changed on the board since you last looked. It is the request you now work on: what you draw goes in its thread, where people can undo it all at once.
   - `{"type": "reply", "request", "text"}`: a person's follow-up in the thread. Do it, then `say` or `finish`.

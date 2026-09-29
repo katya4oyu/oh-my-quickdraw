@@ -20,6 +20,7 @@
 //   from anyone      mention { note: { id, text, x, y } }: a note it wrote that starts with @; a request to the agent it
 //                    names if the one who started the sender started that agent too (or it takes requests from
 //                    anyone), with `from`: the sender's name
+//   from a page      share { agent, with: 'owner' | 'all' | presence ids } (from the agent's owner only: who else may ask it)
 //   from a page      hello (answered with agents and threads), request { request }, reply { requestId, message } (text,
 //                    { approval, allow } or { undo: { reverted, skipped } })
 //   from the server  you { local } (to a page: on the computer serving, which agents take requests from

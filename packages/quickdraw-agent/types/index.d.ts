@@ -120,8 +120,15 @@ export interface AgentParticipant {
   /** what it runs on, as the agent says: its account ("ChatGPT Pro"), and how much of its usage limits is used */
   account?: string
   limits?: AgentLimit[]
-  /** takes requests from anyone on the board; else only from the computer the board is served from */
+  /** takes requests from anyone on the board; else only from its owner, and whom they open it to */
   remote?: boolean
+  /** who brought it (it runs on their account), as the host says */
+  owner?: { name: string }
+  /** for this viewer: whether it is theirs, and whether they may ask it */
+  mine?: boolean
+  canAsk?: boolean
+  /** for its owner: who else may ask it — nobody, everyone, or the people named */
+  sharedWith?: 'owner' | 'all' | string[]
   /** people can talk with it: a request to talk carries a WebRTC offer (see apps/quickdraw's protocol) */
   voice?: boolean
 }
@@ -190,6 +197,10 @@ export interface AgentHost {
   join?(): { text?: string, command: string } | undefined
   /** Why this viewer may not ask this agent or answer its approvals (shown instead of the input); nothing if they may. */
   cannotAsk?(agent: AgentParticipant): string | undefined
+  /** Its owner opens an agent to everyone ('all'), to people (ids from `people()`), or closes it ('owner'); the panel offers it for agents marked `mine`. */
+  share?(agentId: string, withWhom: 'owner' | 'all' | Array<string | number>): void
+  /** The people on the board, to open an agent to. */
+  people?(): Array<{ id: string | number, name: string }>
   /** Feedback the next new request carries (e.g. snapshots written on): shown as chips, each set aside with its ×; their ids go in `context.feedback`. */
   feedback?(): Array<{ id: string, label: string, count?: number }>
 }
