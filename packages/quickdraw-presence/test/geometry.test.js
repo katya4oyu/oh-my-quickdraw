@@ -65,5 +65,8 @@ describe('labels', () => {
     expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'thinking' })).toBe('Codex · thinking')
     expect(presenceLabel({ name: 'Codex', agent: true, agentStatus: 'working', agentActivity: 'nonsense' })).toBe('Codex · working')
     expect(presenceLabel({ name: 'Ann', agentActivity: 'thinking' })).toBe('Ann') // only agents
+    // an agent, and whose it is
+    expect(presenceLabel({ name: 'Claude · app', agent: true, owner: 'ann', agentActivity: 'drawing' })).toBe('Claude · app (ann) · drawing')
+    expect(presenceLabel({ name: 'Ann', owner: 'x' })).toBe('Ann')
   })
 })

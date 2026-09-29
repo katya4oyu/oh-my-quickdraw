@@ -24,7 +24,7 @@ quickdraw <command> … --file board.json           # a file (created if missing
 - `--server URL` (or `$QUICKDRAW_SERVER`) when the boards are served elsewhere than this machine's `quickdraw serve` (http://localhost:8795); `$QUICKDRAW_BOARD` sets the board once.
 - If it cannot connect, the boards are not running: ask the person to start `quickdraw serve` (do not start it yourself).
 
-Pass `--name` with your own name (e.g. `--name Claude`): it labels what you add and your cursor.
+Pass `--name` with your name, **what you are · the repository you work in** (e.g. `--name "Claude · my-repo"`): it labels what you add and your cursor, and tells you apart from other agents of the same kind.
 
 ## Read first
 
@@ -82,7 +82,7 @@ When people review an app together they share a screen, and snapshots of it land
 Asked to join a board (to be there, and do what people ask), `join` it. You are then one of the board's agents: people see you in its AI panel and ask you there (or write a note starting with `@YourName`), and see your cursor as you work. You stay on it between commands; the commands you run from this directory act as you, on that board.
 
 ```sh
-quickdraw join --board ID --name YourName    # once; stays until leave (or 30 idle minutes: --idle)
+quickdraw join --board ID --name "Claude · my-repo"   # once; stays until leave (or 30 idle minutes: --idle)
 quickdraw next --timeout 540                 # waits for what is for you, and prints it
 quickdraw area 800 500 --title "Plan"        # before drawing anything bigger than a note or two
 quickdraw note "…" / apply steps.json / …    # the usual commands: they go in the request's thread
@@ -90,6 +90,8 @@ quickdraw say "I put the plan on the left"   # a message in the thread (--progre
 quickdraw finish "Plan with 3 frames"        # the request is done: say what you did, in a line
 quickdraw leave                              # when the person says you are done
 ```
+
+Your name on the board is **what you are · the repository you work in**: `Claude · my-repo`, `Codex · api-server` (the git repository's folder name). Several agents of the same kind are often on one board, from different people and repositories: this tells them apart, and the board adds who started you ("Claude · my-repo (ann)"). Without `--name`, `join` uses `Agent · <repository>`.
 
 The loop: `next`, do what it says, `finish`, `next` again — until the person tells you to stop.
 

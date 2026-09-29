@@ -235,7 +235,9 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   // joined (quickdraw join): the session in this directory runs it, on its board
   if (cmd === 'join') {
     if (file) throw new Error('join needs a live board (--board), not a file')
-    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name: o.name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'] })))
+    // named "<agent> · <repository>" unless it says (see SKILL.md)
+    const name = argv.some((a) => a === '--name' || a.startsWith('--name=')) ? o.name : `Agent · ${(await import('./skill.ts')).repoName()}`
+    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'] })))
   }
   if (!file) {
     const s = await findSession(process.cwd())

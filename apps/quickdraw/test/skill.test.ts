@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { installSkill, skillStatus, uninstallSkill, SKILL_SOURCE } from '../src/commands/skill.ts'
+import { installSkill, repoName, skillStatus, uninstallSkill, SKILL_SOURCE } from '../src/commands/skill.ts'
 
 const temp = () => realpathSync(mkdtempSync(join(tmpdir(), 'qd-skill-')))
 const skill = readFileSync(join(SKILL_SOURCE, 'SKILL.md'), 'utf8')
@@ -46,6 +46,7 @@ describe('quickdraw skill', () => {
     execFileSync('git', ['init', '-q'], { cwd: repo })
     const sub = join(repo, 'packages/app')
     mkdirSync(sub, { recursive: true })
+    expect(repoName(sub)).toBe(repo.split('/').pop()) // an agent here is named after the repository, not this folder
     const r = installSkill({ project: true, cwd: sub })
     expect(r.installed.map((i: any) => i.path)).toEqual([join(repo, '.agents/skills/quickdraw'), join(repo, '.claude/skills/quickdraw')])
     expect(readlinkSync(join(repo, '.claude/skills/quickdraw'))).toBe('../../.agents/skills/quickdraw') // relative: commits as it is
