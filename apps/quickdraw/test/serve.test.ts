@@ -8,13 +8,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { importSingleBoard } from '../src/serve/boards.ts'
 import { isLocal } from '../src/serve/local.ts'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
-import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE, pack, packAgent, packShare, unpackAgent, unpackShare } from '../src/protocol.js'
+import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE, pack, packAgent, packPresence, packShare, unpackAgent, unpackShare } from '../src/protocol.js'
 
 let apps: ReturnType<typeof createQuickdrawServer>[] = []
 afterEach(async () => { for (const app of apps) await app.close(); apps = [] })
 
 async function start(opts?: ServeOptions) {
-  const app = createQuickdrawServer(opts)
+  const app = createQuickdrawServer({ self: null, ...opts }) // who the host is: not this machine's Tailscale
   apps.push(app)
   const { port } = await app.listen(0)
   const id = app.boards.list()[0]?.id ?? app.boards.create('Test').id // after a restart: the same board
@@ -296,7 +296,7 @@ describe('agents', () => {
     expect((await pageIn.take('agents')).agents).toEqual([])
     agent.send(packAgent({ kind: 'join', agent: { id: 'board-ai', name: 'Board AI', knows: ['This board'] } }))
     expect((await agentIn.take('joined')).id).toBe('board-ai')
-    expect((await pageIn.take('agents')).agents).toEqual([{ id: 'board-ai', name: 'Board AI', knows: ['This board'], status: 'idle' }])
+    expect((await pageIn.take('agents')).agents).toEqual([{ id: 'board-ai', name: 'Board AI', knows: ['This board'], status: 'idle', owner: { name: 'the host' }, mine: true, canAsk: true, sharedWith: 'owner' }])
     return { url, page, agent, pageIn, agentIn }
   }
 
@@ -352,7 +352,7 @@ describe('agents', () => {
     again.close()
   })
 
-  it('lets only this computer ask an agent or answer it, unless the agent allows anyone', async () => {
+  it('lets only its owner ask an agent or answer it, unless the agent allows anyone', async () => {
     const { url, page, pageIn, agentIn } = await setup()
     expect((await pageIn.take('you')).local).toBe(true)
     // through `tailscale serve`: from 127.0.0.1 too, but proxied
@@ -363,7 +363,7 @@ describe('agents', () => {
     await remoteIn.take('threads')
 
     remote.send(packAgent({ kind: 'request', request: request('far') }))
-    expect((await remoteIn.take('event')).event).toMatchObject({ type: 'error', requestId: 'far', message: expect.stringMatching(/only from the computer running quickdraw serve/) })
+    expect((await remoteIn.take('event')).event).toMatchObject({ type: 'error', requestId: 'far', message: expect.stringMatching(/runs on the host's account: only the host can ask it/) })
     page.send(packAgent({ kind: 'request', request: request('near') }))
     expect((await agentIn.take('request'))).toMatchObject({ request: { id: 'near' }, local: true }) // not 'far': it never got there
     expect(pageIn.has('thread') || (await remoteIn.take('thread')).thread.request.id === 'near').toBe(true)
@@ -382,7 +382,7 @@ describe('agents', () => {
     while (!(listed = (await remoteIn.take('agents')).agents.find((a: any) => a.id === 'anyone')));
     expect(listed).toMatchObject({ remote: true })
     remote.send(packAgent({ kind: 'request', request: request('far2', 'anyone') }))
-    expect(await openIn.take('request')).toMatchObject({ request: { id: 'far2' }, local: false })
+    expect(await openIn.take('request')).toMatchObject({ request: { id: 'far2' }, local: true }) // the server checked: anyone may
     for (const ws of [page, remote, open2]) ws.close()
   })
 
@@ -527,6 +527,84 @@ describe('notes agents write to agents', () => {
     page.send(packAgent({ kind: 'request', request: { ...request('p1', 'Claude'), from: 'Codex' } }))
     expect((await claude.inbox.take('request')).request.from).toBeUndefined()
     page.close(); claude.ws.close()
+  })
+})
+
+describe('bringing your own agent', () => {
+  const TS = (login: string, name: string) => ({ 'tailscale-user-login': login, 'tailscale-user-name': name, 'x-forwarded-for': '100.64.0.9' })
+  // a page: its AGENT messages, and the presence ids of the others by name
+  async function pageAt(url: string, headers?: Record<string, string>, name?: string) {
+    const ws = await open(url, headers)
+    const inbox = agentInbox(ws)
+    const ids = new Map<string, number>()
+    ws.addEventListener('message', ({ data }) => { const m = new Uint8Array(data); if (m[0] === PRESENCE) { const p = JSON.parse(new TextDecoder().decode(m.subarray(1))); if (p.name) ids.set(p.name, p.id) } })
+    if (name) ws.send(packPresence({ name, color: '#000', x: null, y: null }))
+    ws.send(packAgent({ kind: 'hello' }))
+    await inbox.take('threads')
+    return { ws, inbox, ids, agents: async (id: string, ok: (a: any) => boolean = () => true) => { let a: any; while (!((a = (await inbox.take('agents')).agents.find((x: any) => x.id === id)) && ok(a))); return a } }
+  }
+  async function agentAt(url: string, id: string, headers?: Record<string, string>) {
+    const ws = await open(url, headers)
+    const inbox = agentInbox(ws)
+    ws.send(packAgent({ kind: 'join', agent: { id, name: id, knows: [] } }))
+    await inbox.take('joined')
+    return { ws, inbox }
+  }
+
+  it('lets only its owner ask a guest\'s agent, however the host comes, until the owner opens it', async () => {
+    const url = await start({ self: { login: 'host@example.com', name: 'Hana' } })
+    const host = await pageAt(url, undefined, 'Hana')
+    const hostViaTailnet = await pageAt(url, TS('host@example.com', 'Hana'))
+    const ann = await pageAt(url, TS('ann@example.com', 'Ann'), 'Ann')
+    const bob = await pageAt(url, TS('bob@example.com', 'Bob'), 'Bob')
+    const claude = await agentAt(url, 'Claude', TS('ann@example.com', 'Ann')) // Ann's, on her computer
+    const codex = await agentAt(url, 'Codex') // the host's
+
+    expect(await ann.agents('Claude')).toMatchObject({ owner: { name: 'Ann' }, mine: true, canAsk: true, sharedWith: 'owner' })
+    const seen = await host.agents('Claude')
+    expect(seen).toMatchObject({ owner: { name: 'Ann' }, mine: false, canAsk: false })
+    expect(seen).not.toHaveProperty('sharedWith')
+
+    host.ws.send(packAgent({ kind: 'request', request: request('h1', 'Claude') }))
+    expect((await host.inbox.take('event')).event.message).toMatch(/Claude runs on Ann's account: only Ann can ask it/)
+    ann.ws.send(packAgent({ kind: 'request', request: request('a1', 'Claude') }))
+    expect(await claude.inbox.take('request')).toMatchObject({ request: { id: 'a1' }, local: true })
+    // nor answer it, or stop it
+    bob.ws.send(packAgent({ kind: 'reply', requestId: 'a1', message: { stop: true } }))
+    expect((await bob.inbox.take('event')).event).toMatchObject({ type: 'error', requestId: 'a1' })
+
+    // the host's own agent: the host, straight or through the tailnet; not Ann
+    hostViaTailnet.ws.send(packAgent({ kind: 'request', request: request('h2', 'Codex') }))
+    expect((await codex.inbox.take('request')).request.id).toBe('h2')
+    ann.ws.send(packAgent({ kind: 'request', request: request('a2', 'Codex') }))
+    expect((await ann.inbox.take('event')).event.message).toMatch(/Codex runs on Hana's account/)
+
+    // only the owner opens it: to someone on the board, then to everyone, then back
+    host.ws.send(packAgent({ kind: 'share', agent: 'Claude', with: 'all' })) // not the host's to open
+    bob.ws.send(packAgent({ kind: 'request', request: request('b1', 'Claude') }))
+    expect((await bob.inbox.take('event')).event).toMatchObject({ type: 'error', requestId: 'b1' })
+    ann.ws.send(packAgent({ kind: 'share', agent: 'Claude', with: [ann.ids.get('Hana')] }))
+    expect(await ann.agents('Claude', (a) => Array.isArray(a.sharedWith))).toMatchObject({ sharedWith: ['Hana'] })
+    expect(await host.agents('Claude', (a) => a.canAsk)).toMatchObject({ canAsk: true })
+    expect(await bob.agents('Claude', (a) => a.canAsk === false)).toMatchObject({ canAsk: false })
+    host.ws.send(packAgent({ kind: 'request', request: request('h3', 'Claude') }))
+    expect((await claude.inbox.take('request')).request.id).toBe('h3')
+
+    ann.ws.send(packAgent({ kind: 'share', agent: 'Claude', with: 'all' }))
+    expect(await bob.agents('Claude', (a) => a.canAsk)).toMatchObject({ canAsk: true, remote: true })
+    ann.ws.send(packAgent({ kind: 'share', agent: 'Claude', with: 'owner' }))
+    expect(await bob.agents('Claude', (a) => !a.remote)).toMatchObject({ canAsk: false })
+    for (const p of [host, hostViaTailnet, ann, bob, claude, codex]) p.ws.close()
+  })
+
+  it('does not trust a tailnet login that did not come through tailscale serve', async () => {
+    const url = await start({ self: { login: 'host@example.com' } })
+    const claude = await agentAt(url, 'Claude', TS('ann@example.com', 'Ann'))
+    // a direct connection from elsewhere cannot be made in a test; one with the header and no proxy
+    // from this computer is taken as through tailscale serve, so check the other side: no header, no one
+    const nobody = await pageAt(url, { 'x-forwarded-for': '100.64.0.3' })
+    expect(await nobody.agents('Claude')).toMatchObject({ canAsk: false })
+    for (const p of [claude, nobody]) p.ws.close()
   })
 })
 

@@ -25,7 +25,7 @@ import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
 export interface Participant {
   id: string, name: string, knows: string[], models?: AgentModel[], model?: string, effort?: string
-  /** takes requests and approvals from anyone on the board; else only from the computer running quickdraw serve */
+  /** takes requests and approvals from anyone on the board; else only from whom the server says may ask (its owner, and whom they open it to) */
   remote?: boolean
   /** people can talk with it (its runtime sets onVoice) */
   voice?: boolean
@@ -189,7 +189,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   relay.onMessage((m) => {
     // the server lets only this computer ask, unless `remote`; checked here too
     if ((m.kind === 'request' || m.kind === 'reply') && !me.remote && m.local !== true) {
-      if (m.kind === 'request' && m.request?.id) emit(m.request.id, { type: 'error', message: `${me.name} takes requests only from the computer running quickdraw serve.` })
+      if (m.kind === 'request' && m.request?.id) emit(m.request.id, { type: 'error', message: `${me.name} takes requests only from whom its owner lets ask it.` })
       return
     }
     if (m.kind === 'request' && m.request?.id && typeof m.sdp === 'string') {

@@ -160,6 +160,9 @@ const STYLE = `
 .qda-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--qd-ink-faint)}
 .qda-dot[data-status=working]{background:var(--qda-accent)}.qda-dot[data-status=waiting]{background:var(--qda-wait)}
 .qda-dot[data-status=error]{background:var(--qda-error)}.qda-dot[data-status=done]{background:var(--qd-ink-soft)}
+.qda-share{display:grid;gap:6px;padding:9px 11px;margin-bottom:6px;border-radius:12px;background:var(--qd-seg-bg)}
+.qda-share select{font:inherit;font-size:12px;border:1px solid var(--qd-border);border-radius:999px;padding:3px 8px;background:transparent;color:var(--qd-ink);justify-self:start;max-width:100%}
+.qda-share label{display:flex;align-items:center;gap:6px;font-size:13px}
 .qda-join{display:grid;gap:6px;padding:9px 11px;margin-bottom:6px;border-radius:12px;background:var(--qd-seg-bg)}
 .qda-join>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .qda-join code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:all}
@@ -358,9 +361,14 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       row.append(dot, el('span', '', agent.name))
       const knows = (agent.knows || []).filter((k) => !agent.name.includes(k)) // "Codex · repo" already says repo
       if (knows.length) row.append(el('span', 'qda-muted', knows.join(' · ')))
+      // whose it is: it runs on their account
+      if (agent.mine) row.append(el('span', 'qda-muted', 'yours'))
+      else if (agent.owner?.name) row.append(el('span', 'qda-muted', agent.owner.name))
       who.append(row)
     }
     body.append(who)
+    // who may ask what you brought: you only, everyone here, or people you choose
+    if (host.share) for (const agent of getAgents()) if (agent.mine) body.append(shareBlock(agent))
     // what each runs on, and how much of its limits is used
     for (const agent of getAgents()) {
       if (!agent.account && !agent.limits?.length) continue
@@ -379,8 +387,9 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       }
       body.append(box)
     }
-    if (!getAgents().length) {
-      who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
+    if (!getAgents().length) who.append(el('span', 'qda-muted', 'No AI has joined this board.'))
+    // how to bring one: when none is here, or none here is yours (the others' run on their accounts)
+    if (!getAgents().length || getAgents().every((a) => a.mine === false)) {
       const join = host.join?.()
       if (join) body.append(joinBlock(join))
     }
@@ -397,6 +406,44 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       row.addEventListener('click', () => open(thread.request.id))
       body.append(row)
     }
+  }
+
+  // who may ask an agent of yours: host.share(agentId, 'owner' | 'all' | peopleIds)
+  function shareBlock(agent) {
+    const box = el('div', 'qda-share')
+    const pick = el('select')
+    pick.setAttribute('aria-label', `Who can ask ${agent.name}`)
+    for (const [value, text] of [['owner', `Only you can ask ${agent.name}`], ['all', `Everyone here can ask ${agent.name}`], ['some', 'People you choose…']]) {
+      const o = el('option', '', text)
+      o.value = value
+      pick.append(o)
+    }
+    const shared = agent.sharedWith
+    pick.value = shared === 'all' ? 'all' : Array.isArray(shared) ? 'some' : 'owner'
+    const people = el('div')
+    const choose = () => {
+      people.replaceChildren()
+      if (pick.value !== 'some') return
+      const here = host.people?.() || []
+      if (!here.length) return people.append(el('span', 'qda-muted', 'No one else is here yet.'))
+      for (const p of here) {
+        const label = el('label')
+        const box = el('input')
+        box.type = 'checkbox'
+        box.value = String(p.id)
+        box.checked = Array.isArray(shared) && shared.includes(p.name)
+        box.addEventListener('change', () => {
+          const ids = [...people.querySelectorAll('input:checked')].map((i) => here.find((x) => String(x.id) === i.value)?.id)
+          host.share(agent.id, ids.length ? ids : 'owner')
+        })
+        label.append(box, el('span', '', p.name))
+        people.append(label)
+      }
+    }
+    pick.addEventListener('change', () => { if (pick.value !== 'some') host.share(agent.id, pick.value); choose() })
+    choose()
+    box.append(pick, people)
+    return box
   }
 
   // how to bring an agent here: the host's command, to copy into a terminal
@@ -527,7 +574,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     lock.hidden = !blocked
     lock.textContent = blocked || ''
     prompt.disabled = !!blocked
-    prompt.placeholder = blocked ? 'Not from here' : inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
+    prompt.placeholder = blocked ? 'Not yours to ask' : inThread ? 'Reply…' : `Ask ${agents.length === 1 ? agents[0].name : 'AI'}…`
     send.disabled = !!blocked || !prompt.value.trim() || (!inThread && !agents.length)
   }
 

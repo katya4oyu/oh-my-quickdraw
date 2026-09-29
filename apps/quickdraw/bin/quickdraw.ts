@@ -17,8 +17,9 @@ const USAGE = `quickdraw <command>
         --effort (low, medium, high, …) set the defaults there. Without --board,
         at a terminal, it asks which board; the board's AI panel (and its More
         menu) has this command for that board, to copy. It takes requests
-        and approvals only from the computer running quickdraw serve;
-        --allow-remote takes them from anyone on the board (through Tailscale…).
+        and approvals only from you, who started it (here, or through the
+        same tailnet login), and whom you open it to from the board's panel;
+        --allow-remote opens it to everyone on the board.
         People can also talk with it (the microphone in the board's AI tools):
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
         hands the work to Codex; --voice picks its voice, --no-voice turns it off
@@ -167,7 +168,7 @@ if (command === 'serve') {
     process.on('SIGINT', () => leave(0))
     process.on('SIGTERM', () => leave(0))
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
-    console.log(remote ? 'Anyone on the board can ask it (--allow-remote).' : 'Only people on the computer running quickdraw serve can ask it (--allow-remote lets anyone on the board).')
+    console.log(remote ? 'Anyone on the board can ask it (--allow-remote).' : 'Only you can ask it, and whom you open it to from the board\'s AI panel (--allow-remote: everyone on the board).')
   } catch (e) {
     process.stderr.write(JSON.stringify({ error: (e as Error).message }) + '\n')
     process.exit(1)
