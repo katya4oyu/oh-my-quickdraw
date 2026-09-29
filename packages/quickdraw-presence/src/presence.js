@@ -133,7 +133,20 @@ export function createPresence({ editor, container = editor.container, host, def
 
   // ---- sending yours ------------------------------------------------------
   let queued = false
-  const presence = () => ({ ...me, x: at.x, y: at.y, view: editor.viewportPageBounds() })
+  const presence = () => ({ ...me, x: at.x, y: at.y, view: editor.viewportPageBounds(), laser })
+  // your laser pointer, for the others: its strokes as they are (page points, a few times a second)
+  let laser = [], laserKey = '[]', laserTimer = 0
+  const onScribbles = () => {
+    if (laserTimer) return
+    laserTimer = setTimeout(() => {
+      laserTimer = 0
+      const now = (editor.getScribbles?.() ?? []).map((s) => ({ points: s.points.slice(-80).map((p) => [Math.round(p.x), Math.round(p.y)]), opacity: Math.round(s.opacity * 100) / 100 }))
+      const key = JSON.stringify(now)
+      if (key === laserKey) return
+      laser = now; laserKey = key
+      send()
+    }, 50)
+  }
   function send() {
     if (queued) return
     queued = true
@@ -157,6 +170,7 @@ export function createPresence({ editor, container = editor.container, host, def
       if (!p) return
       p.cursor.remove(); p.edge.remove()
       peers.delete(m.id)
+      showLasers()
       if (following === m.id) follow(null)
       renderRow()
       return
@@ -174,8 +188,10 @@ export function createPresence({ editor, container = editor.container, host, def
       name: String(m.name || (m.agent ? 'Agent' : 'Guest')), color: m.color || '#868e96', status: m.status || '',
       x: m.x ?? null, y: m.y ?? null, view: m.view || null, agent: !!m.agent, agentStatus: m.agentStatus || null,
       agentActivity: ACTIVITIES[m.agentActivity] ? m.agentActivity : null, agentNote: String(m.agentNote ?? '').slice(0, 80),
+      laser: lasersOf(m.laser),
       owner: m.agent && m.owner ? String(m.owner).slice(0, 60) : undefined, // an agent's: who started it, as the host says
     })
+    showLasers()
     // its motion; set only when it changes, so an animation is not restarted
     const act = p.agentActivity || ''
     if (p.cursor.dataset.act !== act) p.cursor.dataset.act = act
@@ -250,7 +266,22 @@ export function createPresence({ editor, container = editor.container, host, def
     if (following != null && performance.now() > ours) follow(null) // you took the view
     send()
   }
-  const offs = [editor.on('camera', onCamera)]
+  const offs = [editor.on('camera', onCamera), editor.on('scribbles', onScribbles)]
+
+  // theirs, drawn as the core draws a laser; kept fresh while they last (the core lets one go after 2.5 s)
+  function lasersOf(list) {
+    if (!Array.isArray(list)) return []
+    return list.slice(0, 8).flatMap((s) => Array.isArray(s?.points)
+      ? [{ points: s.points.slice(-120).filter((p) => Array.isArray(p) && p.every(Number.isFinite)).map(([x, y]) => ({ x, y })), opacity: Math.max(0, Math.min(1, Number(s.opacity) || 0)) }]
+      : [])
+  }
+  let fresh = 0
+  function showLasers() {
+    const all = [...peers.values()].flatMap((p) => p.laser || [])
+    editor.setRemoteScribbles?.(all)
+    clearInterval(fresh)
+    fresh = all.length ? setInterval(() => editor.setRemoteScribbles?.([...peers.values()].flatMap((p) => p.laser || [])), 1000) : 0
+  }
   addEventListener('resize', placeAll)
 
   // ---- the row: you, then everyone else ---------------------------------------
@@ -341,6 +372,7 @@ export function createPresence({ editor, container = editor.container, host, def
       container.removeEventListener('pointermove', onMove, { capture: true })
       container.removeEventListener('pointerleave', onLeave)
       removeEventListener('resize', placeAll)
+      clearInterval(fresh); clearTimeout(laserTimer)
       document.removeEventListener('pointerdown', onDown, { capture: true })
       layer.remove()
       row.remove()

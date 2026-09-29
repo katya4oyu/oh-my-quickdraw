@@ -400,6 +400,37 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       focus = { x: f.x, y: f.y }
       return shapes.map((s) => s.id)
     },
+    // Draws with the pen, as a person marks something: around a shape (circle),
+    // under it (underline), or through page points. A hand-drawn stroke (a
+    // 'draw' shape), red unless said: it stays until someone deletes it.
+    pen({ kind = 'circle', id, points, color, size = 'm' } = {}) {
+      let path
+      if (kind === 'points') {
+        if (!Array.isArray(points) || points.length < 2) throw new Error('the pen needs two points or more: [[x, y], …]')
+        path = points.map((p) => (Array.isArray(p) ? p : [p.x, p.y]).map(Number))
+        if (path.some((p) => !p.every(Number.isFinite))) throw new Error('bad pen points')
+      } else {
+        const b = pageBounds(need(id))
+        if (kind === 'circle') {
+          const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2 + 20, ry = b.h / 2 + 16
+          path = Array.from({ length: 48 }, (_, i) => {
+            const a = -Math.PI * 0.6 + (i / 46) * Math.PI * 2.08 // round, a little past where it began
+            const wob = 1 + 0.025 * Math.sin(i * 1.7) // not a perfect ellipse: drawn by hand
+            return [cx + rx * wob * Math.cos(a), cy + ry * wob * Math.sin(a)]
+          })
+        } else if (kind === 'underline') {
+          const y = b.y + b.h + 10
+          path = Array.from({ length: 16 }, (_, i) => [b.x - 6 + ((b.w + 12) * i) / 15, y + 2.5 * Math.sin(i * 0.9)])
+        } else throw new Error(`unknown pen "${kind}" (circle, underline or points)`)
+      }
+      const x0 = Math.min(...path.map((p) => p[0])), y0 = Math.min(...path.map((p) => p[1]))
+      const id2 = newId()
+      put({ id: id2, type: 'draw', x: round(x0), y: round(y0), props: {
+        pts: path.flatMap(([x, y]) => [Math.round((x - x0) * 10) / 10, Math.round((y - y0) * 10) / 10, 0.5]),
+        color: checkColor(color) ?? 'red', size, dash: 'draw', done: true,
+      } })
+      return id2
+    },
     // Lays frames out close together, in reading order, in rows from `at` (by
     // default where the first of them is) no wider than `width`: a board that
     // grew outwards, gathered. A frame brings what is in it and its title; a
@@ -549,6 +580,7 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'move': out = ops.move(r(s.id), s); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
+        case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points, color: s.color, size: s.size }); break
         case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: s.at, gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break
         default: throw new Error(`step ${i + 1}: unknown "do": ${JSON.stringify(s.do)}`)

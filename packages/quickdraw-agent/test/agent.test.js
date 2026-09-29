@@ -334,6 +334,25 @@ describe('tickets', () => {
   })
 })
 
+describe('the pen', () => {
+  it('circles, underlines, or draws through points, as a hand-drawn stroke that lint leaves alone', () => {
+    const store = board()
+    const { result: [note] } = applySteps(store, 'Claude', [{ do: 'note', text: 'Look', at: { x: 100, y: 100 } }])
+    const { result: [ring, line, free] } = applySteps(store, 'Claude', [
+      { do: 'pen', kind: 'circle', id: note }, { do: 'pen', kind: 'underline', id: note, color: 'blue' }, { do: 'pen', points: [[0, 0], [50, 20], [90, 0]] },
+    ])
+    const [n, r, l] = [note, ring, line].map((id) => pageBounds(store.get(id)))
+    expect(store.get(ring)).toMatchObject({ type: 'draw', props: { color: 'red', dash: 'draw', done: true }, agent: { name: 'Claude' } })
+    expect(r.x).toBeLessThan(n.x); expect(r.y).toBeLessThan(n.y) // around it
+    expect(r.x + r.w).toBeGreaterThan(n.x + n.w); expect(r.y + r.h).toBeGreaterThan(n.y + n.h)
+    expect(l.y).toBeGreaterThan(n.y + n.h) // under it
+    expect(store.get(line).props.color).toBe('blue')
+    expect(store.get(free).props.pts.length).toBe(9)
+    expect(lintBoard(store)).toEqual([]) // marks may sit on anything
+    expect(() => applySteps(store, 'Claude', [{ do: 'pen', kind: 'zigzag', id: note }])).toThrow(/unknown pen/)
+  })
+})
+
 describe('who made what', () => {
   it('marks what an agent makes and changes, and reads who made it and who changed it last', () => {
     const store = board()
