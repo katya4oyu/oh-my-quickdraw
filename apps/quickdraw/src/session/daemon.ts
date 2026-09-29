@@ -156,13 +156,14 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     return { x: group.reduce((s, p) => s + p.x, 0) / group.length, y: group.reduce((s, p) => s + p.y, 0) / group.length }
   }
   let drift = 0
-  function stay() {
+  function stay(): boolean {
     const to = crowd() ?? lastSpot
-    if (!to) return
+    if (!to) return false
     drift++
     // beside them, not on top of anyone; a little further each time, then back
     const r = 30 + 15 * Math.sin(drift / 2)
     agent.point(Math.round(to.x + 90 + r * Math.cos(drift)), Math.round(to.y + 60 + r * Math.sin(drift)))
+    return true
   }
 
   async function next(timeout: number | undefined, closed: () => boolean) {
@@ -176,7 +177,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       if (!holding()) {
         agent.status('idle')
         agent.activity('available')
-        if (Date.now() - stayed > 2500) { stayed = Date.now(); stay() }
+        if (Date.now() - stayed > 2500 && stay()) stayed = Date.now() // until it has somewhere to be, it looks every second
       }
       await new Promise<void>((resolve) => {
         const t = setTimeout(done, Math.min(left, 1000)) // looks at `closed` now and then
