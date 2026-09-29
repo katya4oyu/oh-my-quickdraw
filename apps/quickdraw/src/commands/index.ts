@@ -73,7 +73,7 @@ Tickets (work people leave on the board for agents)
   ticket TITLE [--body TEXT] [--to NAME] [--in FRAME] [--at X,Y]
                                           a ticket (for NAME, else any agent), in the Todo column of the
                                           board's kanban if it has one
-  wait [--take] [--timeout SECONDS]       waits until a ticket for you (--name) or any agent is to do, and
+  wait [--take] [--timeout SECONDS]       (not on the board) waits until a ticket for you (--name) or any agent is to do, and
                                           prints it: at once if one is. --take: takes it too (if another
                                           agent took it first, it waits for the next). Live boards only
   take ID                                 takes a ticket: doing, and yours (--name); fails if taken
@@ -87,10 +87,12 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
                                           joins the board and stays: in its AI panel, with a cursor. The commands
                                           after it, from this directory, run as you on it; leaves after --idle
                                           minutes (30) without one
-  next [--timeout SECONDS]                waits for what is for you and prints it: a request from the panel (with
-                                          what it is about, and what changed on the board), a person's reply,
-                                          Stop, or a ticket. A request becomes the one you work on: what you draw
-                                          goes in its thread, where people can undo it
+  wait [--timeout SECONDS] [--take]       waits for what is for you and prints it: a request (from the panel or a
+                                          note that mentions you; with what it is about, and what changed on the
+                                          board), a person's reply, Stop, or a ticket (--take: taken). A request
+                                          becomes the one you work on: what you draw goes in its thread, where
+                                          people can undo it. Meanwhile your cursor stays by the people on the
+                                          board, ready for a request. (next: the same)
   say [REQ] TEXT [--progress]             a message in the request's thread (--progress: a step, as you go)
   finish [REQ] [TEXT]                     the request is done (TEXT: what you did, in a line)
   area W H [--title T] [--at X,Y]         marks out where you will draw for the request; what you add without a
@@ -98,7 +100,7 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
   who                                     who is on the board: people and agents, their cursors, what they look at
   changes                                 what changed on the board since you last looked
   leave                                   leaves the board
-  Results say what waits for you as "inbox": take it with next.
+  Results say what waits for you as "inbox": take it with wait.
 
 History
   log                                       this board's operations, newest last

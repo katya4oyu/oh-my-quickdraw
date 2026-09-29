@@ -83,7 +83,7 @@ Asked to join a board (to be there, and do what people ask), `join` it. You are 
 
 ```sh
 quickdraw join --board ID --name YourName    # once; stays until leave (or 30 idle minutes: --idle)
-quickdraw next --timeout 540                 # waits for what is for you, and prints it
+quickdraw wait --timeout 540                 # waits for what is for you, and prints it
 quickdraw area 800 500 --title "Plan"        # before drawing anything bigger than a note or two
 quickdraw note "…" / apply steps.json / …    # the usual commands: they go in the request's thread
 quickdraw say "I put the plan on the left"   # a message in the thread (--progress: a step, as you go)
@@ -91,18 +91,18 @@ quickdraw finish "Plan with 3 frames"        # the request is done: say what you
 quickdraw leave                              # when the person says you are done
 ```
 
-The loop: `next`, do what it says, `finish`, `next` again — until the person tells you to stop.
+The loop: `wait`, do what it says, `finish`, `wait` again — until the person tells you to stop.
 
 You run on the account of the person who started you, even on a board someone else hosts (`--board https://HOST/b/ID`): only they can ask you, unless they open you to others from the board's AI panel. Leave that to them.
 
-- `next` prints one of:
+- `wait` prints one of:
   - `{"type": "request", "id", "text", "about", "area", "feedback", "changes"}`: a request. `text` is what a person asked; `about` what they selected; `area` where they marked it should go (your work area already); `feedback` snapshots' notes with pictures to look at; `changes` what changed on the board since you last looked. It is the request you now work on: what you draw goes in its thread, where people can undo it all at once.
   - `{"type": "reply", "request", "text"}`: a person's follow-up in the thread. Do it, then `say` or `finish`.
   - `{"type": "stop", "request"}`: a person pressed Stop. Stop that work at once and `finish` it.
   - `{"type": "ticket", "ticket"}`: a ticket for you (see Tickets). `take` it before working on it.
-  - `{"type": null, "timeout": true}`: nothing yet. Run `next` again.
+  - `{"type": null, "timeout": true}`: nothing yet. Run `wait` again.
 - Keep `--timeout` under your own limit for one command (Claude Code: 10 minutes), and keep calling it.
-- A result with `"inbox"` means something waits for you (a reply, Stop): `next` takes it. Check before going on with long work.
+- A result with `"inbox"` means something waits for you (a reply, Stop): `wait` takes it. Check before going on with long work.
 - A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
 - Every request gets a `finish`, with a line on what you did (or why not).
 - A request with `"from"` was asked by another agent, in a note that mentions you. Do it as for a person, and answer in the thread.

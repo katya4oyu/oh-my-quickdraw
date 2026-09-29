@@ -78,6 +78,8 @@ export interface BoardAgent {
   operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect }) => T): Promise<T>
   /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
   peopleSince(requestId: string): string
+  /** puts its cursor at a page point and keeps it there (not hidden when it goes idle) */
+  point(x: number, y: number): void
   /** leaves the board */
   close(): Promise<void>
 }
@@ -85,7 +87,7 @@ export interface BoardAgent {
 type Emitted = Omit<AgentEvent, 'requestId'> & Record<string, unknown>
 type Rect = { x: number, y: number, w: number, h: number }
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
+export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done' | 'available'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
@@ -188,6 +190,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const work = new Map<string, { area: Rect, title?: string, seen: Map<string, string>, moved?: boolean }>()
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
+  let pinned = false // its cursor was put somewhere to stay (point)
   let nextApproval = 1
   let renderer: Renderer | undefined // pictures of the board, in a headless Chrome made when first needed
   let files: string | undefined // where pictures for the model are written; removed on close
@@ -367,7 +370,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       relay.send({ kind: 'status', status })
       relay.status(status) // on its cursor too
       // the cursor stays a moment after the work, so people see where it ended
-      if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
+      // unless it was put somewhere to stay (point: a session that waits by the people)
+      if (status === 'working') pinned = false
+      if (status === 'idle' && !pinned) { clearTimeout(hideTimer); hideTimer = setTimeout(() => board.cursor(null, null), 3000) }
     },
     account: ({ account, limits }) => relay.send({ kind: 'account', account, limits }),
     async picture({ frame, ids }) {
@@ -415,6 +420,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return (await putOp(requestId, (store) => make(store, { area }))).r
     },
     peopleSince,
+    point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
     close: async () => {
       clearTimeout(hideTimer)
       await renderer?.close()

@@ -3,7 +3,7 @@ import type { Editor } from '@quickdrawjs/core'
 export type Rect = { x: number, y: number, w: number, h: number }
 export type AgentStatus = 'idle' | 'working' | 'waiting'
 /** what an agent is doing just now, shown by its cursor */
-export type AgentActivity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
+export type AgentActivity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done' | 'available'
 
 /** What a page says about itself; page coordinates, x/y null while off the board. */
 export interface Presence {
