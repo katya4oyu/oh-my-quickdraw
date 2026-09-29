@@ -29,6 +29,9 @@ export interface Participant {
   remote?: boolean
   /** people can talk with it (its runtime sets onVoice) */
   voice?: boolean
+  /** the voices it talks in (the board's picker), and the one it uses unless a person picks another */
+  voices?: string[]
+  defaultVoice?: string
 }
 
 export interface BoardAgent {

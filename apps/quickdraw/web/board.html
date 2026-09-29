@@ -140,6 +140,7 @@
           id: crypto.randomUUID(), to: agent.id, text: '🎙 Voice conversation', editor: board.editor,
           shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id),
           anchor: selected[0] ? { shapeId: selected[0].id, x: selected[0].x, y: selected[0].y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 },
+          options: panel.optionsFor(agent.id), // its voice (and model, effort) as picked in the AI panel
         })
         sendAgent({ kind: 'request', request, sdp })
         toPanel({ type: 'thread', thread: { request, events: [], diffs: [], status: 'working' } }) // the server tells the others

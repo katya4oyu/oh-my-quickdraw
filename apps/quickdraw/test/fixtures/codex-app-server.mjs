@@ -32,12 +32,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     process.stderr.write(`cwd=${m.params.cwd} tools=${tools.length} instructions=${m.params.developerInstructions.length}\n`)
     return out({ id: m.id, result: { thread: { id: `thread-${++threads}` }, model: m.params.model ?? 'fast', reasoningEffort: null } })
   }
+  if (m.method === 'thread/realtime/listVoices') return out({ id: m.id, result: { voices: { v1: ['cove'], v2: ['alloy', 'marin', 'cedar'], defaultV1: 'cove', defaultV2: 'marin' } } })
   if (m.method === 'thread/realtime/start') {
     const { threadId, transport, version, outputModality } = m.params
     process.stderr.write(`realtime ${transport.type} ${version} ${outputModality} offer=${transport.sdp}\n`)
     out({ id: m.id, result: {} })
     out({ method: 'thread/realtime/started', params: { threadId, realtimeSessionId: 'rt-1', version } })
-    out({ method: 'thread/realtime/sdp', params: { threadId, sdp: 'v=answer' } })
+    out({ method: 'thread/realtime/sdp', params: { threadId, sdp: m.params.voice ? `v=answer;voice=${m.params.voice}` : 'v=answer' } }) // says the voice it was given
     await new Promise((r) => setTimeout(r, 50)) // the page sets the answer; the person talks
     const said = (role, text) => out({ method: 'thread/realtime/item/completed', params: { threadId, item: { id: `seg-${role}`, realtimeSessionId: 'rt-1', type: 'transcriptSegment', role, text } } })
     said('user', ' Put a note that says hi. ')

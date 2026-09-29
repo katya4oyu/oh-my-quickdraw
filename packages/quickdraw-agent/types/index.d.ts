@@ -131,6 +131,9 @@ export interface AgentParticipant {
   sharedWith?: 'owner' | 'all' | string[]
   /** people can talk with it: a request to talk carries a WebRTC offer (see apps/quickdraw's protocol) */
   voice?: boolean
+  /** the voices it can talk in, and the one it uses unless a person picks another (the panel's picker) */
+  voices?: string[]
+  defaultVoice?: string
 }
 export interface AgentLimit {
   /** "5h", "Weekly", … */
@@ -151,7 +154,7 @@ export interface AgentRequest {
   context: { shapeIds: string[], frameIds: string[], viewport: AgentViewport, feedback?: string[], area?: Rect }
   anchor: AgentAnchor
   /** chosen in the panel, for an agent that offers models */
-  options?: { model?: string, effort?: string }
+  options?: { model?: string, effort?: string, voice?: string }
   /** a spoken conversation, not a written request: its thread is what was said, and what was done */
   voice?: boolean
   /** set by the server when another agent (or a command) asked, by a note that mentions this one: who wrote it */
@@ -245,7 +248,7 @@ export function buildAgentRequest(options: {
   editor: AgentEditor
   shapeIds?: string[]
   frameIds?: string[]
-  options?: { model?: string, effort?: string }
+  options?: { model?: string, effort?: string, voice?: string }
   anchor?: AgentAnchor
   /** where it should work, marked out on the board */
   area?: Rect

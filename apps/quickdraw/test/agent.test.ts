@@ -4,7 +4,7 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { openBoard } from '../src/board/open.ts'
 import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { accountText, activityOf, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
-import { runVoice } from '../src/agent/voice.ts'
+import { realtimeVoices, runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
 import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
@@ -113,6 +113,32 @@ describe('quickdraw agent codex', () => {
     await person.until(() => person.events.some((e) => e.type === 'done' && e.requestId === 'v1'))
     expect(other.voices).toEqual([])
     expect(other.events.some((e) => e.type === 'reply' && e.requestId === 'v1')).toBe(true)
+  }, 30_000)
+
+  it('talks in the voice the person picked, when it is one on offer; else its own', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Voices').id}`
+    const person = await page(url)
+    const board = await openBoard({ url, name: 'Codex' })
+    const codex = startAppServer(process.cwd(), ['node', MOCK])
+    const offered = await initCodex(codex)
+    const voices = await realtimeVoices(codex)
+    expect(voices).toEqual({ voices: ['alloy', 'marin', 'cedar'], default: 'marin' })
+    const agent = await joinBoard(board, { id: 'codex-v', name: 'Codex', knows: [], voice: true, voices: voices!.voices, defaultVoice: 'alloy', ...offered })
+    cleanup.push(() => agent.close(), () => codex.close())
+    runVoice(codex, agent, await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex' }), { voice: 'alloy', voices: voices!.voices })
+    await person.until(() => person.agents.at(-1)?.[0]?.voices?.length === 3)
+    expect(person.agents.at(-1)![0]).toMatchObject({ voices: ['alloy', 'marin', 'cedar'], defaultVoice: 'alloy' }) // for the panel's picker
+
+    const ask = (id: string, voice: string) => person.send({ kind: 'request', sdp: 'v=offer', request: { id, to: 'codex-v', text: 'Voice', options: { voice }, context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {} } })
+    ask('c1', 'cedar')
+    await person.until(() => person.voices.some((v) => v.requestId === 'c1' && v.sdp))
+    expect(person.voices.find((v) => v.requestId === 'c1')!.sdp).toBe('v=answer;voice=cedar')
+    ask('c2', 'someone-else') // not on offer: its own
+    await person.until(() => person.voices.some((v) => v.requestId === 'c2' && v.sdp))
+    expect(person.voices.find((v) => v.requestId === 'c2')!.sdp).toBe('v=answer;voice=alloy')
   }, 30_000)
 
   it('works in an area people see: what it adds goes there, and it hears what people did in it and where they moved it', async () => {

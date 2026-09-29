@@ -291,6 +291,9 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
         ...(str(m.agent.effort, 40) ? { effort: m.agent.effort } : {}),
         ...(m.agent.remote === true ? { remote: true } : {}),
         ...(m.agent.voice === true ? { voice: true } : {}),
+        // the voices it talks in: names, a few
+        ...(m.agent.voice === true && Array.isArray(m.agent.voices) && m.agent.voices.length ? { voices: m.agent.voices.filter((v: unknown) => str(v, 40)).slice(0, 40) } : {}),
+        ...(m.agent.voice === true && str(m.agent.defaultVoice, 40) ? { defaultVoice: m.agent.defaultVoice } : {}),
       }
       agentOf.set(socket, participant)
       access.set(participant, { owner: personOf.get(socket), with: m.agent.remote === true ? 'all' : 'owner' })
