@@ -18,6 +18,7 @@ const AGENT_STATUS = { working: 'working', waiting: 'waiting for you', idle: 'id
 export const ACTIVITIES = {
   thinking: 'thinking', reading: 'reading the board', searching: 'searching the web', running: 'running a command',
   editing: 'editing files', imaging: 'making an image', drawing: 'drawing', waiting: 'waiting for you', done: 'done',
+  available: 'ready for a request', // here, with nothing to do: it stays where people are
 }
 
 const STYLE = `
@@ -36,11 +37,13 @@ const STYLE = `
 .qdp-cursor[data-act=running] svg,.qdp-cursor[data-act=editing] svg,.qdp-cursor[data-act=imaging] svg{animation:qdp-nod .9s ease-in-out infinite}
 .qdp-cursor[data-act=waiting] svg{animation:qdp-bob 1.4s ease-in-out infinite}
 .qdp-cursor[data-act=done] svg{animation:qdp-hop 500ms cubic-bezier(.2,.9,.3,1.4)}
+.qdp-cursor[data-act=available] svg{animation:qdp-sway 3.2s ease-in-out infinite}
 @keyframes qdp-mull{from{transform:rotate(0) translateX(3px) rotate(0)}to{transform:rotate(360deg) translateX(3px) rotate(-360deg)}}
 @keyframes qdp-scan{0%,100%{transform:translate(0,0)}25%{transform:translate(22px,2px)}50%{transform:translate(0,8px)}75%{transform:translate(22px,10px)}}
 @keyframes qdp-glance{0%,100%{transform:translateX(0)}30%{transform:translateX(-7px)}70%{transform:translateX(7px)}}
 @keyframes qdp-nod{50%{transform:translateY(3px)}}
 @keyframes qdp-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes qdp-sway{0%,100%{transform:translate(0,0) rotate(0)}30%{transform:translate(3px,-2px) rotate(4deg)}70%{transform:translate(-3px,1px) rotate(-3deg)}}
 @keyframes qdp-hop{40%{transform:translateY(-10px) scale(1.15)}}
 .qdp-edge{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif}
 .qdp-edge i{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-sizing:border-box}
