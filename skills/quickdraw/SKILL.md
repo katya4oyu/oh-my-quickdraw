@@ -38,7 +38,7 @@ Read before writing: it gives the ids you need, and shows where things are. Text
 
 ## Put things on the board
 
-Each command is one operation. Without `--at X,Y`, new shapes go in free space to the right of the board, or into a frame's free space with `--in FRAME_ID`.
+Each command is one operation. Without `--at X,Y`, new shapes go in free space: near what the person who asked was looking at, or by the people on the board, when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
 
 ```sh
 quickdraw note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]
@@ -139,6 +139,17 @@ Working through tickets:
 4. Asked to keep going: wait for the next one. Stop when the person says, or when `wait --timeout` prints `"ticket": null`.
 
 Take only tickets for you or for any agent. Put a ticket back for others with `apply` and `{ "do": "status", "id": ID, "status": "todo" }`.
+
+## Gather frames: `tidy`
+
+Boards spread outwards as things are added. When one has, or you are asked to tidy it, gather the frames:
+
+```sh
+quickdraw tidy                       # all frames, close together in reading order, in rows about 2400 wide
+quickdraw tidy F1,F2 --at 0,0        # some of them, from a point; --gap 80, --width 1600
+```
+
+Each frame brings what is in it and its title; a kanban's columns stay together; what is in no frame stays where it is. Then `lint` what you moved.
 
 ## Frames keep their size
 

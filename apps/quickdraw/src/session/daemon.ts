@@ -265,7 +265,8 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     try {
       await runCommand({
         board, url, boardKey: url, session: true,
-        operate: async (make) => { const done = await agent.operate(request, make); saw(done.diff); if (done.focus) lastSpot = done.focus; return done },
+        // what has no place goes where people look: the request's view (BoardAgent's), else by the people, else where it last worked
+        operate: async (make) => { const done = await agent.operate(request, make, { prefer: (request ? undefined : crowd() ?? lastSpot) ?? undefined }); saw(done.diff); if (done.focus) lastSpot = done.focus; return done },
         stdin: async () => stdin ?? '',
       }, [...argv, '--name', name], out, { signal })
     } finally { settle(cmd === 'done' || cmd === 'fail') }

@@ -75,7 +75,7 @@ export interface BoardAgent {
    * on each. With a request, it goes in the request's thread (to undo) and in
    * its work area; with null, it is only put on the board.
    */
-  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect }) => T): Promise<T>
+  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect, prefer?: { x: number, y: number } }) => T, opts?: { prefer?: { x: number, y: number } }): Promise<T>
   /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
   peopleSince(requestId: string): string
   /** puts its cursor at a page point and keeps it there (not hidden when it goes idle) */
@@ -190,6 +190,11 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const work = new Map<string, { area: Rect, title?: string, seen: Map<string, string>, moved?: boolean }>()
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
+  // the middle of what the person who asked was looking at: where what has no place goes
+  const viewOf = (requestId: string | null) => {
+    const v = requestId ? requests.get(requestId)?.context.viewport : undefined
+    return v && v.w > 1 && v.h > 1 ? { x: v.x + v.w / 2, y: v.y + v.h / 2 } : undefined
+  }
   let pinned = false // its cursor was put somewhere to stay (point)
   let nextApproval = 1
   let renderer: Renderer | undefined // pictures of the board, in a headless Chrome made when first needed
@@ -255,7 +260,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return typeof result === 'string' ? result : JSON.stringify(result)
     }
     const area = work.get(requestId)?.area
-    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area }) as never)
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
   }
 
   // ---- a request's work area: where it draws, which people see, move and draw in ----
@@ -415,9 +420,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
         images,
       }
     },
-    async operate(requestId, make) {
+    async operate(requestId, make, { prefer } = {}) {
       const area = requestId ? work.get(requestId)?.area : undefined
-      return (await putOp(requestId, (store) => make(store, { area }))).r
+      return (await putOp(requestId, (store) => make(store, area ? { area } : { prefer: prefer ?? viewOf(requestId) }))).r
     },
     peopleSince,
     point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
