@@ -334,6 +334,21 @@ describe('tickets', () => {
   })
 })
 
+describe('who made what', () => {
+  it('marks what an agent makes and changes, and reads who made it and who changed it last', () => {
+    const store = board()
+    const { result: [id] } = applySteps(store, 'Claude', [{ do: 'note', text: 'Plan' }])
+    expect(store.get(id).made).toMatchObject({ by: 'Claude' })
+    store.update(id, { props: { text: 'Plan v2' }, edited: { by: 'Ann', at: 1 } }) // Ann's page marks her edit
+    expect(describeBoard(store).items[0]).toMatchObject({ by: 'Claude', edited_by: 'Ann' })
+    expect(boardToMarkdown(store)).toContain('[note, by Claude, edited by Ann] Plan v2')
+    const { diff } = runOp(store, 'Codex', (ops) => ops.move(id, { dx: 10 }))
+    expect(store.get(id).edited).toMatchObject({ by: 'Codex' })
+    expect(undoDiff(store, diff).skipped).toEqual([]) // the mark goes with the change
+    expect(store.get(id).edited.by).toBe('Ann')
+  })
+})
+
 describe('a work area', () => {
   const inside = (b, a) => b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h
   it('finds free space near where it is wanted, clear of what is there', () => {

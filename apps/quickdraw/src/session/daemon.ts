@@ -82,9 +82,9 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     const now = new Map<string, string>()
     for (const s of store.shapes()) if (isShape(s as BoardRecord)) now.set(s.id, summary(s as BoardRecord))
     for (const [id, v] of now) {
-      const s = store.get(id) as BoardRecord & { agent?: { name: string } }
-      if (!seen.has(id)) added.push({ ...said(s), by: s.agent?.name ?? 'people' })
-      else if (seen.get(id) !== v) changed.push(said(s))
+      const s = store.get(id) as BoardRecord & { agent?: { name: string }, made?: { by: string }, edited?: { by: string } }
+      if (!seen.has(id)) added.push({ ...said(s), by: s.made?.by ?? s.agent?.name ?? 'people' })
+      else if (seen.get(id) !== v) changed.push({ ...said(s), ...(s.edited?.by ? { by: s.edited.by } : {}) })
     }
     for (const id of seen.keys()) if (!now.has(id)) removed.push(id)
     look()
