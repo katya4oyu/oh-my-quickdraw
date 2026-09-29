@@ -110,7 +110,10 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
   // last (after what they connect); otherwise in the order they were made
   const rank = (r: BoardRecord) => ((r as { isFrame?: boolean }).isFrame ? 0 : (r as { type?: string }).type === 'arrow' ? 2 : 1)
   const added = Object.keys(diff.added).map(final).filter(Boolean).sort((a, b) => rank(a) - rank(b))
-  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]]).filter(([, [, to]]) => to)
+  // moved or changed in the same order: a frame first, which brings its members (and title) along;
+  // a member moved before its frame would land outside it and be let go of, and the title moved twice
+  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]])
+    .filter(([, [, to]]) => to).sort(([, [, a]], [, [, b]]) => rank(a) - rank(b))
   const shown = added.filter(isShape).length + updated.filter(([, [, to]]) => isShape(to)).length
   const gap = shown ? Math.min(250, Math.max(40, pace / shown)) : 0
   const one = async (d: Partial<Diff>, rec: BoardRecord) => {

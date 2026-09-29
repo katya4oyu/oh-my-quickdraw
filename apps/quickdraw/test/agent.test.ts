@@ -367,6 +367,30 @@ it('puts an operation on the board a piece at a time, ending as the operation wo
   expect(live.all().filter((r) => r.typeName === 'shape')).toEqual([])
 })
 
+it('moves a frame with what is in it and its title, however it is moved or laid out', async () => {
+  const { Store } = await import('@quickdrawjs/core')
+  const { bindFrames } = await import('quickdraw-frames')
+  const { applySteps } = await import('quickdraw-agent')
+  const live = new Store(); bindFrames(live)
+  const { result: [frame, one, two] } = applySteps(live, 'Codex', [
+    { do: 'frame', title: 'Plan', at: { x: 0, y: 0 }, w: 600, h: 400, ref: 'f' }, { do: 'note', text: 'one', in: '@f' }, { do: 'note', text: 'two', in: '@f' },
+  ]) as { result: string[] }
+  for (const steps of [[{ do: 'move', id: frame, dx: 700 }], [{ do: 'arrange', ids: [frame], at: { x: -300, y: 50 } }]]) {
+    const copy = new Store()
+    copy.loadSnapshot({ document: { store: Object.fromEntries(live.all().map((r) => [r.id, structuredClone(r)])) } })
+    bindFrames(copy)
+    const { diff } = applySteps(copy, 'Codex', steps)
+    await putLive(live, diff, copy, () => {}, 0) // as an agent puts it on the board: a record at a time
+    const f = live.get(frame) as any, title = live.get(frame + '-title') as any
+    for (const id of [one, two]) {
+      const n = live.get(id) as any
+      expect(n.frameId).toBe(frame) // still in it
+      expect(n.x - f.x).toBe((copy.get(id) as any).x - (copy.get(frame) as any).x)
+    }
+    expect([title.x - f.x, title.y - f.y]).toEqual([0, -34]) // not left behind, nor moved twice
+  }
+})
+
 it('reads image sizes and keeps to the allowed folders', () => {
   expect(imageSize(PNG_1x1)).toEqual({ w: 1, h: 1 })
   expect(imageSize(Buffer.from('GIF89a\x10\x00\x20\x00', 'latin1'))).toEqual({ w: 16, h: 32 })
