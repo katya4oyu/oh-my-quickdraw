@@ -133,6 +133,22 @@ describe('frames keep their size', () => {
     expect(store.get(f).props).toMatchObject({ w: 480, h: 320 })
   })
 
+  it('puts several things into a frame in one operation side by side, not on top of each other', () => {
+    const store = board()
+    const { result: [f, ...notes] } = applySteps(store, 'C', [
+      { do: 'frame', title: 'Keep', at: { x: 0, y: 0 }, w: 280, h: 700, ref: 'f' },
+      ...[1, 2, 3].map((i) => ({ do: 'note', text: `n${i}`, in: '@f' })),
+    ])
+    const bs = notes.map((id) => pageBounds(store.get(id)))
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+      const a = bs[i], b = bs[j]
+      expect(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h, `${notes[i]} and ${notes[j]}`).toBe(false)
+    }
+    for (const id of notes) expect(inside(store, id, f), id).toBe(true)
+    // and one that no longer fits is refused there too, the whole operation with it
+    expect(() => applySteps(store, 'C', [1, 2].map((i) => ({ do: 'note', text: `more${i}`, in: f })))).toThrow(/is full/)
+  })
+
   it('fit shrinks the contents and the shapes named together, keeping their layout and the frame', () => {
     const store = board()
     const { result: f } = runOp(store, 'C', (ops) => ops.frame('Slide', { at: { x: 0, y: 0 }, w: 480, aspect: '16:9' }))

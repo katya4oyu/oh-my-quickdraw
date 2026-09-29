@@ -79,6 +79,27 @@ Codex joins the board as a participant with a cursor, and the board's AI panel s
   <img src="docs/voice.png" alt="A board with three frames — plan, doing, done — with two notes each, made while talking; the voice bar at the top says Talking with Codex · work, and the AI panel lists the Voice conversation" width="640">
 - Ctrl-C leaves the board; so does losing Codex or the board. What it was still doing ends with an error in the thread.
 
+## `quickdraw agent pi`
+
+`quickdraw agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote] [--no-approval]`, from the directory [pi](https://github.com/earendil-works/pi) should work in:
+
+```sh
+npm i -w apps/quickdraw @earendil-works/pi-coding-agent   # pi's SDK, an optional dependency (once)
+cd ~/src/some-project
+quickdraw agent pi --board ID        # "pi · some-project" joins the board
+```
+
+pi joins the board as Codex does — the same panel, work areas, steps people watch, undo, Stop, feedback on snapshots, `look_at`, and who may ask it — but it runs in this process through pi's SDK, with pi's own settings and sign-ins (`~/.pi/agent`) and the directory's `AGENTS.md` and skills.
+
+- **Models**: the panel offers every model pi can use (those it has a sign-in or key for), as `provider/id`, with the thinking levels a reasoning model takes. `--model` and `--effort` set the defaults there; otherwise pi's default model and thinking level, if set.
+- **Approvals**: pi asks no one before it runs a command or changes a file. Here its `bash`, `edit` and `write` wait for a person's Allow in the panel (and by its area's label); Deny tells pi it was declined. `--no-approval` lets them run.
+- One pi session per request, in memory (not in pi's session list); a follow-up continues it, steering a run that is still going.
+- It does not talk (no microphone) or make images; `add_image` still puts image files from the working directory.
+
+### Another agent
+
+Codex ([`src/agent/codex.ts`](src/agent/codex.ts)) and pi ([`src/agent/pi.ts`](src/agent/pi.ts)) are two adapters over one `BoardAgent` ([`src/agent/board-agent.ts`](src/agent/board-agent.ts)), which knows the board and nothing of what runs on it. Another agent is a third: hand its model `agent.tools` (JSON Schema), run each tool call with `agent.runTool` (and `look_at` with `agent.picture`), ask with `agent.approve`, report with `agent.emit`, `agent.status` and `agent.activity`, and set `onRequest`, `onReply` and `onStop`; then add it to `bin/quickdraw.ts`.
+
 ## Board commands
 
 `quickdraw boards | new | read | export | note | text | shape | markdown | embed | image | frame | arrow | update | move | arrange | fit | delete | apply | log | undo`. They join a board like a browser tab, as one more peer with a cursor, and print JSON.
