@@ -32,7 +32,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     process.stderr.write(`cwd=${m.params.cwd} tools=${tools.length} instructions=${m.params.developerInstructions.length}\n`)
     return out({ id: m.id, result: { thread: { id: `thread-${++threads}` }, model: m.params.model ?? 'fast', reasoningEffort: null } })
   }
-  if (m.method === 'thread/realtime/listVoices') return out({ id: m.id, result: { voices: { v1: ['cove'], v2: ['alloy', 'marin', 'cedar'], defaultV1: 'cove', defaultV2: 'marin' } } })
+  if (m.method === 'thread/realtime/listVoices') return out({ id: m.id, result: { voices: { v1: ['juniper', 'sol', 'cove'], v2: ['alloy', 'marin', 'cedar'], defaultV1: 'cove', defaultV2: 'marin' } } })
   if (m.method === 'thread/realtime/start') {
     const { threadId, transport, version, outputModality } = m.params
     process.stderr.write(`realtime ${transport.type} ${version} ${outputModality} offer=${transport.sdp}\n`)

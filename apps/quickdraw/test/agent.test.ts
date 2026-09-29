@@ -125,20 +125,20 @@ describe('quickdraw agent codex', () => {
     const codex = startAppServer(process.cwd(), ['node', MOCK])
     const offered = await initCodex(codex)
     const voices = await realtimeVoices(codex)
-    expect(voices).toEqual({ voices: ['alloy', 'marin', 'cedar'], default: 'marin' })
-    const agent = await joinBoard(board, { id: 'codex-v', name: 'Codex', knows: [], voice: true, voices: voices!.voices, defaultVoice: 'alloy', ...offered })
+    expect(voices).toEqual({ voices: ['juniper', 'sol', 'cove'], default: 'cove' }) // v1: what a v3 conversation takes
+    const agent = await joinBoard(board, { id: 'codex-v', name: 'Codex', knows: [], voice: true, voices: voices!.voices, defaultVoice: 'sol', ...offered })
     cleanup.push(() => agent.close(), () => codex.close())
-    runVoice(codex, agent, await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex' }), { voice: 'alloy', voices: voices!.voices })
+    runVoice(codex, agent, await runCodex(codex, agent, { cwd: process.cwd(), name: 'Codex' }), { voice: 'sol', voices: voices!.voices })
     await person.until(() => person.agents.at(-1)?.[0]?.voices?.length === 3)
-    expect(person.agents.at(-1)![0]).toMatchObject({ voices: ['alloy', 'marin', 'cedar'], defaultVoice: 'alloy' }) // for the panel's picker
+    expect(person.agents.at(-1)![0]).toMatchObject({ voices: ['juniper', 'sol', 'cove'], defaultVoice: 'sol' }) // for the panel's picker
 
     const ask = (id: string, voice: string) => person.send({ kind: 'request', sdp: 'v=offer', request: { id, to: 'codex-v', text: 'Voice', options: { voice }, context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1, h: 1 } }, anchor: {} } })
-    ask('c1', 'cedar')
+    ask('c1', 'juniper')
     await person.until(() => person.voices.some((v) => v.requestId === 'c1' && v.sdp))
-    expect(person.voices.find((v) => v.requestId === 'c1')!.sdp).toBe('v=answer;voice=cedar')
-    ask('c2', 'someone-else') // not on offer: its own
+    expect(person.voices.find((v) => v.requestId === 'c1')!.sdp).toBe('v=answer;voice=juniper')
+    ask('c2', 'marin') // not one a v3 conversation takes: its own
     await person.until(() => person.voices.some((v) => v.requestId === 'c2' && v.sdp))
-    expect(person.voices.find((v) => v.requestId === 'c2')!.sdp).toBe('v=answer;voice=alloy')
+    expect(person.voices.find((v) => v.requestId === 'c2')!.sdp).toBe('v=answer;voice=sol')
   }, 30_000)
 
   it('works in an area people see: what it adds goes there, and it hears what people did in it and where they moved it', async () => {
