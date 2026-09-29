@@ -70,7 +70,9 @@ export function describeBoard(store) {
     id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
-    ...(s.agent ? { by: s.agent.name } : {}),
+    // who made it (an agent, or a person whose page marked it), and who changed it last if not them
+    ...((s.made?.by ?? s.agent?.name) ? { by: s.made?.by ?? s.agent.name } : {}),
+    ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
     ...(s.type === TICKET ? { ticket: { status: s.props.status, to: s.props.to ?? null, by: s.props.by ?? null, ...(s.props.result ? { result: s.props.result } : {}) } } : {}),
   })).sort(byPosition)
   const arrows = shapes.filter(isLine).map((s) => {
@@ -86,7 +88,7 @@ export function boardToMarkdown(store) {
   const byId = new Map(items.map((it) => [it.id, it]))
   const line = (it) => {
     const text = String(it.text ?? '').trim()
-    const tag = `[${it.type}${it.by ? `, by ${it.by}` : ''}] `
+    const tag = `[${it.type}${it.by ? `, by ${it.by}` : ''}${it.edited_by ? `, edited by ${it.edited_by}` : ''}] `
     if (it.ticket) {
       const t = it.ticket
       const who = t.status === 'todo' ? ` → ${t.to ?? 'any agent'}` : t.by ? `, ${t.by}` : ''
@@ -507,6 +509,12 @@ export function runOp(store, name, fn, { area, prefer } = {}) {
   try {
     try {
       store.transact(() => { result = fn(ops); reroute() })
+      // who made it, and who changed it last (quickdraw-presence's bindAuthorship does it for people)
+      const at = Date.now(), made = since()
+      store.transact(() => {
+        for (const id of Object.keys(made.added)) { const s = store.get(id); if (s?.typeName === 'shape' && !s.made) store.update(id, { made: { by: name, at } }) }
+        for (const id of Object.keys(made.updated)) if (store.get(id)?.typeName === 'shape') store.update(id, { edited: { by: name, at } })
+      })
     } catch (e) {
       revert(store, since()) // the transaction still applied what came before the error
       throw e

@@ -61,7 +61,7 @@
     import { createAgentPanel, agentTools, buildAgentRequest } from 'quickdraw-agent'
     import { createVoice, voiceTools } from 'quickdraw-voice'
     import { createScreenShare, screenShareTools, pendingFeedback, markSent } from 'quickdraw-screenshare'
-    import { createPresence } from 'quickdraw-presence'
+    import { bindAuthorship, createPresence } from 'quickdraw-presence'
     import { UPDATE, SV, PRESENCE, AGENT, SHARE, LIVE, pack, packPresence, unpackPresence, packAgent, unpackAgent, packShare, unpackShare } from '/protocol.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -263,6 +263,9 @@
       send: (p) => { if (ws?.readyState === WebSocket.OPEN) ws.send(packPresence(p)) },
       onMessage(fn) { presenceListeners.add(fn); return () => presenceListeners.delete(fn) },
     } })
+
+    // who made what, and who changed it last: marked as you do it (agents mark theirs)
+    bindAuthorship(board.editor.store, { me: () => presence.me() })
 
     connect()
 

@@ -60,7 +60,8 @@ export interface BoardDescription {
     snapshot?: { at: number, by: string },
     /** a kanban's column (quickdraw-tickets) */
     kanban?: { id: string, status: 'todo' | 'doing' | 'done' } }[]
-  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, x: number, y: number, w: number, h: number,
+  /** `by`: who made it; `edited_by`: who changed it last, when someone else */
+  items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, edited_by?: string, x: number, y: number, w: number, h: number,
     /** a ticket's state: who it is for (null: any agent), who has it, and how it went */
     ticket?: { status: TicketStatus, to: string | null, by: string | null, result?: string } }[]
   arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string }[]
