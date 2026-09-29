@@ -22,6 +22,13 @@ const USAGE = `quickdraw <command>
         People can also talk with it (the microphone in the board's AI tools):
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
         hands the work to Codex; --voice picks its voice, --no-voice turns it off
+  agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
+           [--no-approval]
+        pi joins a board the same way, with your pi settings and sign-ins; the
+        panel offers the models pi can use. Its commands and file changes
+        (bash, edit, write) wait for a person's approval in the panel;
+        --no-approval lets them run. It does not talk or make images. Needs
+        pi's SDK: npm i -w apps/quickdraw @earendil-works/pi-coding-agent
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -52,11 +59,13 @@ if (command === 'serve') {
     options: {
       board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
       model: { type: 'string' }, effort: { type: 'string' }, 'allow-remote': { type: 'boolean' },
-      voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' },
+      voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' }, 'no-approval': { type: 'boolean' },
     },
   })
-  if (positionals[0] !== 'codex') {
-    process.stderr.write('usage: quickdraw agent codex [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote] [--voice NAME] [--voice-model M] [--no-voice]\n')
+  const runtime = positionals[0]
+  if (runtime !== 'codex' && runtime !== 'pi') {
+    process.stderr.write('usage: quickdraw agent codex|pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
+      + '         codex: [--voice NAME] [--voice-model M] [--no-voice]   pi: [--no-approval]\n')
     process.exit(1)
   }
   const { basename } = await import('node:path')
@@ -64,36 +73,53 @@ if (command === 'serve') {
   const { openBoard } = await import('../src/board/open.ts')
   const { joinBoard } = await import('../src/agent/board-agent.ts')
   const { linkPreview, serverOfBoard } = await import('../src/board/link-preview.ts')
-  const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
-  const { runVoice } = await import('../src/agent/voice.ts')
   const cwd = process.cwd()
   const folder = basename(cwd)
-  const name = values.name ?? `Codex · ${folder}`
-  const id = values.id ?? ('codex-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+  const name = values.name ?? `${runtime === 'codex' ? 'Codex' : 'pi'} · ${folder}`
+  const id = values.id ?? (runtime + '-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+  const remote = values['allow-remote'] === true
   try {
     // at a terminal, several boards are a choice; elsewhere (piped, an agent) the command fails and lists them
-    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, 'quickdraw agent codex') : undefined
+    const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, `quickdraw agent ${runtime}`) : undefined
     const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
-    const board = await openBoard({ url, name })
-    const codex = startAppServer(cwd)
-    const offered = await initCodex(codex, { model: values.model, effort: values.effort })
-    const { homedir } = await import('node:os')
-    const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
-    const remote = values['allow-remote'] === true
-    const voice = values['no-voice'] !== true
-    const agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice }, { imageRoots: [cwd, generatedImages], preview: (link) => linkPreview(serverOfBoard(url), link) })
+    const preview = (link: string) => linkPreview(serverOfBoard(url), link)
+    // what it runs on: started, joined to the board, and stopped when it leaves
+    let stop: () => void
+    let agent: Awaited<ReturnType<typeof joinBoard>>
     const leave = async (code: number, why?: string) => {
       if (why) process.stderr.write(why + '\n')
-      codex.close()
-      await agent.close()
+      stop?.()
+      await agent?.close()
       process.exit(code)
     }
-    codex.onExit(() => leave(1, 'codex app-server stopped'))
-    board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
+    if (runtime === 'codex') {
+      const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
+      const { runVoice } = await import('../src/agent/voice.ts')
+      const board = await openBoard({ url, name })
+      const codex = startAppServer(cwd)
+      stop = () => codex.close()
+      const offered = await initCodex(codex, { model: values.model, effort: values.effort })
+      const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
+      const voice = values['no-voice'] !== true
+      agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice }, { imageRoots: [cwd, generatedImages], preview })
+      codex.onExit(() => leave(1, 'codex app-server stopped'))
+      board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
+      const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
+      if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: values.voice })
+    } else {
+      const { initPi, runPi } = await import('../src/agent/pi.ts')
+      const sdk = await import('@earendil-works/pi-coding-agent').catch(() => {
+        throw new Error("pi's SDK is not installed: npm i -w apps/quickdraw @earendil-works/pi-coding-agent")
+      })
+      const offered = await initPi(sdk, cwd, { model: values.model, effort: values.effort })
+      const board = await openBoard({ url, name })
+      agent = await joinBoard(board, { id, name, knows: [folder], models: offered.models, model: offered.model, effort: offered.effort, remote }, { imageRoots: [cwd], preview })
+      board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
+      const running = await runPi(sdk, offered.runtime, agent, { cwd, name, model: offered.model, effort: offered.effort, approval: values['no-approval'] !== true })
+      stop = running.close
+    }
     process.on('SIGINT', () => leave(0))
     process.on('SIGTERM', () => leave(0))
-    const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
-    if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: values.voice })
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
     console.log(remote ? 'Anyone on the board can ask it (--allow-remote).' : 'Only people on the computer running quickdraw serve can ask it (--allow-remote lets anyone on the board).')
   } catch (e) {

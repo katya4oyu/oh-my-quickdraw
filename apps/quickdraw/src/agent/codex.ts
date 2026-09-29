@@ -78,7 +78,7 @@ function prompt(request: AgentRequest): string {
   return request.text + about + where
 }
 
-const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+export const clip = (s: string, n = 200) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 // `/bin/zsh -lc "rg --files …"` reads as `rg --files …`
 export function commandText(command: string): string {
   const inner = command.match(/^\S*\/?(?:zsh|bash|sh) -l?c (.*)$/s)?.[1]
