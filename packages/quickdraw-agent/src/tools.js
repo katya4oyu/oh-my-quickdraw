@@ -4,6 +4,7 @@
 // the same step in a list of steps.
 import { COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard } from './ops.js'
+import { fixLayout, fixText, lintBoard, lintText } from './lint.js'
 
 const str = (description) => ({ type: 'string', ...(description ? { description } : {}) })
 const num = { type: 'number' }
@@ -38,6 +39,19 @@ export const BOARD_TOOLS = [
     inputSchema: object({ format: { type: 'string', enum: ['markdown', 'json'] } }),
     run: (store, { format = 'markdown' } = {}) => (format === 'json' ? describeBoard(store) : boardToMarkdown(store)),
   },
+  {
+    name: 'check_board',
+    description: 'Checks the layout of what you made: shapes on top of each other, an arrow across a shape it does not connect, something sticking out of its frame or across a frame\'s edge, frames on top of each other. '
+      + 'Call it once you think a piece of work is done, narrowed to what you worked on (`frame`, or `ids`; by default your work area, else the whole board). '
+      + 'With `fix`, it fixes what it can itself, as one step (one undo), on what agents made: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame\'s edge. It reports the rest (an arrow across a shape) for you to fix.',
+    inputSchema: object({ frame: str('a frame id: check it and what is in it'), ids: ids('shapes to check (instead of a frame)'), fix: { type: 'boolean', description: 'fix what can be fixed without you' } }),
+    run(store, { frame, ids: only, fix = false } = {}, { name = 'Agent', area } = {}) {
+      const scope = { frame, ids: only, area: frame || only?.length ? undefined : area }
+      const r = fix ? fixLayout(store, name, scope) : null
+      if (!r) return lintText(lintBoard(store, scope))
+      return { op: r.op, diff: r.diff, focus: r.focus, ids: Object.keys(r.diff.updated), text: fixText(r) }
+    },
+  },
   step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), ...placement }, ['text']),
   step('add_text', 'text', 'A line of text, such as a heading.', { text: str(), ...placement }, ['text']),
   step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, ...placement }, ['shape']),
@@ -51,7 +65,7 @@ export const BOARD_TOOLS = [
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
   }, ['title']),
   step('add_arrow', 'arrow', 'An arrow between two shapes; it follows them when they move later.', { from: str('shape id'), to: str('shape id'), color, line: { type: 'boolean', description: 'a line, no arrowhead' } }, ['from', 'to']),
-  step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card or frame title) or the color.', { id: str(), text: str(), color }, ['id']),
+  step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card or frame title) or the color, or a shape\'s size (`w`, `h`: rectangles, diamonds and the like, for a label that does not fit).', { id: str(), text: str(), color, w: num, h: num }, ['id']),
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
   step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),

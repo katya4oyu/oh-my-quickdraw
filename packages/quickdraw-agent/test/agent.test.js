@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -324,3 +324,174 @@ describe('a work area', () => {
     expect(inside(pageBounds(store.get(out.ids[0])), out.area)).toBe(true)
   })
 })
+
+describe('checking the layout', () => {
+  const kinds = (issues) => issues.map((i) => i.kind)
+
+  it('finds nothing wrong in what the operations lay out by themselves', () => {
+    const store = board()
+    const { result: [f] } = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', w: 700, h: 300, at: { x: 0, y: 0 } }])
+    for (const i of [1, 2, 3]) applySteps(store, 'C', [{ do: 'note', text: `n${i}`, in: f }])
+    applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'B', ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b' },
+    ])
+    expect(lintBoard(store)).toEqual([])
+    expect(lintText([])).toBe('No layout problems found.')
+  })
+
+  it('finds shapes on top of each other, a heading over a frame title, and says who made them', () => {
+    const store = board()
+    const { result: [a, b] } = applySteps(store, 'C', [
+      { do: 'note', text: 'First', at: { x: 0, y: 0 } },
+      { do: 'note', text: 'Second', at: { x: 0, y: 110 } }, // 200 tall: 90 on top of the first
+    ])
+    store.put(human('shape:p', 'Mine', 150, 0))
+    const issues = lintBoard(store)
+    expect(issues.map((i) => i.ids)).toEqual(expect.arrayContaining([[a, b], [a, 'shape:p'], [b, 'shape:p']]))
+    expect(issues.find((i) => i.ids.includes('shape:p')).text).toMatch(/note "Mine" \(shape:p, by a person\)/)
+    expect(lintText(issues)).toMatch(/^3 layout problems:\n- note "First"/)
+
+    const s2 = board()
+    const { result: [f] } = applySteps(s2, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 100 }, w: 400, h: 300 }])
+    const { result: [t] } = applySteps(s2, 'C', [{ do: 'text', text: 'A big heading over it all', at: { x: 0, y: 70 } }])
+    expect(lintBoard(s2)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'overlap', ids: [f + '-title', t] })]))
+  })
+
+  it('finds an arrow across a shape it does not connect', () => {
+    const store = board()
+    const { result: [a, , c, arrow] } = applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 0 }, ref: 'a' },
+      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 0 } },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 0 }, ref: 'c' },
+      { do: 'arrow', from: '@a', to: '@c' },
+    ])
+    const [issue] = lintBoard(store)
+    expect(issue).toMatchObject({ kind: 'arrow-crosses' })
+    expect(issue.ids[0]).toBe(arrow)
+    expect(issue.text).toMatch(/runs across diamond "Wall"/)
+    expect(issue.ids).not.toContain(a)
+    expect(issue.ids).not.toContain(c)
+  })
+
+  it('finds what lies across a frame\'s edge, and frames on top of each other', () => {
+    const store = board()
+    const { result: [f, g] } = applySteps(store, 'C', [
+      { do: 'frame', title: 'One', at: { x: 0, y: 0 }, w: 400, h: 300 },
+      { do: 'frame', title: 'Two', at: { x: 300, y: 100 }, w: 400, h: 300 },
+    ])
+    applySteps(store, 'C', [{ do: 'note', text: 'Half out', at: { x: 900, y: 150 } }])
+    const n = store.shapes().find((s) => s.type === 'note')
+    store.update(n.id, { x: 620, y: 300 }) // across Two's bottom-right corner
+    const issues = lintBoard(store)
+    expect(kinds(issues)).toContain('frames-overlap')
+    expect(issues.find((i) => i.kind === 'frames-overlap').ids).toEqual([f, g])
+    expect(issues.some((i) => ['straddles-frame', 'outside-frame'].includes(i.kind) && i.ids.includes(n.id))).toBe(true)
+  })
+
+  it('finds a label that does not fit its shape, which update_shape makes room for', () => {
+    const store = board()
+    const { result: [box] } = applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'Not yet: resend link\nand check email', w: 210, h: 70, at: { x: 0, y: 0 } }])
+    const [issue] = lintBoard(store)
+    expect(issue).toMatchObject({ kind: 'text-overflow', ids: [box] })
+    expect(issue.text).toMatch(/update_shape w, h/)
+    applySteps(store, 'C', [{ do: 'update', id: box, w: 260, h: 110 }])
+    expect(store.get(box).props).toMatchObject({ w: 260, h: 110 })
+    expect(lintBoard(store)).toEqual([])
+    expect(() => applySteps(store, 'C', [{ do: 'frame', title: 'F', ref: 'f' }, { do: 'update', id: '@f', w: 900 }])).toThrow(/cannot be resized/)
+  })
+
+  it('finds what sits right against a frame\'s edge, in it or not', () => {
+    const store = board()
+    const { result: [f] } = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 0 }, w: 300, h: 300 }])
+    applySteps(store, 'C', [{ do: 'note', text: 'Below', at: { x: 40, y: 297 } }]) // 3 on it: not in, not clear
+    const issues = lintBoard(store)
+    expect(issues).toEqual([expect.objectContaining({ kind: 'touches-frame', ids: [issues[0].ids[0], f] })])
+  })
+
+  it('checks only a frame, some shapes or an area when asked', () => {
+    const store = board()
+    const { result: [f] } = applySteps(store, 'C', [{ do: 'frame', title: 'Mine', at: { x: 0, y: 0 }, w: 600, h: 400 }])
+    applySteps(store, 'C', [
+      { do: 'note', text: 'In', at: { x: 30, y: 30 } }, { do: 'note', text: 'In too', at: { x: 30, y: 130 } }, // in the frame, on each other
+      { do: 'note', text: 'Out', at: { x: 1000, y: 0 } }, { do: 'note', text: 'Out too', at: { x: 1000, y: 100 } }, // elsewhere, on each other
+    ])
+    expect(lintBoard(store)).toHaveLength(2)
+    const inFrame = lintBoard(store, { frame: f })
+    expect(inFrame).toHaveLength(1)
+    expect(inFrame[0].text).toMatch(/"In"/)
+    expect(lintBoard(store, { area: { x: 900, y: -50, w: 500, h: 500 } })[0].text).toMatch(/"Out"/)
+    expect(() => lintBoard(store, { frame: 'shape:nope' })).toThrow(/not a frame/)
+  })
+
+  it('is a tool: by default it checks the work area', () => {
+    const store = board()
+    applySteps(store, 'C', [
+      { do: 'note', text: 'Here', at: { x: 0, y: 0 } }, { do: 'note', text: 'Here too', at: { x: 0, y: 100 } },
+      { do: 'note', text: 'Away', at: { x: 2000, y: 0 } }, { do: 'note', text: 'Away too', at: { x: 2000, y: 100 } },
+    ])
+    const check = BOARD_TOOLS.find((t) => t.name === 'check_board')
+    const text = check.run(store, {}, { name: 'C', area: { x: -50, y: -50, w: 400, h: 500 } })
+    expect(text).toMatch(/^1 layout problem:/)
+    expect(text).toMatch(/"Here"/)
+    expect(check.run(store, {}, { name: 'C' })).toMatch(/^2 layout problems:/)
+  })
+})
+
+describe('fixing the layout', () => {
+  it('pulls notes piled in a small frame apart and fits them in, as one undoable operation', () => {
+    const store = board()
+    const { result: [f] } = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 0 }, w: 280, h: 460 }])
+    const notes = [1, 2, 3].map((i) => applySteps(store, 'C', [{ do: 'note', text: `n${i}`, at: { x: 40, y: 40 } }]).result[0])
+    expect(lintBoard(store, { frame: f }).length).toBeGreaterThan(0)
+    const r = fixLayout(store, 'C', { frame: f })
+    expect(r.left).toEqual([])
+    expect(lintBoard(store)).toEqual([])
+    for (const id of notes) expect(store.get(id).frameId).toBe(f)
+    expect(fixText(r)).toMatch(/^Fixed \d+ by itself:[\s\S]*No layout problems left\.$/)
+    undoDiff(store, r.diff) // one undo
+    expect(notes.map((id) => [store.get(id).x, store.get(id).y])).toEqual([[40, 40], [40, 40], [40, 40]])
+  })
+
+  it('grows a shape for its label, and moves a heading off a frame\'s title', () => {
+    const store = board()
+    const { result: [box] } = applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'Not yet: resend link\nand check email', w: 210, h: 70, at: { x: 0, y: 600 } }])
+    applySteps(store, 'C', [{ do: 'frame', title: 'Keep', at: { x: 0, y: 100 }, w: 400, h: 300 }])
+    const { result: [t] } = applySteps(store, 'C', [{ do: 'text', text: 'A big heading', at: { x: 0, y: 70 } }])
+    const y0 = store.get(t).y
+    const r = fixLayout(store, 'C')
+    expect(store.get(box).props.h).toBeGreaterThan(70)
+    expect(store.get(t).y).toBeLessThan(y0)
+    expect(r.left).toEqual([])
+  })
+
+  it('moves only what agents made, and leaves what needs judgement', () => {
+    const store = board()
+    store.put(human('shape:p', 'Mine', 0, 0))
+    const { result: [n] } = applySteps(store, 'C', [{ do: 'note', text: 'Agent', at: { x: 50, y: 50 } }])
+    applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
+      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
+      { do: 'arrow', from: '@a', to: '@c' },
+    ])
+    const r = fixLayout(store, 'C')
+    expect(store.get('shape:p')).toMatchObject({ x: 0, y: 0 })
+    expect(store.get(n).x !== 50 || store.get(n).y !== 50).toBe(true)
+    expect(r.left.map((i) => i.kind)).toEqual(['arrow-crosses'])
+    expect(fixText(r)).toMatch(/^NOT DONE: 1 problem left for you to fix[\s\S]*runs across diamond "Wall"/)
+    expect(fixLayout(store, 'C')).toBeNull() // nothing more it can fix
+  })
+
+  it('is check_board with fix', () => {
+    const store = board()
+    applySteps(store, 'C', [{ do: 'note', text: 'One', at: { x: 0, y: 0 } }, { do: 'note', text: 'Two', at: { x: 0, y: 100 } }])
+    const check = BOARD_TOOLS.find((t) => t.name === 'check_board')
+    const r = check.run(store, { fix: true }, { name: 'C' })
+    expect(r).toMatchObject({ op: expect.stringMatching(/^op:/), ids: expect.any(Array) })
+    expect(r.text).toMatch(/No layout problems left/)
+    expect(check.run(store, { fix: true }, { name: 'C' })).toBe('No layout problems found.')
+  })
+})
+
