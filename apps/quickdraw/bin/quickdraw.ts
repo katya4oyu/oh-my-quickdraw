@@ -52,6 +52,23 @@ if (command === 'serve') {
   if (imported) console.log(`imported board.sqlite as the board "${imported.title}" (${imported.id})`)
   const { port } = await app.listen(Number(values.port), values.host)
   console.log(`http://${values.host === '0.0.0.0' ? 'localhost' : values.host}:${port}/   (data: ${data})`)
+} else if (command === 'session') {
+  // the process `quickdraw join` leaves running (src/session): it says on its first line that it is on the board
+  const { values } = parseArgs({ args: rest, options: { board: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' } } })
+  try {
+    const { startSession } = await import('../src/session/daemon.ts')
+    const s = await startSession({ url: values.board!, name: values.name ?? 'Agent', cwd: process.cwd(), idle: values.idle ? Number(values.idle) : undefined, remote: values['allow-remote'] === true })
+    process.stdout.write(JSON.stringify({ joined: true, board: s.info.url, name: s.info.name, cwd: s.info.cwd }) + '\n')
+    const leave = () => void s.close()
+    process.on('SIGINT', leave)
+    process.on('SIGTERM', leave)
+    process.stdout.on('error', () => {}) // the one who started it stops listening after the first line
+    await s.closed
+    process.exit(0)
+  } catch (e) {
+    process.stdout.write(JSON.stringify({ error: (e as Error).message }) + '\n')
+    process.exit(1)
+  }
 } else if (command === 'agent') {
   const { values, positionals } = parseArgs({
     args: rest,

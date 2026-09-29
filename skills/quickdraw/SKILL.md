@@ -1,6 +1,6 @@
 ---
 name: quickdraw
-description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), tidy it up, act on the feedback people wrote on snapshots of a shared screen, take and close the tickets people leave for agents (or wait for the next one), and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames, snapshots, tickets or kanban, or asks to put something on the board or to work through its tickets.
+description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), tidy it up, act on the feedback people wrote on snapshots of a shared screen, take and close the tickets people leave for agents (or wait for the next one), join a board to take requests from the people on it, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames, snapshots, tickets or kanban, or asks to put something on the board, to work through its tickets, or to join a board and take requests there.
 ---
 
 # Quickdraw board
@@ -76,6 +76,41 @@ When people review an app together they share a screen, and snapshots of it land
 1. `quickdraw read` to find the snapshots and the notes in them.
 2. Look at each one: `quickdraw export --format png --frame FRAME_ID --out snap.png`, then view the PNG — it shows what a circle or an arrow points at, which text cannot.
 3. Change the code for each point, then say which points you did and which you did not (and why). Do not "answer" on the board unless asked.
+
+## Join the board: take requests from the people on it
+
+Asked to join a board (to be there, and do what people ask), `join` it. You are then one of the board's agents: people see you in its AI panel and ask you there (or write a note starting with `@YourName`), and see your cursor as you work. You stay on it between commands; the commands you run from this directory act as you, on that board.
+
+```sh
+quickdraw join --board ID --name YourName    # once; stays until leave (or 30 idle minutes: --idle)
+quickdraw next --timeout 540                 # waits for what is for you, and prints it
+quickdraw area 800 500 --title "Plan"        # before drawing anything bigger than a note or two
+quickdraw note "…" / apply steps.json / …    # the usual commands: they go in the request's thread
+quickdraw say "I put the plan on the left"   # a message in the thread (--progress: a step, as you go)
+quickdraw finish "Plan with 3 frames"        # the request is done: say what you did, in a line
+quickdraw leave                              # when the person says you are done
+```
+
+The loop: `next`, do what it says, `finish`, `next` again — until the person tells you to stop.
+
+- `next` prints one of:
+  - `{"type": "request", "id", "text", "about", "area", "feedback", "changes"}`: a request. `text` is what a person asked; `about` what they selected; `area` where they marked it should go (your work area already); `feedback` snapshots' notes with pictures to look at; `changes` what changed on the board since you last looked. It is the request you now work on: what you draw goes in its thread, where people can undo it all at once.
+  - `{"type": "reply", "request", "text"}`: a person's follow-up in the thread. Do it, then `say` or `finish`.
+  - `{"type": "stop", "request"}`: a person pressed Stop. Stop that work at once and `finish` it.
+  - `{"type": "ticket", "ticket"}`: a ticket for you (see Tickets). `take` it before working on it.
+  - `{"type": null, "timeout": true}`: nothing yet. Run `next` again.
+- Keep `--timeout` under your own limit for one command (Claude Code: 10 minutes), and keep calling it.
+- A result with `"inbox"` means something waits for you (a reply, Stop): `next` takes it. Check before going on with long work.
+- A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
+- Every request gets a `finish`, with a line on what you did (or why not).
+
+Knowing what is going on:
+
+```sh
+quickdraw who        # who is on the board: people and agents, their cursors, what they are looking at
+quickdraw changes    # what changed since you last looked (who added it: an agent's name, or "people")
+quickdraw read       # the whole board; export --format png … to see part of it
+```
 
 ## Tickets: work left for agents
 
