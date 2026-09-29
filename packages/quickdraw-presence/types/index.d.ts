@@ -3,7 +3,7 @@ import type { Editor } from '@quickdrawjs/core'
 export type Rect = { x: number, y: number, w: number, h: number }
 export type AgentStatus = 'idle' | 'working' | 'waiting'
 /** what an agent is doing just now, shown by its cursor */
-export type AgentActivity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
+export type AgentActivity = 'thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done' | 'available'
 
 /** What a page says about itself; page coordinates, x/y null while off the board. */
 export interface Presence {
@@ -17,6 +17,8 @@ export interface Presence {
   view?: Rect
   /** set by an agent */
   agent?: boolean
+  /** an agent's: who started it, as the host says */
+  owner?: string
   agentStatus?: AgentStatus
   agentActivity?: AgentActivity | null
   /** on what: a search, a command… */
@@ -44,6 +46,8 @@ export interface PresenceHandle {
   follow(id: string | number | null): void
   following(): string | number | null
   peers(): Peer[]
+  /** a name for you until you choose one (the host knows who you are, from its tailnet, say): not kept */
+  suggestName(name: string): void
   /** say who you are again (after a reconnect) */
   resend(): void
   /** everyone else has gone (a disconnect) */

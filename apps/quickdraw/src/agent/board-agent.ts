@@ -75,9 +75,11 @@ export interface BoardAgent {
    * on each. With a request, it goes in the request's thread (to undo) and in
    * its work area; with null, it is only put on the board.
    */
-  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect }) => T): Promise<T>
+  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect, prefer?: { x: number, y: number } }) => T, opts?: { prefer?: { x: number, y: number } }): Promise<T>
   /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
   peopleSince(requestId: string): string
+  /** puts its cursor at a page point and keeps it there (not hidden when it goes idle) */
+  point(x: number, y: number): void
   /** leaves the board */
   close(): Promise<void>
 }
@@ -85,7 +87,7 @@ export interface BoardAgent {
 type Emitted = Omit<AgentEvent, 'requestId'> & Record<string, unknown>
 type Rect = { x: number, y: number, w: number, h: number }
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
-export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done'
+export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done' | 'available'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
@@ -110,7 +112,10 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
   // last (after what they connect); otherwise in the order they were made
   const rank = (r: BoardRecord) => ((r as { isFrame?: boolean }).isFrame ? 0 : (r as { type?: string }).type === 'arrow' ? 2 : 1)
   const added = Object.keys(diff.added).map(final).filter(Boolean).sort((a, b) => rank(a) - rank(b))
-  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]]).filter(([, [, to]]) => to)
+  // moved or changed in the same order: a frame first, which brings its members (and title) along;
+  // a member moved before its frame would land outside it and be let go of, and the title moved twice
+  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]])
+    .filter(([, [, to]]) => to).sort(([, [, a]], [, [, b]]) => rank(a) - rank(b))
   const shown = added.filter(isShape).length + updated.filter(([, [, to]]) => isShape(to)).length
   const gap = shown ? Math.min(250, Math.max(40, pace / shown)) : 0
   const one = async (d: Partial<Diff>, rec: BoardRecord) => {
@@ -185,6 +190,12 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const work = new Map<string, { area: Rect, title?: string, seen: Map<string, string>, moved?: boolean }>()
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
   const holdCursor = () => clearTimeout(hideTimer)
+  // the middle of what the person who asked was looking at: where what has no place goes
+  const viewOf = (requestId: string | null) => {
+    const v = requestId ? requests.get(requestId)?.context.viewport : undefined
+    return v && v.w > 1 && v.h > 1 ? { x: v.x + v.w / 2, y: v.y + v.h / 2 } : undefined
+  }
+  let pinned = false // its cursor was put somewhere to stay (point)
   let nextApproval = 1
   let renderer: Renderer | undefined // pictures of the board, in a headless Chrome made when first needed
   let files: string | undefined // where pictures for the model are written; removed on close
@@ -249,7 +260,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return typeof result === 'string' ? result : JSON.stringify(result)
     }
     const area = work.get(requestId)?.area
-    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area }) as never)
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
   }
 
   // ---- a request's work area: where it draws, which people see, move and draw in ----
@@ -364,7 +375,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       relay.send({ kind: 'status', status })
       relay.status(status) // on its cursor too
       // the cursor stays a moment after the work, so people see where it ended
-      if (status === 'idle') hideTimer = setTimeout(() => board.cursor(null, null), 3000)
+      // unless it was put somewhere to stay (point: a session that waits by the people)
+      if (status === 'working') pinned = false
+      if (status === 'idle' && !pinned) { clearTimeout(hideTimer); hideTimer = setTimeout(() => board.cursor(null, null), 3000) }
     },
     account: ({ account, limits }) => relay.send({ kind: 'account', account, limits }),
     async picture({ frame, ids }) {
@@ -407,11 +420,12 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
         images,
       }
     },
-    async operate(requestId, make) {
+    async operate(requestId, make, { prefer } = {}) {
       const area = requestId ? work.get(requestId)?.area : undefined
-      return (await putOp(requestId, (store) => make(store, { area }))).r
+      return (await putOp(requestId, (store) => make(store, area ? { area } : { prefer: prefer ?? viewOf(requestId) }))).r
     },
     peopleSince,
+    point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
     close: async () => {
       clearTimeout(hideTimer)
       await renderer?.close()

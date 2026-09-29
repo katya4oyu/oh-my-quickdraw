@@ -7,7 +7,7 @@
 // or with --link a link to this checkout, which follows it.
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
@@ -37,6 +37,9 @@ function targets(o: SkillOptions): { which: Target[], base: string } {
 }
 // agents look for a project's skills from where they start up to the
 // repository's root: the root is where every one of them finds it
+/** What an agent here is called after: the git repository's name (its root folder), else this folder's. */
+export const repoName = (cwd = process.cwd()) => basename(projectRoot(cwd))
+
 export function projectRoot(cwd: string) {
   try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || cwd } catch { return cwd }
 }

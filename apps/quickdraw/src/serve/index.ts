@@ -190,6 +190,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
   const hostPerson = self ? { key: 'tailnet:' + self.login, name: self.name ?? self.login } : { key: 'host', name: 'the host' }
   const names = new WeakMap<Duplex, string>() // what each says it is called (presence)
   const peerIdOf = new WeakMap<Duplex, number>() // its id in presence
+  // a person's name as the others see it: "Mac 2" when another person here is "Mac" already
+  const uniqueName = (room: Set<Duplex>, socket: Duplex, name: string) => {
+    const taken = new Set([...room].filter((s) => s !== socket && !agentOf.has(s)).map((s) => names.get(s)).filter(Boolean))
+    if (!taken.has(name)) return name
+    for (let n = 2; ; n++) if (!taken.has(`${name} ${n}`)) return `${name} ${n}`
+  }
   // An agent is its owner's (who started it, on their own account): it takes
   // requests, replies and approvals from them, and from whom they open it to:
   // everyone (--allow-remote, or from the panel), or people they name.
@@ -267,7 +273,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     const agent = agentOf.get(socket)
     if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
       socket.write(sharingFor(board, socket))
-      send(socket, { kind: 'you', local: local.has(socket), ...(personOf.has(socket) ? { person: personOf.get(socket)!.name } : {}) })
+      // who you are, when the server can tell (a tailnet name): the page names you so until you choose a name
+      send(socket, { kind: 'you', local: local.has(socket), ...(personOf.get(socket)?.key.startsWith('tailnet:') ? { person: personOf.get(socket)!.name } : {}) })
       send(socket, { kind: 'agents', agents: agentsIn(room).map((a) => agentView(a, socket)) })
       send(socket, { kind: 'threads', threads: threads.list(board) })
     } else if (m.kind === 'join' && !agent && str(m.agent?.name, 100)) {
@@ -471,10 +478,19 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
           boards.append(board, payload.subarray(1))
           broadcast(peers, socket, frame(BINARY, payload))
         } else if (payload[0] === PRESENCE) {
-          let out
-          try { out = presence(id, JSON.parse(payload.subarray(1).toString())) } catch { continue }
+          let data
+          try { data = JSON.parse(payload.subarray(1).toString()) } catch { continue }
+          if (!data || typeof data !== 'object') continue
+          delete data.owner // said by the server only
+          if (data.agent) {
+            // an agent shows whose it is: who started it (it runs on their account)
+            const a = agentOf.get(socket)
+            const owner = (a && access.get(a)?.owner?.name) ?? personOf.get(socket)?.name
+            if (owner) data.owner = owner
+          } else if (str(data.name, 100)) data.name = uniqueName(peers, socket, data.name) // two people are two names
+          const out = presence(id, data)
           presences.set(socket, out)
-          try { const n = JSON.parse(payload.subarray(1).toString()).name; if (str(n, 100)) names.set(socket, n) } catch {}
+          if (str(data.name, 100)) names.set(socket, data.name)
           broadcast(peers, socket, out)
         } else if (payload[0] === LIVE) {
           onLiveFrame(board, peers, socket, payload)
