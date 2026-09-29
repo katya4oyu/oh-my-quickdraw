@@ -597,6 +597,30 @@ describe('bringing your own agent', () => {
     for (const p of [host, hostViaTailnet, ann, bob, claude, codex]) p.ws.close()
   })
 
+  it('names people apart, says whose each agent is, and tells a page who it is', async () => {
+    const url = await start({ self: { login: 'host@example.com', name: 'Hana' } })
+    const presencesOf = (ws: WebSocket) => { const got: any[] = []; ws.addEventListener('message', ({ data }) => { const m = new Uint8Array(data); if (m[0] === PRESENCE) got.push(JSON.parse(new TextDecoder().decode(m.subarray(1)))) }); return got }
+    const watcher = await open(url)
+    const seen = presencesOf(watcher)
+    const one = await pageAt(url, TS('ann@example.com', 'Ann'))
+    const two = await pageAt(url, TS('bob@example.com', 'Bob'))
+    one.ws.send(packPresence({ name: 'Mac', color: '#000', x: 1, y: 1 }))
+    await new Promise((r) => setTimeout(r, 50))
+    two.ws.send(packPresence({ name: 'Mac', color: '#000', x: 2, y: 2 })) // the same default name
+    const claude = await agentAt(url, 'Claude · app', TS('ann@example.com', 'Ann'))
+    claude.ws.send(packPresence({ name: 'Claude · app', agent: true, owner: 'forged', x: 3, y: 3 }))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(seen.filter((p) => p.x === 1).at(-1).name).toBe('Mac')
+    expect(seen.filter((p) => p.x === 2).at(-1).name).toBe('Mac 2')
+    expect(seen.filter((p) => p.x === 3).at(-1)).toMatchObject({ name: 'Claude · app', owner: 'Ann' }) // said by the server, not the agent
+    // a page is told who it is when the server can tell (a tailnet name), for its name until it chooses one
+    const three = await open(url, TS('cy@example.com', 'Cy'))
+    const threeIn = agentInbox(three)
+    three.send(packAgent({ kind: 'hello' }))
+    expect((await threeIn.take('you')).person).toBe('Cy')
+    for (const ws of [watcher, one.ws, two.ws, claude.ws, three]) ws.close()
+  })
+
   it('does not trust a tailnet login that did not come through tailscale serve', async () => {
     const url = await start({ self: { login: 'host@example.com' } })
     const claude = await agentAt(url, 'Claude', TS('ann@example.com', 'Ann'))

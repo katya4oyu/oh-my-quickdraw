@@ -117,7 +117,7 @@
     const boardRef = () => (/^http:\/\/(localhost|127\.0\.0\.1):8795$/.test(location.origin) ? boardId : location.origin + '/b/' + boardId)
     const agentCommand = () => `quickdraw agent codex --board ${boardRef()}`
     function onAgentMessage(m) {
-      if (m.kind === 'you') toPanel({ type: 'agents' })
+      if (m.kind === 'you') { if (m.person) presence.suggestName(m.person); toPanel({ type: 'agents' }) } // your name, until you choose one
       else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
       else if (m.kind === 'threads') toPanel({ type: 'threads', threads: m.threads })
       else if (m.kind === 'thread') toPanel({ type: 'thread', thread: m.thread })

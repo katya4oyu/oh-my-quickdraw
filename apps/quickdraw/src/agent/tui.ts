@@ -100,8 +100,8 @@ export function quickdrawPath(cwd: string, env = process.env): { path: string, s
 
 export const firstPrompt = (name: string, url: string) =>
   `You are "${name}" on a Quickdraw whiteboard (${url}): this folder already joined it (quickdraw join). `
-  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you with `quickdraw next --timeout 540`, '
-  + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then `quickdraw next` again. '
+  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait --timeout 540`, '
+  + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then `quickdraw wait` again. '
   + 'Keep going until I tell you to stop; I may also ask you things here.'
 
 // what the TUI is started with: the first prompt, and what lets it run quickdraw

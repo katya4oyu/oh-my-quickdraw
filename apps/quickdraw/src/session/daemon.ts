@@ -57,6 +57,12 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
   const open = new Set<string>() // requests taken and not finished
   let current: string | null = null // the one its commands work on
   let waiting = 0 // `next`s waiting now
+  // working while it has a request it took and did not finish, or a ticket it took and did not close
+  const holding = () => open.size > 0 || listTickets(store, { status: 'doing' }).some((t: { props: { by?: string } }) => t.props.by === name)
+  const settle = (justDone = false) => {
+    if (holding()) { agent.status('working'); agent.activity('thinking') } // between its commands, it is at work
+    else { agent.status('idle'); agent.activity(justDone ? 'done' : null) }
+  }
   const push = (item: Item) => { inbox.push(item); for (const fn of [...wake]) fn() }
   agent.onRequest = (request) => {
     requests.set(request.id, request)
@@ -65,9 +71,17 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
   }
   agent.onReply = (requestId, text) => push({ type: 'reply', requestId, text })
   agent.onStop = (requestId) => push({ type: 'stop', requestId })
-  // tickets for it (or any agent) still to do, each once
+  // tickets for it (or any agent) still to do: each once for whom it is for, so one
+  // given to it later is news again; not one it left for any agent itself
   const told = new Set<string>()
-  const tickets = () => { for (const t of listTickets(store, { status: 'todo', for: name })) if (!told.has(t.id)) { told.add(t.id); push({ type: 'ticket', id: t.id }) } }
+  const tickets = () => {
+    for (const t of listTickets(store, { status: 'todo', for: name })) {
+      const p = (t as unknown as { props: { to?: string | null, from?: string | null } }).props
+      if (!p.to && p.from === name) continue
+      const key = `${t.id}:${p.to ?? ''}`
+      if (!told.has(key)) { told.add(key); push({ type: 'ticket', id: t.id }) }
+    }
+  }
   tickets()
   const offTickets = store.listen(tickets)
 
@@ -128,14 +142,43 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     }
   }
 
+  // ---- while it waits: where it stays ----
+  // People see an agent that waits, and where: by the people on the board (the
+  // biggest group of their cursors and views), else where it last worked. It
+  // drifts a little there, "ready for a request".
+  let lastSpot: { x: number, y: number } | null = null
+  function crowd(): { x: number, y: number } | null {
+    const at = [...board.relay!.peers().values()].filter((p) => !p.agent).flatMap((p) =>
+      p.x != null && p.y != null ? [{ x: p.x, y: p.y }] : p.view ? [{ x: p.view.x + p.view.w / 2, y: p.view.y + p.view.h / 2 }] : [])
+    if (!at.length) return null
+    const near = (a: { x: number, y: number }) => at.filter((b) => Math.hypot(a.x - b.x, a.y - b.y) < 700)
+    const group = at.map(near).reduce((a, b) => (b.length > a.length ? b : a))
+    return { x: group.reduce((s, p) => s + p.x, 0) / group.length, y: group.reduce((s, p) => s + p.y, 0) / group.length }
+  }
+  let drift = 0
+  function stay(): boolean {
+    const to = crowd() ?? lastSpot
+    if (!to) return false
+    drift++
+    // beside them, not on top of anyone; a little further each time, then back
+    const r = 30 + 15 * Math.sin(drift / 2)
+    agent.point(Math.round(to.x + 90 + r * Math.cos(drift)), Math.round(to.y + 60 + r * Math.sin(drift)))
+    return true
+  }
+
   async function next(timeout: number | undefined, closed: () => boolean) {
     const until = timeout != null ? Date.now() + timeout * 1000 : Infinity
+    let stayed = 0
     while (!inbox.length) {
       if (closed()) return { type: null, stopped: true }
       const left = until - Date.now()
       if (left <= 0) return { type: null, timeout: true }
       waiting++
-      if (!open.size) agent.status('idle')
+      if (!holding()) {
+        agent.status('idle')
+        agent.activity('available')
+        if (Date.now() - stayed > 2500 && stay()) stayed = Date.now() // until it has somewhere to be, it looks every second
+      }
       await new Promise<void>((resolve) => {
         const t = setTimeout(done, Math.min(left, 1000)) // looks at `closed` now and then
         function done() { clearTimeout(t); wake.delete(done); resolve() }
@@ -148,6 +191,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       current = item.request.id
       open.add(current)
       agent.lookAt(item.request)
+      lastSpot = item.request.anchor?.x != null ? { x: item.request.anchor.x, y: item.request.anchor.y! } : lastSpot
       agent.status('working')
       agent.activity('thinking')
       agent.emit(current, { type: 'progress', text: `${name} is on it` })
@@ -164,7 +208,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     agent.emit(requestId, { type: 'done', ...(text ? { text } : {}) })
     open.delete(requestId)
     if (current === requestId) current = [...open].at(-1) ?? null
-    if (!open.size) { agent.status('idle'); agent.activity('done') }
+    settle(true)
   }
 
   // ---- commands ----
@@ -184,7 +228,13 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
   async function run(argv: string[], stdin: string | undefined, out: (s: string) => void, signal: AbortSignal) {
     const { o, cmd, args } = parseCommand(argv)
     switch (cmd) {
-      case 'next': return out(JSON.stringify(await next(o.timeout ? Number(o.timeout) : undefined, () => signal.aborted)))
+      case 'next': case 'wait': { // wait: what is for it — requests (the panel, @mentions), replies, Stop, tickets
+        const item = await next(o.timeout ? Number(o.timeout) : undefined, () => signal.aborted) as { type: string | null, ticket?: { id: string } }
+        if (!(o.take && item.type === 'ticket')) return out(JSON.stringify(item))
+        const took: string[] = [] // --take: a ticket is taken too
+        await run(['take', item.ticket!.id], undefined, (l) => took.push(l), signal)
+        return out(took.at(-1)!)
+      }
       case 'say': {
         const id = which(o, args[0])
         const text = (args[0] === id ? args.slice(1) : args).join(' ')
@@ -215,10 +265,11 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     try {
       await runCommand({
         board, url, boardKey: url, session: true,
-        operate: async (make) => { const done = await agent.operate(request, make); saw(done.diff); return done },
+        // what has no place goes where people look: the request's view (BoardAgent's), else by the people, else where it last worked
+        operate: async (make) => { const done = await agent.operate(request, make, { prefer: (request ? undefined : crowd() ?? lastSpot) ?? undefined }); saw(done.diff); if (done.focus) lastSpot = done.focus; return done },
         stdin: async () => stdin ?? '',
       }, [...argv, '--name', name], out, { signal })
-    } finally { agent.activity(open.size ? 'thinking' : null) }
+    } finally { settle(cmd === 'done' || cmd === 'fail') }
     if (people) out(JSON.stringify({ people }))
   }
 

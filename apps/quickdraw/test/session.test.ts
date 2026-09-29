@@ -8,7 +8,7 @@ import { main } from '../src/commands/index.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { startSession } from '../src/session/daemon.ts'
 import { sessionFile } from '../src/session/client.ts'
-import { AGENT, packAgent, packPresence, unpackAgent } from '../src/protocol.js'
+import { AGENT, PRESENCE, packAgent, packPresence, unpackAgent, unpackPresence } from '../src/protocol.js'
 
 // a page's side of the AI panel: what the server sends it, taken by kind
 function pageOf(ws: WebSocket) {
@@ -128,6 +128,63 @@ describe('a session: an agent with a shell, on the board', () => {
     // and what the session itself writes to itself does not ask it
     await run('note', '@Claude not me')
     expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
+  }, 20_000)
+
+  it('hears of a ticket again when a person gives it to it, and is working while it holds one', async () => {
+    const { url, page, run } = await setup()
+    const [left] = await run('ticket', 'Tidy the board') // left for any agent, by itself: not news to it
+    expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
+    const person = await openBoard({ url, name: 'Ann' })
+    person.store.update(left.ids[0], { props: { to: 'Claude' } } as never) // Ann gives it to Claude
+    const [got] = await run('next', '--timeout', '5')
+    expect(got).toMatchObject({ type: 'ticket', ticket: { id: left.ids[0], to: 'Claude' } })
+    await run('take', left.ids[0])
+    expect((await page.take((m) => m.kind === 'agents' && m.agents[0]?.status === 'working')).agents[0].status).toBe('working')
+    await run('done', left.ids[0], '--result', 'Tidied')
+    expect((await page.take((m) => m.kind === 'agents' && m.agents[0]?.status === 'idle')).agents[0].status).toBe('idle')
+    await person.close()
+  }, 20_000)
+
+  it('waits with wait: its cursor stays by the people, ready for a request; --take takes a ticket', async () => {
+    const { url, ws, run } = await setup()
+    const seen: any[] = []
+    ws.addEventListener('message', ({ data }) => { const m = new Uint8Array(data); if (m[0] === PRESENCE) seen.push(unpackPresence(m)) })
+    ws.send(packPresence({ name: 'Ann', color: '#e03131', x: 1000, y: 500 })) // Ann is here
+    expect((await run('wait', '--timeout', '1.5'))[0]).toEqual({ type: null, timeout: true })
+    const mine = seen.filter((p) => p.name === 'Claude' && p.x != null)
+    expect(mine.length).toBeGreaterThan(0)
+    const after = seen.slice(seen.indexOf(mine[0])).filter((p) => p.name === 'Claude')
+    expect(after.every((p) => p.x != null)).toBe(true) // it stays: no blinking out while it waits
+    const last = mine.at(-1)
+    expect(Math.hypot(last.x - 1090, last.y - 560)).toBeLessThan(60) // beside Ann, not on her
+    expect(seen.some((p) => p.name === 'Claude' && p.agentActivity === 'available')).toBe(true)
+
+    const person = await openBoard({ url, name: 'Ann' })
+    const { result: id } = runOp(person.store, 'Ann', (ops) => ops.ticket('Tidy up'))
+    const [took] = await run('wait', '--take', '--timeout', '5')
+    expect(took).toMatchObject({ ids: [id], ticket: { status: 'doing', by: 'Claude' } })
+    await person.close()
+  }, 20_000)
+
+  it('puts what has no place by the people, not off to the right of everything', async () => {
+    const { ws, run } = await setup()
+    await run('note', 'far away', '--at', '0,0')
+    ws.send(packPresence({ name: 'Ann', color: '#e03131', x: 3000, y: 2000 }))
+    await new Promise((r) => setTimeout(r, 100))
+    const [made] = await run('note', 'here')
+    const d = (await run('read', '--format', 'json'))[0]
+    const it = d.items.find((i: any) => i.id === made.ids[0])
+    expect(Math.hypot(it.x + it.w / 2 - 3000, it.y + it.h / 2 - 2000)).toBeLessThan(600)
+  }, 20_000)
+
+  it('moves a frame with what is in it', async () => {
+    const { run } = await setup()
+    const [f] = await run('frame', 'Plan', '--at', '0,0', '--size', '600x400')
+    const [n] = await run('note', 'one', '--in', f.ids[0])
+    await run('move', f.ids[0], '--by', '700,0')
+    const d = (await run('read', '--format', 'json'))[0]
+    expect(d.frames[0]).toMatchObject({ x: 700, members: [n.ids[0]] })
+    expect(d.items.find((i: any) => i.id === n.ids[0]).x).toBe(724)
   }, 20_000)
 
   it('leaves when told, or when left idle; then the commands go back to working alone', async () => {
