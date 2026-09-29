@@ -93,7 +93,8 @@ const localStore = {
 export function presenceLabel(p) {
   const act = p.agent && ACTIVITIES[p.agentActivity]
   const status = act ? act + (p.agentNote ? `: ${p.agentNote}` : '') : p.agent ? AGENT_STATUS[p.agentStatus] : p.status
-  return status ? `${p.name} · ${status}` : p.name
+  const name = p.agent && p.owner ? `${p.name} (${p.owner})` : p.name // an agent: and whose it is, as the host says
+  return status ? `${name} · ${status}` : name
 }
 
 /** Live presence over a board; the host carries it (see above). */
@@ -105,6 +106,7 @@ export function createPresence({ editor, container = editor.container, host, def
 
   // you: kept in this browser, so you are the same person next time
   const saved = storage.get(key) || {}
+  let named = !!saved.name // you chose a name (here, or before): no suggestion replaces it
   const me = {
     name: String(saved.name || defaults.name || 'Guest').slice(0, 40),
     color: saved.color || defaults.color || COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -172,6 +174,7 @@ export function createPresence({ editor, container = editor.container, host, def
       name: String(m.name || (m.agent ? 'Agent' : 'Guest')), color: m.color || '#868e96', status: m.status || '',
       x: m.x ?? null, y: m.y ?? null, view: m.view || null, agent: !!m.agent, agentStatus: m.agentStatus || null,
       agentActivity: ACTIVITIES[m.agentActivity] ? m.agentActivity : null, agentNote: String(m.agentNote ?? '').slice(0, 80),
+      owner: m.agent && m.owner ? String(m.owner).slice(0, 60) : undefined, // an agent's: who started it, as the host says
     })
     // its motion; set only when it changes, so an animation is not restarted
     const act = p.agentActivity || ''
@@ -270,7 +273,7 @@ export function createPresence({ editor, container = editor.container, host, def
 
   // ---- you: name, colour, status ------------------------------------------------
   function setMe(patch) {
-    if (patch.name != null) me.name = String(patch.name).trim().slice(0, 40) || 'Guest'
+    if (patch.name != null) { me.name = String(patch.name).trim().slice(0, 40) || 'Guest'; named = true }
     if (patch.color != null) me.color = String(patch.color)
     if (patch.status != null) me.status = String(patch.status).trim().slice(0, 60)
     storage.set(key, { ...me })
@@ -315,6 +318,13 @@ export function createPresence({ editor, container = editor.container, host, def
   return {
     /** you, as others see you */
     me: () => ({ ...me }),
+    /** a name for you until you choose one (the host knows who you are): not kept */
+    suggestName(name) {
+      if (named || !name || me.name === name) return
+      me.name = String(name).trim().slice(0, 40) || me.name
+      renderRow()
+      send()
+    },
     setMe,
     /** follow someone by id (null stops) */
     follow,

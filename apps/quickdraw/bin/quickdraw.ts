@@ -88,14 +88,14 @@ if (command === 'serve') {
     args: rest.slice(1, cut < 0 ? undefined : cut),
     options: { board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, global: { type: 'boolean' } },
   })
-  const { basename } = await import('node:path')
   const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
   const { runTui } = await import('../src/agent/tui.ts')
+  const { repoName } = await import('../src/commands/skill.ts')
   try {
     const choose = process.stdin.isTTY && process.stdout.isTTY ? (boards: Parameters<typeof chooseBoard>[0]) => chooseBoard(boards, `quickdraw agent ${tui}`) : undefined
     const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
     process.exit(await runTui(tui, {
-      url, name: values.name ?? `${tui === 'claude' ? 'Claude' : 'Codex'} · ${basename(process.cwd())}`, cwd: process.cwd(),
+      url, name: values.name ?? `${tui === 'claude' ? 'Claude' : 'Codex'} · ${repoName()}`, cwd: process.cwd(),
       remote: values['allow-remote'] === true, idle: values.idle ? Number(values.idle) : undefined, global: values.global === true,
       args: cut < 0 ? [] : rest.slice(cut + 1),
     }))
@@ -127,7 +127,8 @@ if (command === 'serve') {
   const { linkPreview, serverOfBoard } = await import('../src/board/link-preview.ts')
   const cwd = process.cwd()
   const folder = basename(cwd)
-  const name = values.name ?? `${runtime === 'codex-app-server' ? 'Codex' : 'pi'} · ${folder}`
+  // "<agent> · <repository>": the board shows who started it beside that
+  const name = values.name ?? `${runtime === 'codex-app-server' ? 'Codex' : 'pi'} · ${(await import('../src/commands/skill.ts')).repoName(cwd)}`
   const id = values.id ?? (runtime + '-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
   const remote = values['allow-remote'] === true
   try {
