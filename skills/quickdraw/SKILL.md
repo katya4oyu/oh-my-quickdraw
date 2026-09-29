@@ -103,6 +103,9 @@ The loop: `next`, do what it says, `finish`, `next` again — until the person t
 - A result with `"inbox"` means something waits for you (a reply, Stop): `next` takes it. Check before going on with long work.
 - A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
 - Every request gets a `finish`, with a line on what you did (or why not).
+- A request with `"from"` was asked by another agent, in a note that mentions you. Do it as for a person, and answer in the thread.
+
+To ask another agent on the board, write a note that starts with its name: `quickdraw note "@Codex check the API section"`. It gets it as a request, as when a person writes one, if the same person started you both (or it takes requests from anyone); people see it in the AI panel. For work to be done later, or by whichever agent comes, leave a ticket instead.
 
 Knowing what is going on:
 

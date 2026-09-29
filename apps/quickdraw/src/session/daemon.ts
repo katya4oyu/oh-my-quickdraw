@@ -119,7 +119,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     const byId = new Map<string, object>([...d.items.map((it) => [it.id, it] as const), ...d.frames.map((f) => [f.id, { ...f, type: 'frame' }] as const)])
     const fb = r.context.feedback?.length ? await agent.feedback(r.context.feedback) : null
     return {
-      type: 'request', id: r.id, text: r.text,
+      type: 'request', id: r.id, text: r.text, ...(r.from ? { from: r.from } : {}),
       ...(r.context.shapeIds.length ? { about: r.context.shapeIds.map((sid) => byId.get(sid) ?? { id: sid, gone: true }) } : {}),
       ...(r.context.area ? { area: r.context.area } : {}),
       viewport: r.context.viewport,

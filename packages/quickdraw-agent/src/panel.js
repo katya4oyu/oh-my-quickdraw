@@ -393,7 +393,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       row.type = 'button'
       const dot = el('span', 'qda-dot')
       dot.dataset.status = threadStatus(thread)
-      row.append(dot, el('span', '', thread.request.text || '(no text)'), el('span', 'qda-muted', STATUS[threadStatus(thread)] || ''))
+      row.append(dot, el('span', '', (thread.request.from ? thread.request.from + ': ' : '') + (thread.request.text || '(no text)')), el('span', 'qda-muted', STATUS[threadStatus(thread)] || ''))
       row.addEventListener('click', () => open(thread.request.id))
       body.append(row)
     }
@@ -421,6 +421,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
 
   function renderThread(thread) {
     title.textContent = agentName(thread.request.to)
+    if (thread.request.from) body.append(el('div', 'qda-muted', `${thread.request.from} asked, in a note`)) // another agent, not you
     body.append(el('div', 'qda-me', thread.request.text))
     let changes = 0
     const flushChanges = () => {

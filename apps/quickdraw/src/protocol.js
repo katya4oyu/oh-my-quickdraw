@@ -17,6 +17,9 @@
 //   from an agent    join { agent: { id, name, knows, status } }, status { status },
 //                    account { account?, limits?: [{ name, usedPercent, resetsAt? }] } (what it runs on, for the panel),
 //                    event { event }: progress, message, question, approval, op, done, error
+//   from anyone      mention { note: { id, text, x, y } }: a note it wrote that starts with @; a request to the agent it
+//                    names if the one who started the sender started that agent too (or it takes requests from
+//                    anyone), with `from`: the sender's name
 //   from a page      hello (answered with agents and threads), request { request }, reply { requestId, message } (text,
 //                    { approval, allow } or { undo: { reverted, skipped } })
 //   from the server  you { local } (to a page: on the computer serving, which agents take requests from

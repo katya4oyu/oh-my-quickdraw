@@ -147,6 +147,8 @@ export interface AgentRequest {
   options?: { model?: string, effort?: string }
   /** a spoken conversation, not a written request: its thread is what was said, and what was done */
   voice?: boolean
+  /** set by the server when another agent (or a command) asked, by a note that mentions this one: who wrote it */
+  from?: string
 }
 export type AgentEvent =
   | { type: 'progress' | 'message' | 'question', requestId: string, text: string }

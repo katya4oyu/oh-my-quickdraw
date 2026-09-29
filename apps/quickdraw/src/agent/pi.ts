@@ -68,7 +68,9 @@ function prompt(request: AgentRequest): string {
   const where = area
     ? `\n\n(They marked out where it goes: x ${Math.round(area.x)}, y ${Math.round(area.y)}, ${Math.round(area.w)} × ${Math.round(area.h)}. It is your work area already: what you add without a place goes in it.)`
     : ''
-  return request.text + about + where
+  // another agent asked, by a note on the board mentioning you
+  const by = request.from ? `\n\n(${request.from}, another agent on the board, asked this in a note (${shapeIds[0] ?? ''}). Answer on the board or in your reply as for a person.)` : ''
+  return request.text + about + where + by
 }
 
 const textOf = (message: Json): string => (message?.content ?? []).filter((c: Json) => c.type === 'text').map((c: Json) => c.text).join('').trim()

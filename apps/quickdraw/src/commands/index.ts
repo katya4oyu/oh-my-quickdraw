@@ -7,6 +7,7 @@ import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
+import { announceMentions } from '../board/mentions.ts'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
@@ -394,6 +395,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     }
     await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: [cmd, ...args].join(' ').split('\n')[0].slice(0, 120), diff: done.diff })
     // show where the work happened, briefly, to anyone watching the board
+    if (!ctx.session) announceMentions(board.relay, done.diff) // in a session, its agent does
     if (live && done.focus && !ctx.session) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
     const ids = [...new Set([done.result].flat(Infinity).filter((v) => typeof v === 'string'))]
     const ticket = TICKET_COMMANDS.has(cmd) && store.get(ids[0]) ? { ticket: describeTicket(store.get(ids[0])) } : {}
