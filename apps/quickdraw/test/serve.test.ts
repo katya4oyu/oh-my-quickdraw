@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import * as Y from 'yjs'
 import { DatabaseSync } from 'node:sqlite'
 import { importSingleBoard } from '../src/serve/boards.ts'
-import { isLocal } from '../src/serve/local.ts'
+import { isLocal, lanAddress } from '../src/serve/local.ts'
+import { networkInterfaces } from 'node:os'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
 import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE, pack, packAgent, packPresence, packShare, unpackAgent, unpackShare } from '../src/protocol.js'
 
@@ -527,6 +528,57 @@ describe('notes agents write to agents', () => {
     page.send(packAgent({ kind: 'request', request: { ...request('p1', 'Claude'), from: 'Codex' } }))
     expect((await claude.inbox.take('request')).request.from).toBeUndefined()
     page.close(); claude.ws.close()
+  })
+})
+
+describe('a person known by their device on the local network (--trust-lan-ip)', () => {
+  const req = (remoteAddress: string, headers: Record<string, string> = {}) => ({ headers, socket: { remoteAddress } })
+  it('is a device straight on the local network: private addresses, no proxy, not this computer', () => {
+    expect(lanAddress(req('192.168.1.23'))).toBe('192.168.1.23')
+    expect(lanAddress(req('::ffff:10.0.0.5'))).toBe('10.0.0.5')
+    expect(lanAddress(req('172.20.1.1'))).toBe('172.20.1.1')
+    expect(lanAddress(req('fd12:3456::1'))).toBe('fd12:3456::1')
+    expect(lanAddress(req('172.32.0.1'))).toBeNull() // not private
+    expect(lanAddress(req('8.8.8.8'))).toBeNull()
+    expect(lanAddress(req('127.0.0.1'))).toBeNull() // this computer: the host
+    expect(lanAddress(req('192.168.1.23', { 'x-forwarded-for': '1.2.3.4' }))).toBeNull() // through something
+  })
+
+  // this computer's own address on the network: a connection to it comes from it, not from 127.0.0.1
+  const lan = Object.values(networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal && lanAddress(req(i.address)))?.address
+  it.skipIf(!lan)('makes what a device starts its person\'s, called what their page is called; off by default', async () => {
+    for (const trustLanIp of [true, false]) {
+      const app = createQuickdrawServer({ self: null, trustLanIp })
+      apps.push(app)
+      const { port } = await app.listen(0, '0.0.0.0')
+      const id = app.boards.create('LAN').id
+      const there = `ws://${lan}:${port}/ws/${id}`, here = `ws://127.0.0.1:${port}/ws/${id}`
+      const page = await open(there)
+      const pageIn = agentInbox(page)
+      page.send(packPresence({ name: 'Ann', color: '#000', x: null, y: null }))
+      page.send(packAgent({ kind: 'hello' }))
+      await pageIn.take('threads')
+      const agent = await open(there) // started on the same computer as Ann's browser
+      const agentIn = agentInbox(agent)
+      agent.send(packAgent({ kind: 'join', agent: { id: 'claude', name: 'Claude', knows: [] } }))
+      await agentIn.take('joined')
+      const host = await open(here)
+      const hostIn = agentInbox(host)
+      host.send(packAgent({ kind: 'hello' }))
+      let seen: any
+      while (!(seen = (await pageIn.take('agents')).agents.find((a: any) => a.id === 'claude')));
+      if (trustLanIp) {
+        expect(seen).toMatchObject({ owner: { name: 'Ann' }, mine: true, canAsk: true })
+        page.send(packAgent({ kind: 'request', request: request('mine', 'claude') }))
+        expect((await agentIn.take('request')).request.id).toBe('mine')
+        host.send(packAgent({ kind: 'request', request: request('hosts', 'claude') }))
+        expect((await hostIn.take('event')).event.message).toMatch(/Claude runs on Ann's account/)
+      } else {
+        expect(seen).toMatchObject({ canAsk: false }) // nobody known: only what is open to everyone
+        expect(seen.owner).toBeUndefined()
+      }
+      for (const ws of [page, agent, host]) ws.close()
+    }
   })
 })
 

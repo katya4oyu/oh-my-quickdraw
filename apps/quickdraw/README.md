@@ -38,6 +38,8 @@ quickdraw note "Idea" --board ID  # edits it; `quickdraw help` lists the command
 
 It listens on 127.0.0.1. To reach it from other devices, put something in front, such as `tailscale serve --https=8795 http://127.0.0.1:8795`.
 
+On a local network without Tailscale, `quickdraw serve --host 0.0.0.0 --trust-lan-ip` lets the devices on it in straight, and tells people apart by their device: a connection from a private address with no proxy in between is the person at that address, so the agents someone starts on their own computer are theirs (only they can ask them, until they open them to others), and they are called what that person's page calls itself. An address tells devices apart, not people: someone's phone is not their laptop, several people behind one address are one, and anyone on the network can use an address. So it is off unless asked for. Pages are plain http then, so the microphone and screen sharing (which need https or localhost) are not there.
+
 ## `quickdraw agent claude` and `quickdraw agent codex`
 
 `quickdraw agent claude|codex [--board ID|URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- ARGS…]`, from the folder it should work in: Claude Code or Codex on the board in its own TUI, where you can talk with it too. It works the board as any agent with the [skill](../../skills/quickdraw/SKILL.md) does (`quickdraw join`, `wait`, `finish`…); this gets that ready first:

@@ -13,7 +13,7 @@ import type { Duplex } from 'node:stream'
 import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as Y from 'yjs'
-import { isLocal } from './local.ts'
+import { isLocal, lanAddress } from './local.ts'
 import { tailnetSelf, type Person } from './tailscale.ts'
 import { detectAgentMention, hasAgentThreadForAnchor, type AgentEvent, type AgentParticipant, type AgentRequest } from 'quickdraw-agent'
 import { randomUUID } from 'node:crypto'
@@ -49,6 +49,13 @@ export interface ServeOptions {
   compactEvery?: number
   /** who the host is on its tailnet; by default read from `tailscale status` (null: no Tailscale) */
   self?: Person | null
+  /**
+   * A device on the local network that connects straight here (no proxy, no
+   * tailscale serve) is a person, known by its address: its browser and the
+   * agents started on it are one person's. Off by default: an address tells
+   * devices apart, not people, and anyone on the network can use one.
+   */
+  trustLanIp?: boolean
 }
 
 const json = (res: ServerResponse, status: number, body: unknown) =>
@@ -65,7 +72,7 @@ async function readJson(req: IncomingMessage, limit = 10_000): Promise<Record<st
   return v
 }
 
-export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500, self = tailnetSelf() }: ServeOptions = {}) {
+export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500, self = tailnetSelf(), trustLanIp = false }: ServeOptions = {}) {
   const web = fileURLToPath(new URL('../../web/', import.meta.url)).replace(/\/$/, '')
   const protocol = fileURLToPath(new URL('../protocol.js', import.meta.url))
   const mounts = new Map(PACKAGES.map((name) => [name.replace('@quickdrawjs/', ''), join(packageRoot(name), 'src')]))
@@ -189,6 +196,9 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
   const personOf = new WeakMap<Duplex, { key: string, name: string }>()
   const hostPerson = self ? { key: 'tailnet:' + self.login, name: self.name ?? self.login } : { key: 'host', name: 'the host' }
   const names = new WeakMap<Duplex, string>() // what each says it is called (presence)
+  // a device known by its address (--trust-lan-ip) is called what its person's page calls itself
+  const deviceNames = new Map<string, string>()
+  const nameOf = (p?: { key: string, name: string }) => (p ? deviceNames.get(p.key) ?? p.name : undefined)
   const peerIdOf = new WeakMap<Duplex, number>() // its id in presence
   // a person's name as the others see it: "Mac 2" when another person here is "Mac" already
   const uniqueName = (room: Set<Duplex>, socket: Duplex, name: string) => {
@@ -208,7 +218,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     return !!me && (me === a.owner?.key || (a.with instanceof Map && a.with.has(me)))
   }
   const onlyHere = (agent: AgentParticipant) => {
-    const owner = access.get(agent)?.owner?.name
+    const owner = nameOf(access.get(agent)?.owner)
     return `${agent.name} runs on ${owner ? owner + '\'s' : 'someone else\'s'} account: only ${owner ?? 'they'} can ask it, unless they open it to you.`
   }
   // an agent as a page sees it: whose it is, and whether that page may ask it
@@ -216,7 +226,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     const acc = access.get(a)
     const mine = !!acc?.owner && acc.owner.key === personOf.get(page)?.key
     return {
-      ...a, ...(acc?.owner ? { owner: { name: acc.owner.name } } : {}), mine, canAsk: mayAsk(page, a),
+      ...a, ...(acc?.owner ? { owner: { name: nameOf(acc.owner)! } } : {}), mine, canAsk: mayAsk(page, a),
       ...(mine ? { sharedWith: acc!.with instanceof Map ? [...acc!.with.values()] : acc!.with } : {}),
     }
   }
@@ -451,9 +461,10 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     if (isLocal(req)) { local.add(socket); personOf.set(socket, hostPerson) }
     else {
       const login = req.headers['tailscale-user-login'], name = req.headers['tailscale-user-name']
+      const lan = trustLanIp ? lanAddress(req) : null
       if (typeof login === 'string' && login && /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress ?? '')) {
         personOf.set(socket, { key: 'tailnet:' + login, name: typeof name === 'string' && name ? name : login })
-      }
+      } else if (lan) personOf.set(socket, { key: 'ip:' + lan, name: lan }) // --trust-lan-ip: the device, called what its page calls itself
     }
     let room = rooms.get(board)
     if (!room) rooms.set(board, room = new Set())
@@ -485,12 +496,14 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
           if (data.agent) {
             // an agent shows whose it is: who started it (it runs on their account)
             const a = agentOf.get(socket)
-            const owner = (a && access.get(a)?.owner?.name) ?? personOf.get(socket)?.name
+            const owner = nameOf((a && access.get(a)?.owner) || personOf.get(socket))
             if (owner) data.owner = owner
           } else if (str(data.name, 100)) data.name = uniqueName(peers, socket, data.name) // two people are two names
           const out = presence(id, data)
           presences.set(socket, out)
           if (str(data.name, 100)) names.set(socket, data.name)
+          const who = personOf.get(socket)
+          if (!data.agent && who?.key.startsWith('ip:') && str(data.name, 100)) deviceNames.set(who.key, data.name)
           broadcast(peers, socket, out)
         } else if (payload[0] === LIVE) {
           onLiveFrame(board, peers, socket, payload)
