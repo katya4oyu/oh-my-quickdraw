@@ -28,6 +28,8 @@ export interface Operations {
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
   fit(frameId: string, opts?: { ids?: string[] }): string[]
   delete(ids: string[]): string[]
+  /** A hand-drawn pen stroke: around a shape, under it, or through page points; red unless said. */
+  pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string }): string
 }
 
 export interface Operation<T = unknown> {

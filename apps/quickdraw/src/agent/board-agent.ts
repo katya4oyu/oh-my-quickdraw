@@ -20,6 +20,7 @@ import type { Board } from '../board/open.ts'
 import { resolve as resolvePath } from 'node:path'
 import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
+import { pointWith } from '../board/laser.ts'
 
 import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
@@ -166,6 +167,16 @@ const ADD_IMAGE = {
   } },
 }
 
+const POINT_AT = {
+  name: 'point_at',
+  description: 'Points at a shape (by id) or a page point with the laser pointer, as a person does while talking: everyone sees it drawn, held a moment and faded; nothing is left on the board. `circle` rings the shape. Use it to show what you mean; to mark something that should stay, draw_on.',
+  inputSchema: { type: 'object', additionalProperties: false, properties: {
+    id: { type: 'string', description: 'a shape id' },
+    x: { type: 'number' }, y: { type: 'number' },
+    circle: { type: 'boolean', description: 'ring it rather than point under it' },
+  } },
+}
+
 export interface JoinOptions {
   /** where image files may be read from: the working directory first (relative paths are in it) */
   imageRoots?: string[]
@@ -224,6 +235,15 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   // what the model gets back from a tool, with what people did in its work area since its last step
   async function runBoardTool(requestId: string, name: string, args: unknown): Promise<string> {
     if (name === 'claim_area') return claimArea(requestId, (args ?? {}) as { w?: number, h?: number, title?: string })
+    if (name === 'point_at') {
+      const a = (args ?? {}) as { id?: string, x?: number, y?: number, circle?: boolean }
+      const s = a.id ? board.store.get(a.id) : null
+      if (a.id && s?.typeName !== 'shape') throw new Error(`no shape ${a.id}`)
+      if (!s && !(Number.isFinite(a.x) && Number.isFinite(a.y))) throw new Error('point_at needs an id, or x and y')
+      holdCursor()
+      await pointWith(relay, s ? pageBounds(s as never) : { x: a.x!, y: a.y! }, { circle: a.circle })
+      return `Pointed at ${a.id ?? `${a.x}, ${a.y}`}.`
+    }
     const heard = peopleSince(requestId)
     return (await boardTool(requestId, name, args)) + heard
   }
@@ -327,7 +347,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, POINT_AT],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })

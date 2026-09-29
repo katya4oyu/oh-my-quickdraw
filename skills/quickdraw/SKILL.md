@@ -140,6 +140,20 @@ Working through tickets:
 
 Take only tickets for you or for any agent. Put a ticket back for others with `apply` and `{ "do": "status", "id": ID, "status": "todo" }`.
 
+## Point and mark: the laser and the pen
+
+Show what you mean the way people do on a whiteboard:
+
+```sh
+quickdraw point ID --circle         # the laser pointer rings a shape: everyone sees it, then it fades (nothing stays)
+quickdraw point 400,300             # or points at a spot
+quickdraw pen circle ID             # the pen: a hand-drawn ring around a shape, red unless --color says (it stays)
+quickdraw pen underline ID
+quickdraw pen points "0,0 50,20 90,0"
+```
+
+Use the laser while you explain, or when you say where you put something; the pen to mark what should stay marked (a point in feedback, the part that needs changing). The laser needs a live board.
+
 ## Frames keep their size
 
 A frame never grows by itself: its size may be the point (a 16:9 slide), and a bigger frame would cover its neighbours. Work as a person would:

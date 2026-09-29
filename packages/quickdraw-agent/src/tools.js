@@ -75,11 +75,15 @@ export const BOARD_TOOLS = [
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
   step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),
+  step('draw_on', 'pen', 'Marks the board with the pen, as a person would: circles a shape (`kind: circle`), underlines it (`underline`), or draws through page points (`points`). Use it to show what you mean, or to mark something in feedback. Red unless `color` says; it stays until deleted.', {
+    kind: { type: 'string', enum: ['circle', 'underline', 'points'] }, id: str('the shape to circle or underline'),
+    points: { type: 'array', items: { type: 'array', items: num }, description: 'page points [[x, y], …], for kind points' }, color,
+  }),
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
     description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
-      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|delete, …the fields of that tool }. '
+      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|pen|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
     run(store, { steps }, { name: who = 'Agent', area } = {}) {

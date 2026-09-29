@@ -8,6 +8,8 @@ import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
+import { pointWith } from '../board/laser.ts'
+import { pageBounds } from '@quickdrawjs/core'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
@@ -63,6 +65,10 @@ Writing (each command is one operation, undoable as a whole)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
                                           to fit inside it (the frame keeps its size)
+  pen circle|underline ID [--color C]     marks a shape with the pen, as a person would (red unless said)
+  pen points "X,Y X,Y …" [--color C]      a pen stroke through page points
+  point ID|X,Y [--circle]                 points at a shape or a point with the laser pointer: everyone sees
+                                          it drawn, held a moment and faded; nothing stays (live boards)
   delete ID…                               only shapes an agent added
   apply STEPS.json                          several steps as one operation (see SKILL.md)
 
@@ -171,14 +177,14 @@ const OPTIONS = {
   cols: { type: 'string' }, link: { type: 'boolean' }, title: { type: 'string' }, 'html-file': { type: 'string' },
   width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
   frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
-  project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
+  circle: { type: 'boolean' }, project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -349,6 +355,20 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await op((ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break
       case 'fit':
         done = await op((ops) => ops.fit(args[0], { ids: args.slice(1).join(',').split(',').filter(Boolean) })); break
+      case 'pen': {
+        const kind = args[0] as 'circle' | 'underline' | 'points'
+        const points = kind === 'points' ? args.slice(1).join(' ').trim().split(/\s+/).map((p) => pair(p, 'point')!) : undefined
+        done = await op((ops) => ops.pen({ kind, id: kind === 'points' ? undefined : args[1], points, color })); break
+      }
+      case 'point': {
+        needsLive()
+        const at = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(args[0] ?? '') ? point(args[0])! : null
+        const s = at ? null : store.get(args[0])
+        if (!at && s?.typeName !== 'shape') throw new Error(`point needs a shape id or X,Y (no shape ${args[0]})`)
+        const target = at ?? pageBounds(s as never)
+        await pointWith(board.relay!, target, { circle: o.circle })
+        return out(JSON.stringify({ pointed: args[0] }))
+      }
       case 'delete':
         done = await op((ops) => ops.delete(args)); break
       case 'tickets': {

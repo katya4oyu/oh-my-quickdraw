@@ -8,7 +8,7 @@ import { main } from '../src/commands/index.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { startSession } from '../src/session/daemon.ts'
 import { sessionFile } from '../src/session/client.ts'
-import { AGENT, packAgent, packPresence, unpackAgent } from '../src/protocol.js'
+import { AGENT, PRESENCE, packAgent, packPresence, unpackAgent, unpackPresence } from '../src/protocol.js'
 
 // a page's side of the AI panel: what the server sends it, taken by kind
 function pageOf(ws: WebSocket) {
@@ -128,6 +128,21 @@ describe('a session: an agent with a shell, on the board', () => {
     // and what the session itself writes to itself does not ask it
     await run('note', '@Claude not me')
     expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
+  }, 20_000)
+
+  it('points with the laser (everyone sees it, then it fades) and marks with the pen', async () => {
+    const { ws, run } = await setup()
+    const seen: any[] = []
+    ws.addEventListener('message', ({ data }) => { const m = new Uint8Array(data); if (m[0] === PRESENCE) seen.push(unpackPresence(m)) })
+    const [n] = await run('note', 'this one', '--at', '400,300')
+    expect(await run('point', n.ids[0], '--circle')).toEqual([{ pointed: n.ids[0] }])
+    await new Promise((r) => setTimeout(r, 100))
+    const lasers = seen.filter((p) => p.name === 'Claude' && p.laser)
+    expect(Math.max(...lasers.map((p) => p.laser[0]?.points.length ?? 0))).toBeGreaterThan(30) // drawn a little at a time, all the way round
+    expect(lasers.at(-1).laser).toEqual([]) // then gone
+    const [ring] = await run('pen', 'circle', n.ids[0])
+    const d = (await run('read', '--format', 'json'))[0]
+    expect(d.items.find((i: any) => i.id === ring.ids[0])).toMatchObject({ type: 'draw', by: 'Claude' })
   }, 20_000)
 
   it('leaves when told, or when left idle; then the commands go back to working alone', async () => {

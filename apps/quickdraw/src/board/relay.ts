@@ -11,6 +11,8 @@ export interface Relay {
   status(status: 'idle' | 'working' | 'waiting'): void
   /** what it is doing just now (quickdraw-presence's agentActivity), and on what; null: nothing in particular */
   activity(kind: string | null, note?: string): void
+  /** its laser pointer's strokes as the others see them (page points; [] when none) */
+  laser(strokes: { points: [number, number][], opacity: number }[]): void
   /** sends an AGENT message (see ../protocol.js) */
   send(message: object): void
   /** AGENT messages from the server; returns a function that stops listening */
@@ -75,11 +77,12 @@ export function connectRelay(ydoc: Y.Doc, url: string, { name = 'Agent', color =
       ready = true
       clearTimeout(timer)
       ydoc.on('update', onUpdate)
-      const me: Presence & { x: number | null, y: number | null, agent: true, agentStatus?: string, agentActivity?: string | null, agentNote?: string } = { name, color, x: null, y: null, agent: true }
+      const me: Presence & { x: number | null, y: number | null, agent: true, agentStatus?: string, agentActivity?: string | null, agentNote?: string, laser?: { points: [number, number][], opacity: number }[] } = { name, color, x: null, y: null, agent: true }
       const sendPresence = () => { if (ws.readyState === WebSocket.OPEN) ws.send(packPresence(me)) }
       sendPresence() // here, before it points at anything
       resolve({
         cursor(x, y) { Object.assign(me, { x, y }); sendPresence() },
+        laser(strokes) { Object.assign(me, { laser: strokes }); sendPresence() },
         status(agentStatus) { if (me.agentStatus !== agentStatus) { me.agentStatus = agentStatus; sendPresence() } },
         activity(kind, note = '') {
           if (me.agentActivity === kind && me.agentNote === note) return
