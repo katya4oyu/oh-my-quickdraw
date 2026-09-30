@@ -150,9 +150,9 @@ describe('a session: an agent with a shell, on the board', () => {
     const [left] = await run('ticket', 'Tidy the board') // left for any agent, by itself: not news to it
     expect((await run('next', '--timeout', '0.3'))[0]).toMatchObject({ type: null })
     const person = await openBoard({ url, name: 'Ann' })
-    person.store.update(left.ids[0], { props: { to: 'Claude' } } as never) // Ann gives it to Claude
+    person.store.update(left.ids[0], { props: { to: 'Claude' }, edited: { by: 'Ann', at: Date.now() } } as never) // Ann gives it to Claude (her page marks the edit)
     const [got] = await run('next', '--timeout', '5')
-    expect(got).toMatchObject({ type: 'ticket', ticket: { id: left.ids[0], to: 'Claude' } })
+    expect(got).toMatchObject({ type: 'ticket', ticket: { id: left.ids[0], to: 'Claude' }, made_by: 'Claude', changed_by: 'Ann' }) // for asking the one who started it
     await run('take', left.ids[0])
     expect((await page.take((m) => m.kind === 'agents' && m.agents[0]?.status === 'working')).agents[0].status).toBe('working')
     await run('done', left.ids[0], '--result', 'Tidied')

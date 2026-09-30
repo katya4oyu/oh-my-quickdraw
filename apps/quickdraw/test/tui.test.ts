@@ -53,6 +53,9 @@ describe('quickdraw agent claude and codex', () => {
     expect(JSON.parse(readFileSync(join(cwd, 'who.txt'), 'utf8'))).toMatchObject({ you: 'Claude' }) // through the session
     expect(said[0]).toMatch(/installed in this repository/)
     expect(said).toContain(`the board: Claude is on it (${url})`)
+    expect(firstPrompt('Claude', url)).toContain('in the background')
+    expect(firstPrompt('Codex', url, 'codex')).toContain('--timeout 100')
+    expect(firstPrompt('Codex', url, 'codex')).toContain('Before you take a ticket, ask me')
     expect(existsSync(sessionFile(cwd))).toBe(false) // left
   }, 30_000)
 
@@ -74,7 +77,7 @@ describe('quickdraw agent claude and codex', () => {
     chmodSync(fake, 0o755)
     const said: string[] = []
     expect(await runTui('codex', { url, name: 'Codex', cwd, home, command: fake, args: ['-m', 'gpt-6'], say: (l: string) => said.push(l) })).toBe(0)
-    expect(readFileSync(join(cwd, 'args.txt'), 'utf8').trim().split('\n')).toEqual(['-m', 'gpt-6', firstPrompt('Codex', url)])
+    expect(readFileSync(join(cwd, 'args.txt'), 'utf8').trim().split('\n')).toEqual(['-m', 'gpt-6', firstPrompt('Codex', url, 'codex')])
     expect(JSON.parse(readFileSync(join(cwd, 'who.txt'), 'utf8'))).toMatchObject({ you: 'Codex' })
     expect(said.some((l) => l.startsWith('the rule:'))).toBe(true)
     expect(existsSync(sessionFile(cwd))).toBe(false)

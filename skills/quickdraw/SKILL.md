@@ -101,18 +101,18 @@ You run on the account of the person who started you, even on a board someone el
   - `{"type": "request", "id", "text", "about", "area", "feedback", "changes"}`: a request. `text` is what a person asked; `about` what they selected; `area` where they marked it should go (your work area already); `feedback` snapshots' notes with pictures to look at; `changes` what changed on the board since you last looked. It is the request you now work on: what you draw goes in its thread, where people can undo it all at once.
   - `{"type": "reply", "request", "text"}`: a person's follow-up in the thread. Do it, then `say` or `finish`.
   - `{"type": "stop", "request"}`: a person pressed Stop. Stop that work at once and `finish` it.
-  - `{"type": "ticket", "ticket"}`: a ticket for you (see Tickets). `take` it before working on it.
+  - `{"type": "ticket", "ticket", "made_by", "changed_by"}`: a ticket for you (see Tickets), with who wrote it and who changed it last (who gave it to you, often). Ask the person who started you before you `take` it (below).
   - `{"type": null, "timeout": true}`: nothing yet. Run `wait` again.
-- Wait in short spells (`--timeout 100`), again and again: each fits within any agent's time for one command, and between them you can hear the person you work with (below).
+- Wait in short spells (`--timeout 100`), again and again: each fits within any agent's time for one command, and between them you can hear the person you work with (below). Where your agent can run a command in the background and is woken when it ends (Claude Code), wait there instead (below).
 - A result with `"inbox"` means something waits for you (a reply, Stop): `wait` takes it. Check before going on with long work.
 - A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
 - Every request gets a `finish`, with a line on what you did (or why not).
 - A request with `"from"` was asked by another agent, in a note that mentions you. Do it as for a person, and answer in the thread.
 
-**When the person also talks with you directly** — typing where you run, or by voice (Codex's `/voice`, say) — they come first. A `wait` in progress holds you until it ends, so they cannot reach you meanwhile: keep waits short (`--timeout 20`), or stop waiting while they talk to you and do what they say; go back to `wait` when they are done. What they ask for the board, do on the board with the same commands (not in a request's thread: `say` and `finish` are for requests from the board).
+**When the person also talks with you directly** — typing where you run, or by voice (Codex's `/voice`, say) — they come first. A `wait` in progress holds you until it ends, so they cannot reach you meanwhile: keep waits short (`--timeout 20`), or stop waiting while they talk to you and do what they say; go back to `wait` when they are done. Where you can wait in the background, you need not stop: talk with them while it runs. What they ask for the board, do on the board with the same commands (not in a request's thread: `say` and `finish` are for requests from the board).
 
 **Your agent's own ways** (one skill for all; only these differ):
-- *Claude Code*: a shell command gets 2 minutes unless you give it more (up to 10); `--timeout 100` fits. For a longer wait, set the command's timeout to match.
+- *Claude Code*: wait in the background — `quickdraw wait --timeout 540` run in the background (`run_in_background`). You are woken when it ends: do what it printed (or nothing, on a timeout), then start the next one. Meanwhile you are free to talk with the person. Run in the foreground, a command gets 2 minutes unless you give it more (up to 10).
 - *Codex*: `quickdraw` reaches the board (a local socket, the board's server), which Codex's sandbox does not allow. When asked to run it outside the sandbox, ask for the prefix `["quickdraw"]` to be allowed (a `prefix_rule`), so it is asked once; `quickdraw agent codex` sets that up in `.codex/rules`. A long command comes back after a few seconds still running: read its output again until it ends.
 
 To ask another agent on the board, write a note that starts with its name: `quickdraw note "@Codex check the API section"`. It gets it as a request, as when a person writes one, if the same person started you both (or it takes requests from anyone); people see it in the AI panel. For work to be done later, or by whichever agent comes, leave a ticket instead.
@@ -146,7 +146,11 @@ Working through tickets:
 3. Close it: `done ID --result "…"` (what you did, in a line), or `fail ID --result "…"` (why not). Every ticket you take gets one or the other.
 4. Asked to keep going: wait for the next one. Stop when the person says, or when `wait --timeout` prints `"ticket": null`.
 
-Take only tickets for you or for any agent. Put a ticket back for others with `apply` and `{ "do": "status", "id": ID, "status": "todo" }`.
+Take only tickets for you or for any agent.
+
+**Ask before you take a ticket.** Anyone on the board can write a ticket, or give one to you, and you work with the rights of the person who started you (their folder, their account). So before you `take` a ticket, ask that person where they talk with you: what it asks, who wrote it (`made_by`) and who gave it to you (`changed_by`). Take it once they say yes; if they say no, leave it (or put it back for others). Once they tell you to take tickets without asking, stop asking until they say otherwise. Not needed: a request from the AI panel (only they can send those, unless they opened you to others), or tickets they asked you to work through (`wait --take` is for that).
+
+Put a ticket back for others with `apply` and `{ "do": "status", "id": ID, "status": "todo" }`.
 
 ## Point and mark: the laser and the pen
 

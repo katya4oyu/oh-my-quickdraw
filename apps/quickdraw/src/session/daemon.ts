@@ -201,7 +201,9 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     if (item.type === 'stop') return { type: 'stop', request: item.requestId, text: 'A person pressed Stop: stop working on it, then quickdraw finish it.' }
     const t = store.get(item.id)
     if (!t || (t as { props?: { status?: string } }).props?.status !== 'todo') return next(timeout == null ? undefined : Math.max(0, (until - Date.now()) / 1000), closed) // taken or gone since
-    return { type: 'ticket', ticket: describeTicket(t) }
+    // who wrote it and who changed it last (gave it to this agent, say): the person who started it decides whether to take it
+    const marks = t as unknown as { made?: { by?: string }, edited?: { by?: string } }
+    return { type: 'ticket', ticket: describeTicket(t), ...(marks.made?.by ? { made_by: marks.made.by } : {}), ...(marks.edited?.by ? { changed_by: marks.edited.by } : {}) }
   }
 
   function finish(requestId: string, text?: string) {
