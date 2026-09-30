@@ -70,3 +70,12 @@ export function checkPreview(p) {
   if (p.image != null && (typeof p.image !== 'string' || p.image.length > PREVIEW_LIMITS.image || !PREVIEW_IMAGE.test(p.image))) return 'bad props.preview.image'
   return null
 }
+
+// A thumbnail is an image the creator chose for an embed's placeholder (the
+// card before it is used): one inline raster image, bounded like a preview's.
+export const isThumbnail = (t) => typeof t === 'string' && t.length <= PREVIEW_LIMITS.image && PREVIEW_IMAGE.test(t)
+
+// For records: the thumbnail, if any, must be an inline raster image.
+export function checkThumbnail(t) {
+  return t == null || isThumbnail(t) ? null : 'bad props.thumbnail'
+}

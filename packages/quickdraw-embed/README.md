@@ -27,7 +27,21 @@ openJSON(board.editor, { types: { embed: validateEmbed } }) // quickdraw-import
 - Iframes ignore the pointer until activated (double-click on desktop, `activate()` elsewhere — iOS sends no dblclick).
 - Only embeds near the view are mounted, at most `maxLive` (8) at once; the rest stay placeholders.
 
-Record: `{ type: 'embed', props: { kind: 'url' | 'link' | 'html', url? | html?, w, h, title?, preview? } }`.
+Record: `{ type: 'embed', props: { kind: 'url' | 'link' | 'html', url? | html?, w, h, title?, preview?, thumbnail? } }`.
+
+## Thumbnails
+
+An embed that is not running is a blank card, so its creator can give it a picture: `props.thumbnail`, for every kind.
+
+```js
+createEmbed(store, { x, y, kind: 'html', html, thumbnail: file }) // a File/Blob, or an image data URL
+await setThumbnail(store, id, file)   // replace; true when stored
+await setThumbnail(store, id, null)   // remove
+```
+
+- It shows on the placeholder: the whole box for inline HTML (the Run notice sits over it), the top of a link card (it wins over the Open Graph image), and behind a URL embed until its page has loaded or where it is link only.
+- A Blob is shrunk to an inline JPEG (≤ 200 KB) and stored in the record, so every viewer sees it and export draws it. A data URL must already be a PNG, JPEG, WebP or GIF within that size; anything else (an http URL, an SVG) is refused, and `validateEmbed` rejects it in records.
+- `embedTools` adds **Set thumbnail…** (an image file picker) and **Remove thumbnail** to the selection bar.
 
 ## Link cards
 

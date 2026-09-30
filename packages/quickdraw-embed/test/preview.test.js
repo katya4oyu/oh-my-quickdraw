@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
-import { parseOpenGraph, cleanPreview, checkPreview, validateEmbed, createEmbed, addPreview, fitLines, PREVIEW_LIMITS } from '../src/index.js'
+import { parseOpenGraph, cleanPreview, checkPreview, validateEmbed, createEmbed, addPreview, setThumbnail, checkThumbnail, fitLines, PREVIEW_LIMITS } from '../src/index.js'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo='
 
@@ -65,6 +65,43 @@ describe('addPreview', () => {
     store.update(id, { props: { url: 'https://other.example/' } })
     expect(await slow).toBeNull()
     expect(store.get(id).props.preview).toBeUndefined()
+  })
+})
+
+describe('thumbnail', () => {
+  it('is stored from a data URL at creation, on every kind', () => {
+    const store = new Store()
+    for (const opts of [{ url: 'https://youtu.be/abc' }, { kind: 'link', url: 'https://example.com/' }, { kind: 'html', html: '' }]) {
+      const id = createEmbed(store, { x: 0, y: 0, thumbnail: PNG, ...opts })
+      expect(store.get(id).props.thumbnail).toBe(PNG)
+    }
+  })
+
+  it('is set, replaced and removed', async () => {
+    const store = new Store()
+    const id = createEmbed(store, { x: 0, y: 0, url: 'https://youtu.be/abc' })
+    expect(await setThumbnail(store, id, PNG)).toBe(true)
+    expect(store.get(id).props.thumbnail).toBe(PNG)
+    expect(await setThumbnail(store, id, null)).toBe(true)
+    expect(store.get(id).props.thumbnail).toBeUndefined()
+  })
+
+  it('refuses anything but an inline raster image', async () => {
+    const store = new Store()
+    const id = createEmbed(store, { x: 0, y: 0, kind: 'html', html: '' })
+    expect(await setThumbnail(store, id, 'https://tracker.example/p.png')).toBe(false)
+    expect(await setThumbnail(store, id, 'data:image/svg+xml;base64,PHN2Zz4=')).toBe(false)
+    expect(await setThumbnail(store, id, 'data:image/png;base64,' + 'A'.repeat(PREVIEW_LIMITS.image))).toBe(false)
+    expect(await setThumbnail(store, 'missing', PNG)).toBe(false)
+    expect(store.get(id).props.thumbnail).toBeUndefined()
+  })
+
+  it('is checked in records', () => {
+    expect(checkThumbnail(undefined)).toBeNull()
+    expect(checkThumbnail(PNG)).toBeNull()
+    expect(checkThumbnail('https://tracker.example/p.png')).toMatch(/thumbnail/)
+    expect(validateEmbed({ props: { kind: 'html', html: '', w: 320, h: 200, thumbnail: PNG } })).toBeNull()
+    expect(validateEmbed({ props: { kind: 'html', html: '', w: 320, h: 200, thumbnail: 'javascript:1' } })).toMatch(/thumbnail/)
   })
 })
 

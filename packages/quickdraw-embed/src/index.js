@@ -17,10 +17,13 @@
 // preview, with an Open button. It is what a viewer sees when their rules do
 // not allow the page, and all there is for kind 'link' (never an iframe).
 //
-// Record: { type: 'embed', props: { kind: 'url' | 'link' | 'html', url? | html?, w, h, title?, preview? } }
+// Thumbnail: an image the creator chose (props.thumbnail, an inline raster image)
+// shows on the placeholder, so an embed that is not running says what it is.
+//
+// Record: { type: 'embed', props: { kind: 'url' | 'link' | 'html', url? | html?, w, h, title?, preview?, thumbnail? } }
 import * as core from '@quickdrawjs/core'
 import { resolveEmbedUrl, htmlDocument, DEFAULT_RULES, URL_SANDBOX, URL_ALLOW, HTML_SANDBOX } from './policy.js'
-import { cleanPreview, PREVIEW_LIMITS } from './preview.js'
+import { cleanPreview, isThumbnail, PREVIEW_LIMITS } from './preview.js'
 
 export * from './policy.js'
 export * from './preview.js'
@@ -88,7 +91,8 @@ export function fitLines(ctx, text, maxW, n) {
 }
 
 function drawCard(ctx, shape, { theme, onAssetLoad }) {
-  const { w, h, url, title, preview = {} } = shape.props
+  const { w, h, url, title, thumbnail, preview = {} } = shape.props
+  const picture = thumbnail || preview.image // the creator's own image wins
   const grey = theme.colors.grey
   ctx.beginPath()
   ctx.roundRect(0, 0, w, h, 8)
@@ -100,9 +104,9 @@ function drawCard(ctx, shape, { theme, onAssetLoad }) {
   ctx.save()
   ctx.clip()
   let y = 0
-  if (preview.image) {
+  if (picture) {
     const ih = Math.min(h * 0.55, w * 0.52)
-    const img = cardImage(preview.image, onAssetLoad)
+    const img = cardImage(picture, onAssetLoad)
     if (img) { // cover: crop to the box
       const k = Math.max(w / img.naturalWidth, ih / img.naturalHeight)
       const sw = w / k, sh = ih / k
@@ -135,7 +139,7 @@ function drawCard(ctx, shape, { theme, onAssetLoad }) {
 }
 
 function draw(ctx, shape, opts) {
-  const { w, h, kind, title } = shape.props
+  const { w, h, kind, title, thumbnail } = shape.props
   if (kind !== 'html') return drawCard(ctx, shape, opts)
   const grey = opts.theme.colors.grey
   ctx.beginPath()
@@ -145,6 +149,16 @@ function draw(ctx, shape, opts) {
   ctx.lineWidth = 1
   ctx.strokeStyle = grey.stroke
   ctx.stroke()
+  const img = thumbnail && cardImage(thumbnail, opts.onAssetLoad)
+  if (img) { // the whole box, cropped to fit; the notice and Run button sit over it
+    ctx.save()
+    ctx.clip()
+    const k = Math.max(w / img.naturalWidth, h / img.naturalHeight)
+    const sw = w / k, sh = h / k
+    ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, w, h)
+    ctx.restore()
+    return
+  }
   ctx.fillStyle = grey.stroke
   ctx.font = `14px ${core.FONTS.sans}`
   ctx.textAlign = 'center'
@@ -165,12 +179,13 @@ export function registerEmbed() {
   return (registered = true)
 }
 
+// thumbnail: an image (Blob or data URL) for the placeholder, see setThumbnail.
 // kind 'url' (an iframe where allowed, a card elsewhere) or 'link' (always a
 // card): { url, preview?, fetchPreview? }; kind 'html': { html }.
 // fetchPreview(url) -> { title?, description?, siteName?, image?: Blob | data URL }
 // is the app's way past CORS (a proxy, a desktop shell…); its answer is
 // cleaned, the image shrunk inline, and stored once. Returns the new id.
-export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title, preview, fetchPreview }) {
+export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title, preview, thumbnail, fetchPreview }) {
   if (!registerEmbed()) throw new Error(UNSUPPORTED)
   const id = core.newId()
   const link = kind === 'link'
@@ -181,6 +196,7 @@ export function createEmbed(store, { x, y, w, h, kind = 'url', url, html, title,
   const clean = kind !== 'html' && cleanPreview(preview)
   if (clean) props.preview = clean
   store.put({ id, typeName: 'shape', type: TYPE, x, y, rot: 0, z: store.maxZ() + 1, props })
+  if (thumbnail) setThumbnail(store, id, thumbnail)
   if (fetchPreview && kind !== 'html') addPreview(store, id, fetchPreview)
   return id
 }
@@ -198,6 +214,20 @@ export async function addPreview(store, id, fetchPreview) {
   if (!preview || store.get(id)?.props.url !== url) return null
   store.update(id, { props: { preview } })
   return preview
+}
+
+// Sets (or, with null, removes) an embed's thumbnail: a Blob (a file, a paste) or
+// an inline image data URL. A Blob is shrunk to a small inline JPEG; anything
+// that is not a raster image, or too big to store, is refused. Resolves to
+// whether the thumbnail was stored.
+export async function setThumbnail(store, id, image) {
+  if (store.get(id)?.type !== TYPE) return false
+  if (image == null) { store.update(id, { props: { thumbnail: undefined } }); return true }
+  let data = image
+  if (typeof Blob !== 'undefined' && image instanceof Blob) data = await shrinkImage(image).catch(() => undefined)
+  if (!isThumbnail(data) || !store.get(id)) return false
+  store.update(id, { props: { thumbnail: data } })
+  return true
 }
 
 // an image blob as a small inline JPEG, within the preview size limit
@@ -248,11 +278,13 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, html = true, maxLive
 
   const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; reconcile() }) }
 
-  function note(text, button) {
+  // over a thumbnail, a notice gets a dark veil so it stays readable
+  function note(text, button, over) {
     const box = document.createElement('div')
     Object.assign(box.style, {
       position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', gap: '8px',
-      alignItems: 'center', justifyContent: 'center', font: `13px ${core.FONTS.sans}`, color: '#666', textAlign: 'center', padding: '12px',
+      alignItems: 'center', justifyContent: 'center', font: `13px ${core.FONTS.sans}`, color: over ? '#fff' : '#666', textAlign: 'center', padding: '12px',
+      background: over ? 'rgba(0,0,0,0.45)' : 'none',
     })
     box.textContent = text
     if (button) {
@@ -300,9 +332,9 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, html = true, maxLive
       f.loading = 'lazy'
       return f
     }
-    if (!html) return note('Inline HTML is turned off on this board.')
-    if (stopped.has(s.id)) return note('Stopped: this HTML tried to leave its page.', { label: 'Run again', onClick: () => { stopped.delete(s.id); run(s.id) } })
-    if (!ran.has(s.id)) return note('Inline HTML, sandboxed with no network access.', { label: '▶ Run', onClick: () => run(s.id) })
+    if (!html) return note('Inline HTML is turned off on this board.', null, !!p.thumbnail)
+    if (stopped.has(s.id)) return note('Stopped: this HTML tried to leave its page.', { label: 'Run again', onClick: () => { stopped.delete(s.id); run(s.id) } }, !!p.thumbnail)
+    if (!ran.has(s.id)) return note('Inline HTML, sandboxed with no network access.', { label: '▶ Run', onClick: () => run(s.id) }, !!p.thumbnail)
     const f = document.createElement('iframe')
     f.setAttribute('sandbox', HTML_SANDBOX)
     Object.assign(f, { srcdoc: htmlDocument(p.html), referrerPolicy: 'no-referrer', title: p.title || 'HTML' })
@@ -318,8 +350,8 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, html = true, maxLive
     const wrap = document.createElement('div')
     Object.assign(wrap.style, { position: 'absolute', left: '0', top: '0', transformOrigin: '0 0', borderRadius: '8px', overflow: 'hidden' })
     const c = content(s)
-    // iframes and HTML notices sit on white; card controls let the card show through
-    if (c.tagName === 'IFRAME' || s.props.kind === 'html') wrap.style.background = '#fff'
+    // iframes and HTML notices sit on white (unless a thumbnail shows through); card controls let the card show through
+    if (c.tagName === 'IFRAME' || (s.props.kind === 'html' && !s.props.thumbnail)) wrap.style.background = '#fff'
     if (c.tagName === 'IFRAME') Object.assign(c.style, { width: '100%', height: '100%', border: '0', display: 'block' })
     wrap.append(c)
     layer.append(wrap)
@@ -332,7 +364,7 @@ export function bindEmbeds(editor, { rules = DEFAULT_RULES, html = true, maxLive
     if (activeId === id) activeId = null
   }
 
-  const keyOf = (s) => [s.props.kind, s.props.url, s.props.html, ran.has(s.id), stopped.has(s.id), s.props.kind === 'url' && !!verdicts.get(s.props.url)?.pending].join('\u0000')
+  const keyOf = (s) => [s.props.kind, s.props.url, s.props.html, !!s.props.thumbnail, ran.has(s.id), stopped.has(s.id), s.props.kind === 'url' && !!verdicts.get(s.props.url)?.pending].join('\u0000')
 
   // asks the rules once per URL; the embed shows "Checking…" until they answer
   function verdict(url) {
