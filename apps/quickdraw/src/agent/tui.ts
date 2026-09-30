@@ -73,7 +73,7 @@ prefix_rule(
     pattern = ["quickdraw"],
     decision = "allow",
     justification = "quickdraw talks to the Quickdraw board this folder joined",
-    match = ["quickdraw next --timeout 540", "quickdraw note hi"],
+    match = ["quickdraw wait --timeout 100", "quickdraw note hi"],
     not_match = ["quickdraw-other", "sh quickdraw"],
 )
 `
@@ -98,11 +98,15 @@ export function quickdrawPath(cwd: string, env = process.env): { path: string, s
   return { path: dir + delimiter + path, shim }
 }
 
-export const firstPrompt = (name: string, url: string) =>
+export const firstPrompt = (name: string, url: string, tui: Tui = 'claude') =>
   `You are "${name}" on a Quickdraw whiteboard (${url}): this folder already joined it (quickdraw join). `
-  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait --timeout 540`, '
-  + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then `quickdraw wait` again. '
-  + 'Keep going until I tell you to stop; I may also ask you things here.'
+  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait`, '
+  + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then wait again. '
+  + (tui === 'claude'
+    ? 'Wait in the background (`quickdraw wait --timeout 540`, run in the background): you are woken when it ends, and meanwhile you can talk with me. '
+    : 'Wait in short spells (`quickdraw wait --timeout 100`). ')
+  + 'Before you take a ticket, ask me once whether to (say who wrote it and what it asks), unless I told you to take tickets without asking. '
+  + 'Keep going until I tell you to stop. I may also talk to you here, typing or by voice: that comes first — stop waiting, do what I say, then go back to waiting.'
 
 // what the TUI is started with: the first prompt, and what lets it run quickdraw
 function argsFor(tui: Tui, prompt: string, args: string[]) {
@@ -128,7 +132,7 @@ export async function runTui(tui: Tui, o: TuiOptions): Promise<number> {
   const keep = () => {}
   process.on('SIGINT', keep)
   const code = await new Promise<number>((resolve, reject) => {
-    const child = spawn(command, argsFor(tui, firstPrompt(o.name, o.url), o.args ?? []), {
+    const child = spawn(command, argsFor(tui, firstPrompt(o.name, o.url, tui), o.args ?? []), {
       cwd: o.cwd, stdio: 'inherit', env: { ...process.env, PATH: path },
     })
     child.on('error', reject)
