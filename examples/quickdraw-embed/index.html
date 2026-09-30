@@ -25,11 +25,12 @@
     <button id="url">Add URL</button>
     <button id="link">Add link</button>
     <button id="html">Add HTML</button>
+    <button id="thumb">Set thumbnail</button>
     <button id="use">Use</button>
   </div>
   <script type="module">
     import { createQuickdraw } from '@quickdrawjs/core'
-    import { bindEmbeds, createEmbed, isEmbedSupported, LINK_CARDS_ONLY, TYPE } from '../../packages/quickdraw-embed/src/index.js'
+    import { bindEmbeds, createEmbed, setThumbnail, isEmbedSupported, LINK_CARDS_ONLY, TYPE } from '../../packages/quickdraw-embed/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
     const { editor } = board
@@ -75,6 +76,15 @@
         <style>body{font:16px system-ui;display:grid;place-items:center;height:100vh;background:#fdf6e3}</style>
         <div><button id="b" style="font-size:18px;padding:8px 16px">Clicked 0 times</button></div>
         <script>let n = 0; b.onclick = () => { b.textContent = 'Clicked ' + ++n + ' times' }<\/script>` }))
+    }
+
+    // a picture for the selected embed's placeholder (a file, shrunk and stored in the record)
+    document.getElementById('thumb').onclick = () => {
+      const id = [...editor.selection][0]
+      if (editor.store.get(id)?.type !== TYPE) return alert('Select an embed first')
+      const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' })
+      input.onchange = () => input.files[0] && setThumbnail(editor.store, id, input.files[0])
+      input.click()
     }
 
     // iOS sends no dblclick on the board: run inline HTML, then hand it the pointer

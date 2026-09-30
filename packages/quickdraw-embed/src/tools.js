@@ -2,7 +2,7 @@
 // takes; nothing here depends on it): add a web page, a link card or HTML
 // from the rail; use or open a selected embed. Takes the controller from
 // bindEmbeds, and the app's fetchPreview for link cards.
-import { createEmbed, isEmbedSupported, openLink, TYPE } from './index.js'
+import { createEmbed, isEmbedSupported, openLink, setThumbnail, TYPE } from './index.js'
 
 const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
 export const EMBED_ICONS = {
@@ -10,8 +10,19 @@ export const EMBED_ICONS = {
   link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
   html: svg('<path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13.5 5-3 14"/>'),
   use: svg('<path d="M5 3l14 7-6 2-2 6z"/>'),
+  image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),
   open: svg('<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
 }
+
+// asks the person for an image file
+const pickImage = () => new Promise((resolve) => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/png,image/jpeg,image/webp,image/gif'
+  input.onchange = () => resolve(input.files?.[0] ?? null)
+  input.oncancel = () => resolve(null)
+  input.click()
+})
 
 const SAMPLE_HTML = '<style>body{font:16px system-ui;display:grid;place-items:center;height:100vh}</style><button onclick="this.textContent=+this.textContent+1">0</button>'
 
@@ -40,6 +51,19 @@ export function embedTools(embeds, { fetchPreview, html = true } = {}) {
         id: 'embed-use', title: 'Use (run and interact)', icon: EMBED_ICONS.use,
         when: (s) => s.type === TYPE && (s.props.kind === 'url' || (s.props.kind === 'html' && html)),
         run: ({ shape }) => { if (shape.props.kind === 'html') embeds.run(shape.id); embeds.activate(shape.id) },
+      },
+      {
+        id: 'embed-thumbnail', title: 'Set thumbnail…', icon: EMBED_ICONS.image,
+        when: (s) => s.type === TYPE,
+        run: async ({ shape, editor }) => {
+          const file = await pickImage()
+          if (file && !(await setThumbnail(editor.store, shape.id, file))) alert('That image could not be used as a thumbnail.')
+        },
+      },
+      {
+        id: 'embed-thumbnail-remove', title: 'Remove thumbnail', icon: EMBED_ICONS.image,
+        when: (s) => s.type === TYPE && !!s.props.thumbnail,
+        run: ({ shape, editor }) => { setThumbnail(editor.store, shape.id, null) },
       },
       {
         id: 'embed-open', title: 'Open link', icon: EMBED_ICONS.open,

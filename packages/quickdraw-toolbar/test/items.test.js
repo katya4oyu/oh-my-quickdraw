@@ -50,8 +50,8 @@ describe('toolbar definitions', () => {
     const ids = (sel) => contextItems(context, editorFor(store, [sel])).map((it) => it.id)
     expect(ids(frame)).toEqual(['frame-rename', 'frame-aspect', 'frame-export'])
     expect(ids(card)).toEqual(['markdown-edit', 'markdown-save'])
-    expect(ids(page)).toEqual(['embed-use', 'embed-open'])
-    expect(ids(html)).toEqual(['embed-use'])
+    expect(ids(page)).toEqual(['embed-use', 'embed-thumbnail', 'embed-open'])
+    expect(ids(html)).toEqual(['embed-use', 'embed-thumbnail'])
   })
 
   it('run against the board: a frame at a ratio, then a new ratio for it', () => {
