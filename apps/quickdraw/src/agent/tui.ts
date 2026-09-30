@@ -73,7 +73,7 @@ prefix_rule(
     pattern = ["quickdraw"],
     decision = "allow",
     justification = "quickdraw talks to the Quickdraw board this folder joined",
-    match = ["quickdraw next --timeout 540", "quickdraw note hi"],
+    match = ["quickdraw wait --timeout 100", "quickdraw note hi"],
     not_match = ["quickdraw-other", "sh quickdraw"],
 )
 `
@@ -100,9 +100,9 @@ export function quickdrawPath(cwd: string, env = process.env): { path: string, s
 
 export const firstPrompt = (name: string, url: string) =>
   `You are "${name}" on a Quickdraw whiteboard (${url}): this folder already joined it (quickdraw join). `
-  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait --timeout 540`, '
+  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait --timeout 100`, '
   + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then `quickdraw wait` again. '
-  + 'Keep going until I tell you to stop; I may also ask you things here.'
+  + 'Keep going until I tell you to stop. I may also talk to you here, typing or by voice: that comes first — stop waiting, do what I say, then go back to waiting.'
 
 // what the TUI is started with: the first prompt, and what lets it run quickdraw
 function argsFor(tui: Tui, prompt: string, args: string[]) {
