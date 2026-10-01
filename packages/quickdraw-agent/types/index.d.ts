@@ -144,6 +144,8 @@ export interface AgentParticipant {
   models?: AgentModel[]
   model?: string
   effort?: string
+  /** the other boards it is on (one agent on several), and whether it works there now */
+  elsewhere?: { id: string, title: string, working?: boolean }[]
   /** what it runs on, as the agent says: its account ("ChatGPT Pro"), and how much of its usage limits is used */
   account?: string
   limits?: AgentLimit[]

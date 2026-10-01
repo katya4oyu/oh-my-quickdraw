@@ -20,8 +20,10 @@ import { text as readStream } from 'node:stream/consumers'
 export const SESSION_COMMANDS = new Set(['next', 'say', 'finish', 'area', 'who', 'changes', 'leave'])
 
 export interface SessionInfo {
-  /** the board's relay URL */
+  /** the board's relay URL (the first it joined) */
   url: string
+  /** all the boards it is on (their relay URLs) */
+  boards?: string[]
   name: string
   socket: string
   pid: number
@@ -86,8 +88,12 @@ const BIN = fileURLToPath(new URL('../../bin/quickdraw.ts', import.meta.url))
 export async function joinSession(url: string, { name = 'Agent', idle, remote = false, role, avatar, cwd = process.cwd() }: { name?: string, idle?: number, remote?: boolean, role?: string, avatar?: string, cwd?: string } = {}) {
   const had = await findSession(cwd)
   if (had) {
-    if (had.url === url && had.name === name) return { joined: true, already: true, board: had.url, name: had.name }
-    throw new Error(`already on ${had.url} as ${had.name} from this directory: quickdraw leave first`)
+    if (had.name !== name) throw new Error(`already on a board as ${had.name} from this directory: join as ${had.name}, or quickdraw leave first`)
+    if (had.url === url || had.boards?.includes(url)) return { joined: true, already: true, board: url, name: had.name, ...(had.boards && had.boards.length > 1 ? { boards: had.boards } : {}) }
+    // another board: the session here goes there too (one agent, on several boards)
+    let line = ''
+    await viaSession(had, ['join-board', url], (l) => { line = l })
+    return JSON.parse(line)
   }
   mkdirSync(join(cwd, '.quickdraw'), { recursive: true })
   // what quickdraw keeps here (the session, its log, the op log) is this computer's, not the project's

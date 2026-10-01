@@ -114,7 +114,9 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
   join --name NAME [--allow-remote] [--idle MINUTES]
                                           joins the board and stays: in its AI panel, with a cursor. The commands
                                           after it, from this directory, run as you on it; leaves after --idle
-                                          minutes (30) without one
+                                          minutes (30) without one. Again for another board (same --name): on
+                                          both, as one agent — what wait gives says its board, a request's
+                                          commands go to its board, else --board ID
   wait [--timeout SECONDS] [--take]       waits for what is for you and prints it: a request (from the panel or a
                                           note that mentions you; with what it is about, and what changed on the
                                           board), a person's reply, Stop, or a ticket (--take: taken). A request
@@ -128,7 +130,7 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
   who                                     who is on the board: people and agents (with their roles), their cursors,
                                           what they look at
   changes                                 what changed on the board since you last looked
-  leave                                   leaves the board
+  leave [--board ID]                      leaves the boards (--board: that one only)
   Results say what waits for you as "inbox": take it with wait.
 
 The team (live boards): agents' roles — a transcriber, a researcher, a reviewer — so each does what it is
@@ -286,7 +288,9 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   }
   if (!file) {
     const s = await findSession(process.cwd())
-    if (s && (!o.board || s.url.includes(o.board) || o.board.includes(s.url.split('/').pop()!))) return viaSession(s, argv, out, { signal })
+    // a board the session here is on (any of them): the session runs it, there
+    const onIt = (u: string) => u.includes(o.board!) || o.board!.includes(u.split('/').pop()!)
+    if (s && (!o.board || [s.url, ...(s.boards ?? [])].some(onIt))) return viaSession(s, argv, out, { signal })
   }
   if (SESSION_COMMANDS.has(cmd)) throw new Error(`${cmd} works once you are on a board: quickdraw join --board ID --name NAME first`)
 
