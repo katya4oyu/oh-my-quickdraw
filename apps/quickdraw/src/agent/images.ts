@@ -3,6 +3,8 @@
 // opaque PNG becomes a JPEG; sheets are cut into their cells. The work is done
 // by `sips` on macOS, else by Pillow through `uv` (./image_tool.py); with
 // neither, images go as they are (up to a limit) and sheets cannot be cut.
+// An SVG goes as it is (a vector: nothing to shrink), with a size of its own
+// (from its viewBox when it has none) so it lands as an image.
 // $QUICKDRAW_IMAGE_TOOL (sips, uv or none) chooses. Only files in the agent's
 // working directory or Codex's generated images are read.
 import { execFile } from 'node:child_process'
@@ -10,13 +12,14 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { extname, join, relative, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isSvgText, sizedSvg, svgDataUrl, svgSize } from 'quickdraw-import'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 const MAX_SIDE = 1024
 const CELL_SIDE = 320 // a piece of a split sheet
 const MAX_BYTES = 3_000_000 // as it goes on the board
-const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' }
+const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
 
 export interface BoardImage { src: string, w: number, h: number }
 
@@ -86,8 +89,9 @@ async function shrink(file: string, opaque: boolean, side = MAX_SIDE): Promise<B
 export async function loadImage(file: string, roots: string[], { transparent = false } = {}): Promise<BoardImage> {
   if (!within(file, roots)) throw new Error(`${file} is outside the working directory; copy it in first`)
   const type = TYPES[extname(file).toLowerCase()]
-  if (!type) throw new Error(`${file} is not a PNG, JPEG, GIF or WebP image`)
+  if (!type) throw new Error(`${file} is not a PNG, JPEG, GIF, WebP or SVG image`)
   if ((await stat(file)).size > 50_000_000) throw new Error(`${file} is too large`)
+  if (type === 'image/svg+xml') return loadSvg(file)
   let data: Buffer = await readFile(file)
   let mime = type
   const size = imageSize(data)
@@ -115,6 +119,17 @@ export async function halfWebp(file: string): Promise<Buffer | null> {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+}
+
+// an SVG as it is, sized
+async function loadSvg(file: string): Promise<BoardImage> {
+  const text = await readFile(file, 'utf8')
+  if (!isSvgText(text)) throw new Error(`${file} is not SVG (an <svg> element)`)
+  const sized = sizedSvg(text)
+  const src = svgDataUrl(sized)
+  if (src.length > MAX_BYTES * 1.4) throw new Error(`${file} is too large for the board; make it smaller first`)
+  const size = svgSize(sized)!
+  return { src, w: size.w, h: size.h }
 }
 
 /** An image (a data URL) as a JPEG data URL `side` px at most, or null when nothing here can shrink it. */
@@ -157,6 +172,7 @@ export interface ImageArgs {
  */
 export async function splitImage(file: string, grid: { cols: number, rows: number }, roots: string[], { transparent = false, inset = 0 } = {}): Promise<BoardImage[]> {
   if (!within(file, roots)) throw new Error(`${file} is outside the working directory; copy it in first`)
+  if (extname(file).toLowerCase() === '.svg') throw new Error('an SVG is not cut into cells: put it as it is (cutting is for PNG, JPEG, GIF and WebP sheets)')
   const tool = await imageTool()
   if (tool === 'none') throw new Error('cutting an image needs sips (macOS) or uv (https://docs.astral.sh/uv/)')
   const cols = Math.floor(grid.cols), rows = Math.floor(grid.rows)

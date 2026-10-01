@@ -54,7 +54,7 @@
     import { createQuickdraw, pageBounds } from '@quickdrawjs/core'
     import { bindYjs } from 'quickdraw-yjs'
     import { exportTool } from 'quickdraw-export'
-    import { importTool } from 'quickdraw-import'
+    import { bindSvgPaste, importTool } from 'quickdraw-import'
     import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
@@ -81,6 +81,7 @@
     bindTicketEditing(board.editor)
     const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
     bindGifs(board.editor) // GIFs move (the canvas alone shows their first frame)
+    bindSvgPaste(board.editor) // SVG code pasted (Figma's "Copy as SVG") becomes an image, as an SVG file does
 
     // link previews through the server's /preview proxy (browsers cannot read
     // other sites' HTML); the card keeps what it got, so viewers never contact the site

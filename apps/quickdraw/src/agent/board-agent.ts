@@ -192,7 +192,7 @@ const SET_ROLE = {
 
 const ADD_IMAGE = {
   name: 'add_image',
-  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP) in the working directory, by its path. Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
+  description: 'Puts an image on the board: one you generated for this request ("latest", or "1", "2"… in the order you made them) or an image file (PNG, JPEG, GIF, WebP, SVG) in the working directory, by its path. An icon or a small figure you can write as an SVG file and put here (it stays sharp-edged, and has a size from its viewBox). Without a position it goes in free space; `in` puts it in a frame. Shown 400 wide unless `w` says otherwise. '
     + 'With `split`, an image laid out as an even grid (a sprite or sticker sheet) is cut into its cells, which go on the board as separate images in the same grid (each `w` wide, 160 by default), optionally in a new frame titled `frame`.',
   inputSchema: { type: 'object', additionalProperties: false, required: ['image'], properties: {
     image: { type: 'string', description: '"latest", the number of a generated image, or a file path' },

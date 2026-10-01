@@ -57,7 +57,7 @@ Writing (each command is one operation, undoable as a whole)
   embed --html-file PAGE.html [--title T] [--size WxH] [--in FRAME] [--at X,Y]
                                           a self-contained HTML page, run when a viewer presses Run
   image FILE [--width N] [--in FRAME] [--at X,Y]
-                                          a PNG, JPEG, GIF or WebP in the working directory
+                                          a PNG, JPEG, GIF, WebP or SVG in the working directory
   image FILE --split COLSxROWS [--inset 0.1] [--width N] [--frame TITLE] [--at X,Y]
                                           a sheet cut into its cells, laid out as on the sheet
   frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH]
