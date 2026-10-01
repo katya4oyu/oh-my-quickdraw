@@ -59,7 +59,7 @@
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
-    import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD } from 'quickdraw-members'
+    import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
     import { createAgentPanel, agentTools, buildAgentRequest } from 'quickdraw-agent'
@@ -196,7 +196,45 @@
         return { name, role: m?.role, about: m?.about, here: !!(a || p), status: a?.status ?? p?.agentStatus, doing: act || undefined }
       })
     }
-    const teamBoard = createTicketBoard({ editor: board.editor, team, setRole: (name, role) => members.set(name, { role }, presence.me().name) })
+    // agents' pets (Codex pets, from the table): one playing by each cursor, one in the Team panel
+    const pets = { cursor: new Map(), panel: new Map() }
+    function petOf(where, name, height) {
+      const m = members.get(name)
+      const src = isPet(m?.avatar) ? board.editor.store.asset(m.avatar.asset)?.src : null
+      const had = pets[where].get(name.toLowerCase())
+      if (had && had.src === src) return had.pet
+      had?.pet.destroy()
+      if (!src) { pets[where].delete(name.toLowerCase()); return null }
+      const pet = createPet(src, { height })
+      pets[where].set(name.toLowerCase(), { src, pet })
+      return pet
+    }
+    const peerOf = (name) => presence.peers().find((p) => p.agent && same(p.name, name))
+    async function setAvatar(name, file) {
+      const src = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => fail(new Error('Could not read it')); r.readAsDataURL(file) })
+      const size = await new Promise((ok) => { const img = new Image(); img.onload = () => ok({ w: img.naturalWidth, h: img.naturalHeight }); img.onerror = () => ok(null); img.src = src })
+      if (!size || size.w !== PET_SHEET.w || size.h !== PET_SHEET.h) throw new Error(`Not a Codex pet's sheet (${PET_SHEET.w} × ${PET_SHEET.h})`)
+      // shown 44 px tall: half the size is plenty, and a tenth of the bytes on the board
+      const half = await new Promise((ok) => {
+        const img = new Image()
+        img.onload = () => {
+          const c = Object.assign(document.createElement('canvas'), { width: size.w / 2, height: size.h / 2 })
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+          const webp = c.toDataURL('image/webp', 0.85)
+          ok(webp.startsWith('data:image/webp') ? webp : c.toDataURL('image/png'))
+        }
+        img.src = src
+      })
+      const asset = 'asset:pet-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      const was = members.get(name)?.avatar
+      board.editor.store.put({ id: asset, typeName: 'asset', src: half, w: size.w / 2, h: size.h / 2 })
+      members.set(name, { avatar: { kind: 'codex-pet', name: file.name.replace(/\.\w+$/, ''), asset } }, presence.me().name)
+      if (isPet(was) && !members.list().some((m) => m.avatar?.asset === was.asset)) board.editor.store.remove([was.asset])
+    }
+    const teamBoard = createTicketBoard({
+      editor: board.editor, team, setRole: (name, role) => members.set(name, { role }, presence.me().name), setAvatar,
+      avatar: (m) => { const pet = petOf('panel', m.name, 44); const p = peerOf(m.name); pet?.play(petState({ activity: p?.agentActivity, status: m.status })); return pet?.el ?? null },
+    })
     members.onChange(teamBoard.refresh)
     bindMemberCards(board.editor.store, members) // profile cards on the board show what the table says
     bindMemberCardEditing(board.editor, members, { me: () => presence.me() })
@@ -282,7 +320,11 @@
     const editor = board.editor
     const ua = navigator.userAgent
     const presenceListeners = new Set()
-    const presence = createPresence({ editor, defaults: {
+    const presence = createPresence({ editor, avatar: (p, { dx }) => {
+      const pet = petOf('cursor', p.name, 44)
+      pet?.play(petState({ activity: p.agentActivity, status: p.agentStatus, dx }))
+      return pet?.el ?? null
+    }, defaults: {
       name: /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : 'Guest', // until you name yourself
     }, host: {
       send: (p) => { if (ws?.readyState === WebSocket.OPEN) ws.send(packPresence(p)) },

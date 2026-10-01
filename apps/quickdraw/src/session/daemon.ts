@@ -29,6 +29,8 @@ export interface SessionOptions {
   idle?: number
   /** its role on the board (quickdraw-members) */
   role?: string
+  /** its pet: a Codex pet's folder or sprite sheet */
+  avatar?: string
   /** takes requests from anyone on the board, not only this computer */
   remote?: boolean
 }
@@ -44,10 +46,10 @@ const STREAMING = new Set(['next', 'wait', 'watch'])
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
 
-export async function startSession({ url, name, cwd, idle = 30, remote = false, role }: SessionOptions) {
+export async function startSession({ url, name, cwd, idle = 30, remote = false, role, avatar }: SessionOptions) {
   const board = await openBoard({ url, name })
   const id = 'cli-' + (name + '-' + basename(cwd)).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-  const agent = await joinBoard(board, { id, name, knows: [basename(cwd)], remote, role }, {
+  const agent = await joinBoard(board, { id, name, knows: [basename(cwd)], remote, role, avatar }, {
     imageRoots: [cwd], preview: (link) => linkPreview(serverOfBoard(url), link),
   })
   const store = board.store

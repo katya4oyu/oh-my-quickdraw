@@ -12,6 +12,8 @@ export interface Mate {
   about?: string
   /** who set its role */
   set_by?: string
+  /** its pet's name, when it has one */
+  pet?: string
   here: boolean
   /** what it is doing just now, when here */
   doing?: string
@@ -33,6 +35,7 @@ export function teamOf(board: Board, me?: string): Mate[] {
     return {
       name, ...(me && same(me, name) ? { you: true as const } : {}),
       ...(m?.role ? { role: m.role } : {}), ...(m?.about ? { about: m.about } : {}), ...(m?.by ? { set_by: m.by } : {}),
+      ...((m?.avatar as { name?: string } | null)?.name ? { pet: (m!.avatar as { name: string }).name } : {}),
       here,
       ...(p?.agentActivity ? { doing: p.agentActivity + (p.agentNote ? ': ' + p.agentNote : '') } : {}),
       working_on: doing.filter((t) => t.props.by && same(t.props.by, name)).map((t) => ({ id: t.id, title: t.props.title })),

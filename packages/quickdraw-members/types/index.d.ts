@@ -47,3 +47,16 @@ export function memberTools(options: { members: Members, agents?: () => { name: 
 /** An agent's colour on its card, from its name. */
 export function colorOf(name: string): string
 export const CARD_ICONS: { card: string, edit: string }
+
+// ---- avatars: Codex pets (a pet's sprite sheet, played as the agent works) ----
+export const PET_CELL: { w: number, h: number }
+export const PET_COLUMNS: number
+export const PET_SHEET: { w: number, h: number }
+export type PetState = 'idle' | 'running-right' | 'running-left' | 'waving' | 'jumping' | 'failed' | 'waiting' | 'running' | 'review'
+export const PET_ROWS: Record<PetState, { row: number, times: number[] }>
+/** The pet's state for what an agent does (quickdraw-presence's agentActivity, its status; dx: its cursor's sideways move). */
+export function petState(what?: { activity?: string | null, status?: string | null, dx?: number, failed?: boolean }): PetState
+/** A pet on the page, `height` px tall, playing a state; the first idle frame with reduced motion. */
+export function createPet(src: string, options?: { height?: number }): { el: HTMLElement, play(state: PetState): void, readonly state: PetState, destroy(): void }
+/** Whether an avatar is a Codex pet ({ kind: 'codex-pet', name, asset }). */
+export function isPet(avatar: unknown): boolean

@@ -2,6 +2,7 @@
 # run by ./images.ts as `uv run --no-project --with pillow python image_tool.py …`.
 #
 #   shrink IN OUT MAX JPEG      fit within MAX px; JPEG (quality 85) when JPEG is 1
+#   half IN OUT                 half the size, as WebP (a pet's sprite sheet: it keeps its grid)
 #   split IN DIR COLS ROWS INSET MAX
 #                               cut an even grid into DIR/cell-R-C.png, row by row,
 #                               INSET (a share of each cell) off its edges, each
@@ -23,6 +24,11 @@ def shrink(src, out, side, jpeg):
         img.save(out, "PNG", optimize=True)
 
 
+def half(src, out):
+    img = Image.open(src)
+    img.resize((img.width // 2, img.height // 2), Image.LANCZOS).save(out, "WEBP", quality=85)
+
+
 def split(src, out_dir, cols, rows, inset, side):
     img = Image.open(src)
     cols, rows = int(cols), int(rows)
@@ -36,4 +42,4 @@ def split(src, out_dir, cols, rows, inset, side):
 
 if __name__ == "__main__":
     command, *args = sys.argv[1:]
-    {"shrink": shrink, "split": split}[command](*args)
+    {"shrink": shrink, "split": split, "half": half}[command](*args)

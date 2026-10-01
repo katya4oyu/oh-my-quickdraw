@@ -16,6 +16,18 @@ members.onChange(() => render())
 
 One entry per agent, by name (case does not matter). `set` keeps what it is not given; an empty role and about take the agent out of the table. Roles are cut to 60 characters, `about` to 300.
 
+## Pets (avatars)
+
+An agent's avatar can be a **Codex pet** — the sprite sheet a Codex pet is made of (`~/.codex/pets/NAME/spritesheet.webp`: 8 × 9 cells of 192 × 208, a row per state; [hatch-pet](https://github.com/openai/skills/tree/main/skills/.curated/hatch-pet)), played as Codex plays it, so any Codex pet works as it is. The sheet goes on the board as an image asset (at half its size: it is shown about 44 px tall), and the table points at it: `avatar = { kind: 'codex-pet', name, asset }`.
+
+```js
+import { createPet, petState } from 'quickdraw-members'
+const pet = createPet(sheetUrl, { height: 44 })   // { el, play(state), destroy() }
+pet.play(petState({ activity: 'drawing', dx: 30 })) // running-right
+```
+
+`petState` turns what an agent does into a row, as [navi](https://github.com/katya4oyu/agent-pets) does: thinking / reading / searching → review, running / editing → running, drawing → running towards where its cursor goes, waiting for a person → waving, done → a jump (once), an error → failed, else idle. With reduced motion it keeps to the first idle frame. In `apps/quickdraw` a pet plays beside its agent's cursor (quickdraw-presence's `avatar` option) and in the Team panel; a profile card shows its first idle frame.
+
 ## Profile cards
 
 A card on the board for an agent — its initials in its colour, its name, role and what it does — is a view of the table: `memberTools({ members, agents, me })` gives a rail button (a menu of the agents) and **Edit role** on a selected card (for [`quickdraw-toolbar`](../quickdraw-toolbar)); `bindMemberCardEditing(editor, members)` edits on double-click (first line the role, the rest what it does), and that goes to the table. `bindMemberCards(store, members)` keeps every card with the table. Removing a card leaves the role. Cards are a custom shape type (`member`), so they need the fork's `registerShapeType`; `validateMemberCard` is for `quickdraw-import`.

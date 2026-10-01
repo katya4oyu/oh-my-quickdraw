@@ -33,6 +33,9 @@ const STYLE = `
   font:600 11px system-ui,-apple-system,sans-serif;font-style:normal;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .qdp-edge em{top:9px;left:12px;max-width:180px}
 .qdp-cursor.flip span,.qdp-cursor.flip em{left:auto;right:4px} /* near the right edge: to its left */
+/* an agent's pet: above its labels, beside the arrow (which still points) */
+.qdp-cursor .qdp-pet{position:absolute;left:12px;top:-50px;pointer-events:none}
+.qdp-cursor.flip .qdp-pet{left:auto;right:4px}
 .qdp-edge.flip em{left:auto;right:12px}
 .qdp-cursor em small{font-weight:400;font-size:11px;color:var(--qd-ink-soft,#666)}
 /* how an agent's cursor moves for what it is doing: it mulls in a small circle, sweeps
@@ -112,7 +115,10 @@ export function presenceLabel(p) {
 }
 
 /** Live presence over a board; the host carries it (see above). */
-export function createPresence({ editor, container = editor.container, host, defaults = {}, storage = localStore, key = 'quickdraw-presence' }) {
+// avatar(peer, { dx }): an element to show beside an agent's cursor (its pet,
+// say: quickdraw-members' createPet), playing what it does — dx: how far its
+// cursor moved sideways just now; null for none. Called on each of its updates.
+export function createPresence({ editor, container = editor.container, host, defaults = {}, storage = localStore, key = 'quickdraw-presence', avatar: petOf = null }) {
   if (!host || !['send', 'onMessage'].every((k) => typeof host[k] === 'function')) {
     throw new TypeError('createPresence requires host send and onMessage functions')
   }
@@ -183,6 +189,7 @@ export function createPresence({ editor, container = editor.container, host, def
     if (m.gone) {
       if (!p) return
       p.cursor.remove(); p.edge.remove()
+      p.avatar?.remove()
       peers.delete(m.id)
       showLasers()
       if (following === m.id) follow(null)
@@ -206,6 +213,11 @@ export function createPresence({ editor, container = editor.container, host, def
       owner: m.agent && m.owner ? String(m.owner).slice(0, 60) : undefined, // an agent's: who started it, as the host says
     })
     showLasers()
+    // its avatar beside the cursor, playing what it does (the arrow still points)
+    const pic = petOf && p.agent ? petOf(p, { dx: p.x != null && p.lastX != null ? p.x - p.lastX : 0 }) : null
+    p.lastX = p.x
+    if (pic !== (p.avatar ?? null)) { p.avatar?.remove(); p.avatar = pic; if (pic) { pic.classList.add('qdp-pet'); p.cursor.append(pic) } }
+    p.cursor.classList.toggle('pet', !!pic)
     // its motion; set only when it changes, so an animation is not restarted
     const act = p.agentActivity || ''
     if (p.cursor.dataset.act !== act) p.cursor.dataset.act = act

@@ -102,6 +102,21 @@ export async function loadImage(file: string, roots: string[], { transparent = f
   return { src: `data:${mime};base64,${data.toString('base64')}`, w: final.w, h: final.h }
 }
 
+/** An image file at half its size, as WebP (keeping its transparency and grid), or null when nothing here can (it needs uv and Pillow). */
+export async function halfWebp(file: string): Promise<Buffer | null> {
+  if (!(await available('uv'))) return null
+  const dir = await mkdtemp(join(tmpdir(), 'quickdraw-half-'))
+  try {
+    const out = join(dir, 'half.webp')
+    await python(['half', file, out])
+    return await readFile(out)
+  } catch {
+    return null
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 /** An image (a data URL) as a JPEG data URL `side` px at most, or null when nothing here can shrink it. */
 export async function smallJpeg(src: string, side: number): Promise<string | null> {
   const m = src.match(/^data:image\/(png|jpeg|gif|webp);base64,(.*)$/)

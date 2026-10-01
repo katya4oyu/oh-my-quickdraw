@@ -7,6 +7,8 @@ import { accountText, activityOf, commandText, initCodex, limitsOf, startAppServ
 import { realtimeVoices, runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
 import { createKanban } from 'quickdraw-tickets'
+import { setPet } from '../src/board/avatar.ts'
+import { deflateSync } from 'node:zlib'
 import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
 import { execFileSync } from 'node:child_process'
@@ -15,6 +17,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENT, PRESENCE, packAgent, unpackAgent, unpackPresence } from '../src/protocol.js'
 
+// a see-through PNG of any size (what a pet's sheet looks like to the checks)
+function blankPng(w: number, h: number) {
+  const crc = (b: Buffer) => { let c = ~0; for (const x of b) { c ^= x; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)) } return ~c >>> 0 }
+  const chunk = (type: string, data: Buffer) => { const t = Buffer.from(type); const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const c = Buffer.alloc(4); c.writeUInt32BE(crc(Buffer.concat([t, data]))); return Buffer.concat([len, t, data, c]) }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(Buffer.alloc((w * 4 + 1) * h))), chunk('IEND', Buffer.alloc(0))])
+}
 const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const hasChrome = !!findChrome()
 const MOCK = fileURLToPath(new URL('./fixtures/codex-app-server.mjs', import.meta.url))
@@ -441,6 +450,29 @@ describe('work tickets', () => {
     await settle()
     expect(adaBoard.members!.get('Bo')).toBeNull() // for everyone
   }, 20_000)
+
+  it('joins with a Codex pet: its sheet goes on the board (smaller), the table points at it, and goes when it is taken off', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Pets').id}`
+    const dir = mkdtempSync(join(tmpdir(), 'qd-pet-'))
+    writeFileSync(join(dir, 'pet.json'), JSON.stringify({ id: 'mio', displayName: 'Mio', spritesheetPath: 'spritesheet.png' }))
+    writeFileSync(join(dir, 'spritesheet.png'), blankPng(1536, 1872))
+    writeFileSync(join(dir, 'small.png'), blankPng(192, 208))
+    const adaBoard = await openBoard({ url, name: 'Ada' })
+    const ada = await joinBoard(adaBoard, { id: 'ada', name: 'Ada', knows: [], avatar: dir })
+    cleanup.push(() => ada.close())
+    const avatar = adaBoard.members!.get('Ada')!.avatar as any
+    expect(avatar).toMatchObject({ kind: 'codex-pet', name: 'Mio' })
+    const asset = adaBoard.store.asset(avatar.asset) as any
+    expect(asset.src).toMatch(/^data:image\/(webp|png);base64,/)
+    expect([768, 1536]).toContain(asset.w) // half its size where uv can, else as it is
+    await expect(setPet(adaBoard, 'Ada', join(dir, 'small.png'), 'Ada')).rejects.toThrow(/a Codex pet's sheet is 1536 × 1872 \(8 × 9 cells of 192 × 208\), not 192 × 208/)
+    await setPet(adaBoard, 'Ada', null, 'Ann')
+    expect(adaBoard.members!.get('Ada')).toBeNull()
+    expect(adaBoard.store.asset(avatar.asset)).toBeFalsy() // nothing else used it
+  }, 60_000)
 
   it('keeps out only of the work of agents on the board, and puts its ticket in the Doing column of a kanban', async () => {
     const { person, ada, adaBoard, bo, boBoard } = await twoAgents('Kanban')

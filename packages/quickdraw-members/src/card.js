@@ -3,11 +3,14 @@
 // it, put where people want one: changing its role (double-click, or Edit on
 // the selection bar) changes the table, and every card of that agent follows;
 // removing a card leaves the role as it is.
-// Record: { type: 'member', props: { name, role, about, w } } (role and about:
-// the table's, kept on the card so it draws anywhere: an export, a headless
-// render, a page without the table).
+// Record: { type: 'member', props: { name, role, about, avatar, w } } (role,
+// about and avatar — its pet's sheet, an asset id — the table's, kept on the
+// card so it draws anywhere: an export, a headless render, a page without the
+// table). A pet shows as its first idle frame: the canvas is not redrawn all
+// the time, so cards keep still (the cursor and the Team panel move).
 import * as core from '@quickdrawjs/core'
 import { freeSpot } from 'quickdraw-frames'
+import { PET_CELL, PET_COLUMNS, isPet } from './pet.js'
 
 export const CARD = 'member'
 const W = 260
@@ -15,6 +18,7 @@ const MIN_W = 180
 const MAX_W = 600
 const PAD = 14
 const AV = 36 // the avatar circle
+const PET_H = 52 // a pet, standing
 const { newId, FONTS } = core
 export const isMemberCard = (s) => s?.type === CARD
 export const isCardSupported = () => typeof core.registerShapeType === 'function'
@@ -61,14 +65,15 @@ function layout(shape) {
   const name = wrap(p.name || 'Agent', FONT.name, w, 2)
   const role = p.role ? wrap(p.role, FONT.role, w, 2) : []
   const about = p.about ? wrap(p.about, FONT.about, Math.max(MIN_W, p.w) - PAD * 2, 4) : []
-  const head = Math.max(AV, name.length * 20 + role.length * 18 + (role.length ? 2 : 0))
+  const head = Math.max(p.avatar ? PET_H : AV, name.length * 20 + role.length * 18 + (role.length ? 2 : 0))
   l = { name, role, about, head, h: PAD + head + (about.length ? 8 + about.length * 18 : 0) + PAD }
   layouts.set(p, l)
   return l
 }
 const bounds = (shape) => ({ x: 0, y: 0, w: Math.max(MIN_W, shape.props.w), h: layout(shape).h })
 
-function draw(ctx, shape, { theme }) {
+function draw(ctx, shape, opts) {
+  const { theme } = opts
   const p = shape.props
   const b = bounds(shape)
   const l = layout(shape)
@@ -82,7 +87,36 @@ function draw(ctx, shape, { theme }) {
   ctx.lineWidth = 1.5
   ctx.strokeStyle = accent
   ctx.stroke()
-  // the avatar: its initials in its colour (a picture comes later, from the table)
+  // the avatar: its pet's first idle frame, else its initials in its colour
+  const pet = p.avatar ? sheet(opts.store, p.avatar, opts.onAssetLoad) : null
+  if (pet) {
+    const w = (PET_H * PET_CELL.w) / PET_CELL.h
+    const cw = pet.naturalWidth / PET_COLUMNS, ch = pet.naturalHeight / 9 // the sheet may be smaller than a Codex pet's own
+    ctx.drawImage(pet, 0, 0, cw, ch, PAD + AV / 2 - w / 2, PAD - 4, w, PET_H)
+  } else drawInitials(ctx, p, theme, accent)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  const x = PAD * 2 + AV
+  let y = PAD + Math.max(0, ((p.avatar ? PET_H - 8 : AV) - (l.name.length * 20 + l.role.length * 18)) / 2)
+  drawText(ctx, l, x, y, ink, accent, soft)
+}
+
+// a pet's sheet, loaded once per asset; null until it is (then the board draws again)
+const sheets = new Map()
+function sheet(store, assetId, onLoad) {
+  const had = sheets.get(assetId)
+  if (had) return had.ready ? had.img : null
+  const src = store?.asset?.(assetId)?.src
+  if (!src || typeof Image === 'undefined') return null
+  const img = new Image()
+  const e = { img, ready: false }
+  sheets.set(assetId, e)
+  img.onload = () => { e.ready = true; onLoad?.() }
+  img.src = src
+  return null
+}
+
+function drawInitials(ctx, p, theme, accent) {
   ctx.beginPath()
   ctx.arc(PAD + AV / 2, PAD + AV / 2, AV / 2, 0, Math.PI * 2)
   ctx.fillStyle = accent
@@ -92,10 +126,9 @@ function draw(ctx, shape, { theme }) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(initials(p.name), PAD + AV / 2, PAD + AV / 2 + 1)
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'alphabetic'
-  const x = PAD * 2 + AV
-  let y = PAD + Math.max(0, (AV - (l.name.length * 20 + l.role.length * 18)) / 2)
+}
+
+function drawText(ctx, l, x, y, ink, accent, soft) {
   ctx.font = FONT.name
   ctx.fillStyle = ink
   for (const t of l.name) { y += 20; ctx.fillText(t, x, y - 5) }
@@ -127,7 +160,7 @@ export function createMemberCard(store, { x, y, name, members, w = W }) {
   if (!registerMemberCard()) throw new Error('This Quickdraw core cannot draw custom shapes (registerShapeType is missing)')
   const m = members?.get(name)
   const id = newId()
-  store.put({ id, typeName: 'shape', type: CARD, x, y, rot: 0, z: store.maxZ() + 1, props: { name: m?.name ?? String(name), role: m?.role ?? '', about: m?.about ?? '', w } })
+  store.put({ id, typeName: 'shape', type: CARD, x, y, rot: 0, z: store.maxZ() + 1, props: { name: m?.name ?? String(name), role: m?.role ?? '', about: m?.about ?? '', avatar: isPet(m?.avatar) ? m.avatar.asset : null, w } })
   return id
 }
 
@@ -136,6 +169,7 @@ export function validateMemberCard(shape) {
   const p = shape.props
   if (typeof p.name !== 'string' || !p.name || p.name.length > 200) return 'bad props.name'
   for (const k of ['role', 'about']) if (p[k] != null && (typeof p[k] !== 'string' || p[k].length > 300)) return `bad props.${k}`
+  if (p.avatar != null && (typeof p.avatar !== 'string' || p.avatar.length > 200)) return 'bad props.avatar'
   if (!Number.isFinite(p.w) || p.w <= 0 || p.w > MAX_W) return 'bad props.w'
   return null
 }
@@ -154,8 +188,8 @@ export function bindMemberCards(store, members) {
     for (const s of store.shapes()) {
       if (!isMemberCard(s)) continue
       const m = list.find((x) => same(x.name, s.props.name))
-      const role = m?.role ?? '', about = m?.about ?? ''
-      if (s.props.role !== role || s.props.about !== about) changes.push([s.id, { props: { role, about } }])
+      const role = m?.role ?? '', about = m?.about ?? '', avatar = isPet(m?.avatar) ? m.avatar.asset : null
+      if (s.props.role !== role || s.props.about !== about || (s.props.avatar ?? null) !== avatar) changes.push([s.id, { props: { role, about, avatar } }])
     }
     if (!changes.length) return
     busy = true

@@ -13,6 +13,8 @@
 
 export { CARD, isMemberCard, isCardSupported, registerMemberCard, createMemberCard, validateMemberCard, bindMemberCards, editMemberCard, bindMemberCardEditing, memberTools, colorOf, CARD_ICONS } from './card.js'
 
+export { PET_CELL, PET_COLUMNS, PET_SHEET, PET_ROWS, petState, createPet, isPet } from './pet.js'
+
 export const MAX_ROLE = 60
 export const MAX_ABOUT = 300
 const key = (name) => String(name).trim().toLowerCase()

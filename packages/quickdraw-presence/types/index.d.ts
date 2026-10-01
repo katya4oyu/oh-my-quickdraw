@@ -65,6 +65,8 @@ export function createPresence(options: {
   /** where you are kept; localStorage by default */
   storage?: PresenceStorage
   key?: string
+  /** an element beside an agent's cursor (its pet), playing what it does; dx: how far its cursor moved sideways; null for none */
+  avatar?: ((peer: Presence & { id: string | number }, motion: { dx: number }) => HTMLElement | null) | null
 }): PresenceHandle
 /** "Ann · reviewing", "Codex · working" */
 /** A label in parts: the name (an agent's with whose it is), the status or what the agent is doing, and on what ('' when none). */
