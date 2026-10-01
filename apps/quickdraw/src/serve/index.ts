@@ -30,7 +30,7 @@ import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-layouts', 'quickdraw-tickets', 'quickdraw-members', 'quickdraw-gif', 'quickdraw-clipboard', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-layouts', 'quickdraw-tickets', 'quickdraw-members', 'quickdraw-gif', 'quickdraw-clipboard', 'quickdraw-boards', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))
@@ -83,8 +83,8 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     if (pathname === '/') return join(web, 'index.html')
     if (pathname === '/protocol.js') return protocol
     if (pathname === '/versions.js') return join(web, 'versions.js')
-    const b = pathname.match(/^\/b\/([^/]+)$/)
-    if (b) return BOARD_ID.test(b[1]) && boards.get(b[1]) ? join(web, 'board.html') : null
+    const b = pathname.match(/^\/b\/([^/]+)(\/view)?$/)
+    if (b) return BOARD_ID.test(b[1]) && boards.get(b[1]) ? join(web, b[2] ? 'view.html' : 'board.html') : null // /view: read only (a board card's live window)
     const m = pathname.match(/^\/_\/([^/]+)\/src(\/.*)$/)
     if (m) {
       const root = mounts.get(m[1])

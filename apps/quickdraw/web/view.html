@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Quickdraw — view</title>
+  <link rel="stylesheet" href="/_/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; }
+    #board { position: fixed; inset: 0; }
+    /* only the board: no tools, menus or people */
+    #board .qd-ui { display: none !important; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "yjs": "https://esm.sh/yjs@13.6.33",
+        "@quickdrawjs/core": "/_/core/src/index.js",
+        "quickdraw-yjs": "/_/quickdraw-yjs/src/index.js",
+        "quickdraw-markdown": "/_/quickdraw-markdown/src/index.js",
+        "quickdraw-embed": "/_/quickdraw-embed/src/index.js",
+        "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
+        "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
+        "quickdraw-members": "/_/quickdraw-members/src/index.js",
+        "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
+        "quickdraw-boards": "/_/quickdraw-boards/src/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    // A board, read only and live: what a board card's live window shows
+    // (quickdraw-boards). It only listens: it sends nothing but asking for the
+    // board, says nobody is here (no presence), and does no layout of its own.
+    // Board cards in it stay pictures (no live windows in live windows).
+    import * as Y from 'yjs'
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindYjs } from 'quickdraw-yjs'
+    import { registerMarkdown } from 'quickdraw-markdown'
+    import { registerEmbed } from 'quickdraw-embed'
+    import { registerTicket } from 'quickdraw-tickets'
+    import { registerMemberCard } from 'quickdraw-members'
+    import { bindGifs } from 'quickdraw-gif'
+    import { registerBoardCard, knowBoards } from 'quickdraw-boards'
+    import { UPDATE, SV, pack } from '/protocol.js'
+
+    registerMarkdown(); registerEmbed(); registerTicket(); registerMemberCard(); registerBoardCard()
+    const boardId = location.pathname.split('/')[2]
+    const board = createQuickdraw({ container: document.getElementById('board'), readonly: true, watermark: false })
+    const ydoc = new Y.Doc()
+    bindYjs(board.editor.store, ydoc)
+    bindGifs(board.editor)
+    fetch('/api/boards').then((r) => r.ok && r.json()).then((list) => list && knowBoards(list, (id, at) => (at ? `/api/boards/${id}/thumbnail?at=${encodeURIComponent(at)}` : null))).catch(() => {})
+
+    // the whole board in view, as it changes — until someone pans or zooms in it themselves
+    let own = false
+    for (const type of ['wheel', 'pointerdown', 'touchstart']) addEventListener(type, () => { own = true }, { capture: true, passive: true })
+    let fitting = 0
+    const refit = () => { if (own || fitting) return; fitting = requestAnimationFrame(() => { fitting = 0; if (!own) board.editor.fitContent({ margin: 0.06 }) }) }
+    function connect() {
+      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${boardId}`)
+      ws.binaryType = 'arraybuffer'
+      ws.onopen = () => ws.send(pack(SV, Y.encodeStateVector(ydoc))) // what we have; the server sends the rest
+      ws.onmessage = ({ data }) => {
+        const m = new Uint8Array(data)
+        if (m[0] !== UPDATE) return
+        Y.applyUpdate(ydoc, m.subarray(1), 'relay')
+        refit()
+      }
+      ws.onclose = () => setTimeout(connect, 1000)
+    }
+    connect()
+  </script>
+</body>
+</html>

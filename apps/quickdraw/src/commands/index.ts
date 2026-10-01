@@ -51,6 +51,9 @@ Writing (each command is one operation, undoable as a whole)
   text TEXT [--color C] [--in FRAME] [--at X,Y]
   shape KIND [LABEL] [--color C] [--size WxH] [--in FRAME] [--at X,Y]   KIND: rectangle, ellipse, …
   markdown TEXT | --md-file PATH [--in FRAME] [--at X,Y]
+  board-card BOARD [--live] [--size WxH] [--in FRAME] [--at X,Y]
+                                          a card for another board (its id: quickdraw boards): its picture and an
+                                          Open button; --live: a window onto it as it is now
   embed URL [--link] [--title T] [--size WxH] [--in FRAME] [--at X,Y]
                                           a page (live from allowed sites: YouTube, Vimeo, Figma,
                                           CodePen, Google Maps), else a link card; --link: a card
@@ -213,12 +216,12 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, live: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -386,6 +389,14 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = await op((ops) => ops.markdown(md, common)); break
+      }
+      case 'board-card': {
+        needsLive()
+        const target = args[0]
+        if (!target) throw new Error('board-card needs a board id (quickdraw boards lists them)')
+        const found = (await listBoards(serverOf(o.server ?? (url ? serverOfBoard(url) : undefined)))).find((b: { id: string }) => b.id === target)
+        if (!found) throw new Error(`no board ${target} on this server (quickdraw boards lists them)`)
+        done = await op((ops) => ops.board({ board: target, title: found.title, live: o.live }, common)); break
       }
       case 'embed': {
         const html = o['html-file'] ? await readFile(o['html-file'], 'utf8') : undefined

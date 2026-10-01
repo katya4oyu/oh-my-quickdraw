@@ -1,7 +1,7 @@
 {
-  "name": "quickdraw-agent",
+  "name": "quickdraw-boards",
   "version": "0.1.0",
-  "description": "What agents can do on a Quickdraw board: read it, change it in undoable operations, and the same as tools for any agent runtime.",
+  "description": "A board in a board: a card for another board (its title and picture; open it), or a live window onto it.",
   "type": "module",
   "main": "./src/index.js",
   "types": "./types/index.d.ts",
@@ -18,14 +18,6 @@
   ],
   "scripts": {
     "test": "vitest run"
-  },
-  "dependencies": {
-    "quickdraw-boards": "*",
-    "quickdraw-embed": "*",
-    "quickdraw-frames": "*",
-    "quickdraw-layouts": "*",
-    "quickdraw-markdown": "*",
-    "quickdraw-tickets": "*"
   },
   "peerDependencies": {
     "@quickdrawjs/core": "*"

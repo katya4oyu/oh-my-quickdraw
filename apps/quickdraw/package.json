@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "quickdraw-agent": "*",
+    "quickdraw-boards": "*",
     "quickdraw-clipboard": "*",
     "quickdraw-embed": "*",
     "quickdraw-export": "*",

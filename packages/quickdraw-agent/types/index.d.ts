@@ -20,6 +20,8 @@ export interface Operations {
   image(src: string, natural: { w: number, h: number }, opts?: Placement): string
   /** A web page (live where allowed, else its link card), a link card (`link`), or inline HTML (runs when a viewer presses Run). */
   embed(what: { url?: string, html?: string, link?: boolean, title?: string, preview?: EmbedPreview }, opts?: Placement): string
+  /** a card for another board: its picture, or (live) a window onto it */
+  board(what: { board: string, title?: string, live?: boolean }, opts?: Placement): string
   /** A ticket for an agent (`to`, or any): in the Todo column of the board's first kanban unless placed. */
   ticket(title: string, what?: { body?: string, to?: string | null }, opts?: Placement): string
   /** Moves a ticket on; in a kanban it changes column. `by` defaults to this agent. */
