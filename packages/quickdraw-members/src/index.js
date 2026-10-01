@@ -11,6 +11,8 @@
 // role: a few words; about: a line on what it does; avatar: for its picture;
 // by: who set it last (a person's or an agent's name); at: when (ms).
 
+export { CARD, isMemberCard, isCardSupported, registerMemberCard, createMemberCard, validateMemberCard, bindMemberCards, editMemberCard, bindMemberCardEditing, memberTools, colorOf, CARD_ICONS } from './card.js'
+
 export const MAX_ROLE = 60
 export const MAX_ABOUT = 300
 const key = (name) => String(name).trim().toLowerCase()

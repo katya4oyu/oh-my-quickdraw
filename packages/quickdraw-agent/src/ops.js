@@ -29,6 +29,7 @@ export function textOf(store, s) {
     case MARKDOWN: return s.props.md
     case TICKET: return s.props.title + (s.props.body ? '\n' + s.props.body : '')
     case EMBED: return s.props.title || s.props.preview?.title || s.props.url || (s.props.kind === 'html' ? '(HTML)' : '')
+    case 'member': return s.props.name + (s.props.role ? ` — ${s.props.role}` : '') // a profile card (quickdraw-members)
     case 'image': return '(image)'
     case 'draw': case 'highlight': return '(drawing)'
     default: return ''
