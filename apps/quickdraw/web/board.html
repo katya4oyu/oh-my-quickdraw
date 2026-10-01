@@ -35,6 +35,7 @@
         "quickdraw-markdown": "/_/quickdraw-markdown/src/index.js",
         "quickdraw-embed": "/_/quickdraw-embed/src/index.js",
         "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
+        "quickdraw-layouts": "/_/quickdraw-layouts/src/index.js",
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js",
         "quickdraw-screenshare": "/_/quickdraw-screenshare/src/index.js",
@@ -55,6 +56,7 @@
     import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
+    import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
@@ -69,6 +71,7 @@
 
     bindYjs(board.editor.store, ydoc)
     bindFrames(board.editor.store)
+    bindLayouts(board.editor.store) // bento grids pack their cells again as they change
     bindKanban(board.editor.store) // a ticket dragged into a kanban column takes its status
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
     bindTicketEditing(board.editor)
@@ -174,6 +177,7 @@
     let versions = null // made when first opened
 
     const frames = frameTools()
+    const layouts = layoutTools()
     const cards = markdownTools()
     const web = embedTools(embeds, { fetchPreview })
     const ai = agentTools(panel)
@@ -185,7 +189,7 @@
     createToolbar(board.editor, {
       rail: [
         ...ai.rail, ...voiceTools(voice).rail, '-',
-        ...tickets.rail, ...frames.rail, ...cards.rail, ...web.rail,
+        ...tickets.rail, ...frames.rail, ...layouts.rail, ...cards.rail, ...web.rail,
         '-',
         { id: 'more', title: 'More', icon: MORE_ICON, menu: [
           { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
@@ -200,7 +204,7 @@
           exportTool(),
         ] },
       ],
-      context: [...ai.context, ...tickets.context, ...frames.context, ...cards.context, ...web.context],
+      context: [...ai.context, ...tickets.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
     })
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it

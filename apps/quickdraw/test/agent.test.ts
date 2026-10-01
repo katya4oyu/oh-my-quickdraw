@@ -482,6 +482,26 @@ it('moves a frame with what is in it and its title, however it is moved or laid 
   }
 })
 
+it('puts a grown bento cell on the board a piece at a time, ending as on the copy', async () => {
+  const { Store } = await import('@quickdrawjs/core')
+  const { bindFrames } = await import('quickdraw-frames')
+  const { bindLayouts } = await import('quickdraw-layouts')
+  const { applySteps } = await import('quickdraw-agent')
+  const live = new Store(); bindFrames(live); bindLayouts(live)
+  const { result: [, a] } = applySteps(live, 'Codex', [
+    { do: 'layout', cols: 2, w: 600, at: { x: 0, y: 0 }, ref: 'g' },
+    { do: 'frame', title: 'A', in: '@g', span: '2x1' }, { do: 'frame', title: 'B', in: '@g' }, { do: 'frame', title: 'C', in: '@g' },
+  ]) as { result: string[] }
+  const copy = new Store()
+  copy.loadSnapshot({ document: { store: Object.fromEntries(live.all().map((r) => [r.id, structuredClone(r)])) } })
+  bindFrames(copy); bindLayouts(copy)
+  // enough notes that A grows, and B and C move down: their records come one by one
+  const { diff } = applySteps(copy, 'Codex', Array.from({ length: 5 }, (_, i) => ({ do: 'note', text: `n${i}`, in: a })))
+  await putLive(live, diff, copy, () => {}, 0)
+  const plain = (s: typeof live) => JSON.stringify(s.all().filter((r) => r.typeName === 'shape').map((r: any) => [r.id, r.x, r.y, r.props.w, r.props.h, r.span, r.order, r.frameId]).sort())
+  expect(plain(live)).toBe(plain(copy))
+})
+
 it('reads image sizes and keeps to the allowed folders', () => {
   expect(imageSize(PNG_1x1)).toEqual({ w: 1, h: 1 })
   expect(imageSize(Buffer.from('GIF89a\x10\x00\x20\x00', 'latin1'))).toEqual({ w: 16, h: 32 })

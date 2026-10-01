@@ -1,6 +1,6 @@
 // Opens a board: live through the relay of `quickdraw serve`, or from a JSON
 // file. Either way the result is a core Store bound exactly as a browser's
-// is — Yjs sync, frame and kanban rules, Markdown, embed and ticket types —
+// is — Yjs sync, frame, bento and kanban rules, Markdown, embed and ticket types —
 // so what gets written behaves like any peer's edit.
 import { readFile, writeFile } from 'node:fs/promises'
 import type { BoardRecord, Store as StoreType } from '@quickdrawjs/core'
@@ -11,6 +11,7 @@ installMeasure() // before the core lays out any text
 
 const { Store } = await import('@quickdrawjs/core')
 const { bindFrames } = await import('quickdraw-frames')
+const { bindLayouts } = await import('quickdraw-layouts')
 const { registerMarkdown } = await import('quickdraw-markdown')
 const { registerEmbed } = await import('quickdraw-embed')
 const { registerTicket, bindKanban } = await import('quickdraw-tickets')
@@ -38,6 +39,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     const relay = await connectRelay(ydoc, url, { name, color })
     bindYjs(store, ydoc) // the doc already holds the board: the store loads it
     bindFrames(store)
+    bindLayouts(store)
     bindKanban(store)
     return { store, cursor: relay.cursor, close: relay.close, relay }
   }
@@ -48,6 +50,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     : data ? [...(data.shapes || []), ...Object.values(data.assets || {})] : [] // quickdraw-export's format
   store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })
   bindFrames(store)
+  bindLayouts(store)
   bindKanban(store)
   return {
     store,

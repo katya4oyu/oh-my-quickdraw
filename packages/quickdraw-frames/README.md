@@ -21,7 +21,7 @@ const at = freeSpot(board.editor.store, 800, 500, { x, y })  // room for a new f
 
 ## Rules (`bindFrames`, local edits only — peers apply their own)
 
-- A shape added or moved with its center inside a frame joins it (topmost frame wins); moved out, it leaves.
+- A shape added or moved with its center inside a frame joins it (topmost frame wins); moved out, it leaves. A shape marked `frameless: true` never joins one.
 - Moving a frame moves its members, except those moved in the same change. The follow-up folds into the same undo step, including for keyboard nudges.
 - Resizing a frame re-checks membership.
 - Deleting a frame deletes its title and releases its members.
