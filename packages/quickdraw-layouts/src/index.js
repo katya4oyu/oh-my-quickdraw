@@ -2,8 +2,8 @@
 // out as they change, built from plain records with no core change. The first
 // (and so far only) kind is a bento grid.
 //
-// An area is an unfilled, dashed geo rectangle marked `isLayout` (and
-// `frameless`, so frames never take it in), carrying
+// An area is an unfilled, dashed geo rectangle marked `isLayout` (a frame
+// takes it in only when it is wholly inside: quickdraw-frames), carrying
 // `layout: { type: 'bento', cols, gap }`. Its width is fixed; its height
 // follows its cells. Its cells are quickdraw-frames' own frames, marked
 // `layoutId` (the area), `span: { c, r, auto? }` (in grid units) and `order`.
@@ -12,7 +12,9 @@
 // bindLayouts keeps it consistent on local edits (each peer handles its own):
 // - a cell resized snaps to whole units (never smaller than what is in it)
 // - a cell dragged within its area moves there in the order; dragged out, it
-//   is a plain frame again; a frame dropped into an area becomes a cell
+//   is a plain frame again; a frame dropped into an area becomes a cell —
+//   unless it lands wholly inside a cell: then it is a frame in that frame
+//   (quickdraw-frames nests it), as is a cell dropped into another
 // - whenever a cell comes, goes or changes span, the area packs its cells
 //   again (as CSS Grid's dense flow does) and grows or shrinks to hold them
 // - an `auto` cell grows and shrinks (in rows) with what is in it
@@ -100,6 +102,13 @@ function pack(store, layoutId, base = {}) {
   }
   const h = TOP + Math.max(1, rows) * (g.unit + g.rowGap) - g.rowGap + PAD
   if (area.props.h !== h) store.update(layoutId, { props: { h } })
+}
+
+// a cell (not s itself, nor one inside it) that holds all of s: s goes in it, not into the grid
+function cellHolding(store, s) {
+  const b = pageBounds(s)
+  return store.shapes().find((c) => isCell(c) && c.id !== s.id && c.frameId !== s.id
+    && b.x >= c.x && b.y >= c.y && b.x + b.w <= c.x + c.props.w && b.y + b.h <= c.y + c.props.h) ?? null
 }
 
 // the area whose inside holds a point, the topmost first
@@ -292,6 +301,9 @@ export function bindLayouts(store) {
             const r = Math.max(min.r, unitsFor(s.props.h, g.unit, g.rowGap))
             store.update(id, { span: { ...s.span, c, r } })
             dirty.add(area.id)
+          } else if (moved && !atSlot(store, area, s) && cellHolding(store, s)) {
+            leave(store, s) // dropped into another cell: a frame in it now
+            dirty.add(area.id)
           } else if (moved && !atSlot(store, area, s)) {
             const b = pageBounds(s)
             const cx = b.x + b.w / 2, cy = b.y + b.h / 2
@@ -303,8 +315,8 @@ export function bindLayouts(store) {
           } else if (from && (from.span !== s.span || from.order !== s.order)) dirty.add(area.id)
           continue
         }
-        // a frame dropped into an area joins it, at its size in units
-        if (moved) {
+        // a frame dropped into an area joins it, at its size in units (wholly inside a cell: it is in that cell)
+        if (moved && !cellHolding(store, s)) {
           const b = pageBounds(s)
           const cx = b.x + b.w / 2, cy = b.y + b.h / 2
           const to = areaAt(store, cx, cy)

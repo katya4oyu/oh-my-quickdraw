@@ -62,9 +62,9 @@ export const BOARD_TOOLS = [
     url: str('https:// page, or any http(s) link for a card'), html: str('a self-contained HTML page instead of a URL'), link: { type: 'boolean', description: 'a link card even for an allowed site' },
     title: str(), w: num, h: num, ...placement,
   }),
-  step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes. With `in` a bento grid\'s id, it is a cell at the end of that grid, `span` units big.', {
+  step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes (frames too: frames nest). With `in` a frame\'s id, it is a frame in that frame (in its free space); with `in` a bento grid\'s id, a cell at the end of that grid, `span` units big.', {
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
-    in: str('a bento grid id: the frame is a cell of it'), span, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
+    in: str('a frame id (a frame in it), or a bento grid id (a cell of it)'), span, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
   }, ['title']),
   step('add_bento', 'layout', 'A bento grid: an area whose frames (cells) pack themselves with no gaps, in `cols` columns. Make one when a piece of work will grow: '
     + 'add cells with add_frame (in: its id, span: 2x1…), fill them with in: a cell, and when one gets crowded give it more span (or it grows a row by itself when full) — the cells after it move along, and the grid grows. Its height follows its cells.', {

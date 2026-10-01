@@ -239,3 +239,86 @@ describe('frames', () => {
     })
   })
 })
+
+describe('frames in frames', () => {
+  function nested() {
+    const store = new Store()
+    bindFrames(store)
+    const outer = createFrame(store, { x: 0, y: 0, w: 600, h: 400, title: 'Project' })
+    store.put(box('shape:o', 20, 300)) // in the outer frame only
+    const inner = createFrame(store, { x: 100, y: 100, w: 200, h: 150, title: 'Step 1' })
+    store.put(box('shape:i', 150, 150)) // in the inner one
+    return { store, outer, inner }
+  }
+
+  it('a frame wholly inside another is its member, above it; a shape belongs to the innermost frame', () => {
+    const { store, outer, inner } = nested()
+    expect(store.get(inner).frameId).toBe(outer)
+    expect(store.get(inner).z).toBeGreaterThan(store.get(outer).z)
+    expect(store.get('shape:i').frameId).toBe(inner)
+    expect(store.get('shape:o').frameId).toBe(outer)
+    expect(store.get(inner + '-title').frameId).toBe(inner)
+    expect([...frameShapeIds(store, outer)].sort()).toEqual([outer, outer + '-title', 'shape:o', inner, inner + '-title', 'shape:i'].sort())
+  })
+
+  it('a frame made around a frame takes it in; one only partly inside stays out', () => {
+    const store = new Store()
+    bindFrames(store)
+    const a = createFrame(store, { x: 100, y: 100, w: 100, h: 100, title: 'A' })
+    const b = createFrame(store, { x: 450, y: 100, w: 200, h: 100, title: 'B' }) // will hang over the edge
+    const around = createFrame(store, { x: 0, y: 0, w: 500, h: 400, title: 'Around' })
+    expect(store.get(a).frameId).toBe(around)
+    expect(store.get(a).z).toBeGreaterThan(store.get(around).z)
+    expect(store.get(b).frameId).toBeUndefined()
+  })
+
+  it('moving the outer frame moves the inner one and what is in it, once', () => {
+    const { store, outer, inner } = nested()
+    snapshot(store)
+    drag(store, [outer], 1000, 50)
+    expect(store.get(inner)).toMatchObject({ x: 1100, y: 150 })
+    expect(store.get('shape:i')).toMatchObject({ x: 1150, y: 200 })
+    expect(store.get(inner + '-title')).toMatchObject({ x: orig[inner + '-title'].x + 1000 })
+    expect(store.get('shape:o')).toMatchObject({ x: 1020, y: 350 })
+  })
+
+  it('dragging the inner frame out of the outer one takes it out, with what is in it', () => {
+    const { store, outer, inner } = nested()
+    snapshot(store)
+    drag(store, [inner], 900, 0)
+    expect(store.get(inner).frameId).toBeUndefined()
+    expect(store.get('shape:i')).toMatchObject({ x: 1050, frameId: inner })
+    // and back in: a member again, above the outer frame
+    snapshot(store)
+    drag(store, [inner], -900, 0)
+    expect(store.get(inner).frameId).toBe(outer)
+    expect(store.get(inner).z).toBeGreaterThan(store.get(outer).z)
+  })
+
+  it('deleting the outer frame leaves the inner one (and its members) as they were', () => {
+    const { store, outer, inner } = nested()
+    store.remove([outer])
+    expect(store.get(inner).frameId).toBeUndefined()
+    expect(store.get('shape:i').frameId).toBe(inner)
+    expect(store.get('shape:o').frameId).toBeUndefined()
+    // deleting the inner one: what was in it goes to the frame around it
+    const { store: s2, outer: o2, inner: i2 } = nested()
+    s2.remove([i2])
+    expect(s2.get('shape:i').frameId).toBe(o2)
+  })
+
+  it('a copy of the outer frame alone copies the inner one, with its title and members', () => {
+    const { store, outer, inner } = nested()
+    const copy = { ...store.get(outer), id: newId(), x: 2000 }
+    store.put(copy)
+    const ids = frameShapeIds(store, copy.id)
+    const copies = [...ids].map((id) => store.get(id))
+    const innerCopy = copies.find((s) => isFrame(s) && s.id !== copy.id)
+    expect(innerCopy).toBeTruthy()
+    expect(innerCopy.frameId).toBe(copy.id)
+    expect(innerCopy.x).toBe(2100)
+    expect(frameTitle(store, innerCopy.id)).toBe('Step 1')
+    expect(copies.some((s) => s.frameId === innerCopy.id && s.type === 'geo' && !isFrame(s) && s.x === 2150)).toBe(true)
+    expect(innerCopy.z).toBeGreaterThan(store.get(copy.id).z)
+  })
+})
