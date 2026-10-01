@@ -16,6 +16,7 @@ const { bindLayouts } = await import('quickdraw-layouts')
 const { registerMarkdown } = await import('quickdraw-markdown')
 const { registerEmbed } = await import('quickdraw-embed')
 const { registerTicket, bindKanban } = await import('quickdraw-tickets')
+const { registerMemberCard, bindMemberCards } = await import('quickdraw-members')
 
 export interface Board {
   store: StoreType
@@ -33,6 +34,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
   registerMarkdown()
   registerEmbed()
   registerTicket()
+  registerMemberCard()
   const store = new Store()
   if (url) {
     const Y = await import('yjs')
@@ -45,7 +47,9 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     bindLayouts(store)
     bindKanban(store)
     const { bindMembers } = await import('quickdraw-members')
-    return { store, cursor: relay.cursor, close: relay.close, relay, members: bindMembers(ydoc) }
+    const members = bindMembers(ydoc)
+    bindMemberCards(store, members) // profile cards show what the table says
+    return { store, cursor: relay.cursor, close: relay.close, relay, members }
   }
   if (!file) throw new Error('open a board with { url } or { file }')
   let data: { document?: { store: Record<string, BoardRecord> }, shapes?: BoardRecord[], assets?: Record<string, BoardRecord> } | null = null

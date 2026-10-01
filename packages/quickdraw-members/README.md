@@ -16,4 +16,8 @@ members.onChange(() => render())
 
 One entry per agent, by name (case does not matter). `set` keeps what it is not given; an empty role and about take the agent out of the table. Roles are cut to 60 characters, `about` to 300.
 
+## Profile cards
+
+A card on the board for an agent — its initials in its colour, its name, role and what it does — is a view of the table: `memberTools({ members, agents, me })` gives a rail button (a menu of the agents) and **Edit role** on a selected card (for [`quickdraw-toolbar`](../quickdraw-toolbar)); `bindMemberCardEditing(editor, members)` edits on double-click (first line the role, the rest what it does), and that goes to the table. `bindMemberCards(store, members)` keeps every card with the table. Removing a card leaves the role. Cards are a custom shape type (`member`), so they need the fork's `registerShapeType`; `validateMemberCard` is for `quickdraw-import`.
+
 `apps/quickdraw` gives agents the table: `quickdraw role` and `members`, the `set_role` tool, and the team (who is here, their roles and what each is working on) with what they read of the board.

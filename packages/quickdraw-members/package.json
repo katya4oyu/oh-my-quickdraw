@@ -19,7 +19,11 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "quickdraw-frames": "*"
+  },
   "peerDependencies": {
+    "@quickdrawjs/core": "*",
     "yjs": "^13.6.0"
   },
   "devDependencies": {

@@ -59,7 +59,7 @@
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
-    import { bindMembers } from 'quickdraw-members'
+    import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
     import { createAgentPanel, agentTools, buildAgentRequest } from 'quickdraw-agent'
@@ -198,6 +198,9 @@
     }
     const teamBoard = createTicketBoard({ editor: board.editor, team, setRole: (name, role) => members.set(name, { role }, presence.me().name) })
     members.onChange(teamBoard.refresh)
+    bindMemberCards(board.editor.store, members) // profile cards on the board show what the table says
+    bindMemberCardEditing(board.editor, members, { me: () => presence.me() })
+    const cardTools = memberTools({ members, agents: () => [...agents, ...presence.peers().filter((p) => p.agent && p.name)], me: () => presence.me() })
     // tickets: work left for agents; one is addressed to an agent here (joined, or waiting from the CLI)
     const tickets = ticketTools({
       agents: () => [...agents, ...presence.peers().filter((p) => p.agent && p.name)],
@@ -207,7 +210,7 @@
     createToolbar(board.editor, {
       rail: [
         ...ai.rail, ...voiceTools(voice).rail, '-',
-        ...tickets.rail, ...frames.rail, ...layouts.rail, ...cards.rail, ...web.rail,
+        ...tickets.rail, ...cardTools.rail, ...frames.rail, ...layouts.rail, ...cards.rail, ...web.rail,
         '-',
         { id: 'more', title: 'More', icon: MORE_ICON, menu: [
           { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
@@ -218,11 +221,11 @@
           ...screenShareTools(share).menu,
           '-',
           // Markdown cards, embeds and tickets are allowed in, checked by their own validators
-          importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket } }),
+          importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard } }),
           exportTool(),
         ] },
       ],
-      context: [...ai.context, ...tickets.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
+      context: [...ai.context, ...tickets.context, ...cardTools.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
     })
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it
