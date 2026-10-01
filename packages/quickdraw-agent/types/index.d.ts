@@ -268,6 +268,12 @@ export function limitLevel(limit: AgentLimit): '' | 'high' | 'full'
 export function feedbackToSend(items: Array<{ id: string }> | undefined, skipped?: Set<string>): string[]
 export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
+/** The agent name being written at the start of a note ("@Cla…"), if the caret is in it. */
+export function mentionQuery(value: string, caret?: number): { query: string, start: number, end: number } | null
+/** The agents a query could mean, best first; none once a full name is written. */
+export function matchAgents<T extends { name: string }>(agents: T[], query: string): T[]
+/** While a note is written, "@" at its start lists the agents (agents()) to write one's full name. Returns an unbind. The AI panel binds it itself. */
+export function bindMentionPicker(options: { editor: unknown, container?: HTMLElement, agents: () => AgentParticipant[] }): () => void
 export function updateAgentThread(thread: AgentThread, event: AgentEvent): AgentThread
 /** A work area dragged by dx, dy (board units): moved by its label, or resized by its corner. */
 export function dragArea<T extends Rect>(area: T, handle: 'move' | 'resize', dx: number, dy: number): T
