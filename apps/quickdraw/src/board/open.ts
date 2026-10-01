@@ -27,6 +27,8 @@ export interface Board {
   relay?: Relay
   /** a live board's agents and their roles (quickdraw-members) */
   members?: Members
+  /** a live board's relay URL */
+  url?: string
 }
 
 export type BoardSource = ({ url: string, file?: undefined } | { file: string, url?: undefined }) & { name?: string, color?: string }
@@ -51,7 +53,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     const { bindMembers } = await import('quickdraw-members')
     const members = bindMembers(ydoc)
     bindMemberCards(store, members) // profile cards show what the table says
-    return { store, cursor: relay.cursor, close: relay.close, relay, members }
+    return { store, cursor: relay.cursor, close: relay.close, relay, members, url }
   }
   if (!file) throw new Error('open a board with { url } or { file }')
   let data: { document?: { store: Record<string, BoardRecord> }, shapes?: BoardRecord[], assets?: Record<string, BoardRecord> } | null = null

@@ -77,7 +77,10 @@ export interface BoardDescription {
     /** a kanban's column (quickdraw-tickets) */
     kanban?: { id: string, status: 'todo' | 'doing' | 'done' },
     /** a bento cell (quickdraw-layouts): its grid and size in units */
-    cell?: { layout: string, c: number, r: number, auto?: boolean } }[]
+    cell?: { layout: string, c: number, r: number, auto?: boolean },
+    /** the frame it is in (frames nest) */
+    frame?: string,
+    title_inside?: boolean }[]
   /** bento grids (quickdraw-layouts), with their cells (frames) in order */
   layouts?: { id: string, type: string, cols: number, x: number, y: number, w: number, h: number, cells: string[] }[]
   /** `by`: who made it; `edited_by`: who changed it last, when someone else */

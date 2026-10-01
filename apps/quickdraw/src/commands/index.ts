@@ -10,6 +10,7 @@ import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { linkedBoardsText } from '../board/linked.ts'
 import { isPath, listPets, setPet } from '../board/avatar.ts'
 import { pageBounds } from '@quickdrawjs/core'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
@@ -329,7 +330,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'read': {
         if (o.format === 'json') return out(JSON.stringify(describeBoard(store), null, 2))
         const team = live ? teamText(teamOf(board, o.name)) : '' // who does what
-        return out(boardToMarkdown(store) + (team ? '\n\n' + team : ''))
+        const linked = live ? await linkedBoardsText(board) : '' // the boards its cards show
+        return out(boardToMarkdown(store) + [linked, team].filter(Boolean).map((t) => '\n\n' + t).join(''))
       }
       case 'members':
         needsLive()
