@@ -14,8 +14,9 @@ const point = { type: 'object', properties: { x: num, y: num }, required: ['x', 
 const placement = {
   color,
   at: { ...point, description: 'page position of the top-left corner; without it the shape goes in free space' },
-  in: str('a frame id: put it in that frame\'s free space'),
+  in: str('a frame id: put it in that frame\'s free space (a bento cell grows a row when full)'),
 }
+const span = str('a cell\'s size in grid units, COLSxROWS like 2x1')
 
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -61,9 +62,18 @@ export const BOARD_TOOLS = [
     url: str('https:// page, or any http(s) link for a card'), html: str('a self-contained HTML page instead of a URL'), link: { type: 'boolean', description: 'a link card even for an allowed site' },
     title: str(), w: num, h: num, ...placement,
   }),
-  step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes.', {
+  step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes. With `in` a bento grid\'s id, it is a cell at the end of that grid, `span` units big.', {
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
+    in: str('a bento grid id: the frame is a cell of it'), span, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
   }, ['title']),
+  step('add_bento', 'layout', 'A bento grid: an area whose frames (cells) pack themselves with no gaps, in `cols` columns. Make one when a piece of work will grow: '
+    + 'add cells with add_frame (in: its id, span: 2x1…), fill them with in: a cell, and when one gets crowded give it more span (or it grows a row by itself when full) — the cells after it move along, and the grid grows. Its height follows its cells.', {
+    cols: { type: 'number', description: 'columns (default 4)' }, w: { type: 'number', description: 'width (default 1200)' }, gap: num, at: point,
+  }),
+  step('set_span', 'span', 'Changes a bento cell\'s size in grid units (`span` like 2x2), or makes its rows follow what is in it (`auto`). The other cells move along to make room or close up.', {
+    id: str('cell (frame) id'), span, auto: { type: 'boolean' },
+  }, ['id']),
+  step('set_columns', 'columns', 'Changes how many columns a bento grid has; its cells pack again.', { id: str('bento grid id'), cols: num }, ['id', 'cols']),
   step('add_arrow', 'arrow', 'An arrow between two shapes; it follows them when they move later.', { from: str('shape id'), to: str('shape id'), color, line: { type: 'boolean', description: 'a line, no arrowhead' } }, ['from', 'to']),
   step('add_ticket', 'ticket', 'A ticket: work for an agent to take later (`to` an agent\'s name, or any agent). It goes in the Todo column of the board\'s kanban if there is one.', {
     title: str('what to do, in a line'), body: str('details'), to: str('the agent it is for; omit for any agent'), w: num, ...placement,
@@ -86,7 +96,7 @@ export const BOARD_TOOLS = [
   {
     name: 'apply_steps',
     description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
-      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|arrow|update|move|arrange|fit|tidy|pen|delete, …the fields of that tool }. '
+      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|layout|span|columns|arrow|update|move|arrange|fit|tidy|pen|delete, …the fields of that tool }. '
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
     run(store, { steps }, { name: who = 'Agent', area, prefer } = {}) {

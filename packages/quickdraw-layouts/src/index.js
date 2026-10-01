@@ -112,6 +112,20 @@ function areaAt(store, x, y) {
   return best
 }
 
+// is a cell exactly the size its span makes (packing sized it, not a person)?
+function fitsSpan(g, s) {
+  const c = Math.min(g.cols, s.span.c)
+  return Math.abs(s.props.w - (c * g.unit + (c - 1) * g.gap)) < 0.5 && Math.abs(s.props.h - (s.span.r * g.unit + (s.span.r - 1) * g.rowGap)) < 0.5
+}
+
+// is a cell where packing puts it (moved by packing, not dragged)?
+function atSlot(store, area, s) {
+  const g = gridOf(area)
+  const { places } = packBento(cellsOf(store, area.id).map((c) => ({ id: c.id, c: c.span.c, r: c.span.r })), g.cols)
+  const p = places.find((q) => q.id === s.id)
+  return !!p && fitsSpan(g, s) && Math.abs(s.x - (g.x + p.col * (g.unit + g.gap))) < 0.5 && Math.abs(s.y - (g.y + p.row * (g.unit + g.rowGap))) < 0.5
+}
+
 // the grid slot under a point in an area
 function slotAt(g, x, y) {
   return {
@@ -209,6 +223,18 @@ export function reflow(store, layoutId) {
   store.transact(() => pack(store, layoutId))
 }
 
+// stores whose changes are already laid out (see settled)
+const quiet = new WeakSet()
+
+// Runs fn with bindLayouts paying no attention: for changes already laid out
+// elsewhere, put on the board a piece at a time (an agent's operation, made on
+// a copy), whose halfway states must not be read as drags.
+export function settled(store, fn) {
+  if (quiet.has(store)) return fn()
+  quiet.add(store)
+  try { return fn() } finally { quiet.delete(store) }
+}
+
 export function bindLayouts(store) {
   let busy = false
   let pending = null // changes held back until the gesture ends
@@ -256,8 +282,8 @@ export function bindLayouts(store) {
             const b = pageBounds(s)
             placeAt(store, id, b.x + b.w / 2, b.y + b.h / 2)
             dirty.add(area.id)
-          } else if (resized) {
-            // members stay where they were; snap to units, never below what it holds
+          } else if (resized && !fitsSpan(gridOf(area), s)) {
+            // a person resized it: members stay where they were; snap to units, never below what it holds
             const g = gridOf(area)
             base[id] = { x: from.x, y: from.y }
             const held = [...membersOf(store, id), ...Object.values(diff.updated).filter(([f, t]) => f.frameId === id && !t.frameId && !isTitle(f)).map(([, t]) => t)]
@@ -266,7 +292,7 @@ export function bindLayouts(store) {
             const r = Math.max(min.r, unitsFor(s.props.h, g.unit, g.rowGap))
             store.update(id, { span: { ...s.span, c, r } })
             dirty.add(area.id)
-          } else if (moved) {
+          } else if (moved && !atSlot(store, area, s)) {
             const b = pageBounds(s)
             const cx = b.x + b.w / 2, cy = b.y + b.h / 2
             const to = areaAt(store, cx, cy)
@@ -309,7 +335,7 @@ export function bindLayouts(store) {
   const offDoc = store.listen((diff) => {
     // undo and redo bring back a state already laid out (our follow-ups are
     // in the same history entry): reading their moves as drags would reorder
-    if (busy || store._applyingHistory) return
+    if (busy || quiet.has(store) || store._applyingHistory) return
     pending = pending ? composeDiff(pending, diff) : diff
     // mid-gesture (the core's open history batch): wait for the release, so a
     // dragged cell is not pulled back under the pointer

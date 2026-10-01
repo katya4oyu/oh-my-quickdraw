@@ -77,7 +77,8 @@ const shrink = (r, d) => ({ x: r.x + d, y: r.y + d, w: Math.max(0, r.w - d * 2),
  * ({ x, y, w, h }); a problem is reported when one of those shapes is in it.
  */
 export function lintBoard(store, { frame, ids, area } = {}) {
-  const shapes = store.shapes().filter((s) => s.typeName === 'shape')
+  // a bento grid's area is the ground its cells (frames) stand on, not a shape among them
+  const shapes = store.shapes().filter((s) => s.typeName === 'shape' && !s.isLayout)
   const byId = new Map(shapes.map((s) => [s.id, s]))
   const bounds = new Map(shapes.map((s) => [s.id, isFrame(s) ? withTitle(store, s) : pageBounds(s)]))
   const b = (s) => bounds.get(s.id)
@@ -207,7 +208,7 @@ function apart(a, b) {
 function bestWay(store, s, sb, ob) {
   const f = s.frameId && store.get(s.frameId)
   const fb = f && pageBounds(f)
-  const others = store.shapes().filter((t) => t.id !== s.id && !isLine(t) && !isFrame(t) && !isFree(t)).map(pageBounds)
+  const others = store.shapes().filter((t) => t.id !== s.id && !isLine(t) && !isFrame(t) && !isFree(t) && !t.isLayout).map(pageBounds)
   const frames = store.shapes().filter((g) => isFrame(g) && g.id !== s.frameId).map(pageBounds) // not into another frame
   const ways = [
     { dx: ob.x - (sb.x + sb.w) - GAP, dy: 0 }, { dx: ob.x + ob.w + GAP - sb.x, dy: 0 },

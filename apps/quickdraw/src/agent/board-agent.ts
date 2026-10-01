@@ -10,6 +10,7 @@
 // board a piece at a time with the cursor on each — one undo, as before.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
+import { bindLayouts, settled } from 'quickdraw-layouts'
 import { applySteps, BOARD_TOOLS, freeSpot, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import { snapshotFeedback } from 'quickdraw-screenshare'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -98,6 +99,7 @@ function copyOf(store: StoreType): StoreType {
   const copy = new Store()
   copy.loadSnapshot({ document: { store: Object.fromEntries(store.all().map((r) => [r.id, structuredClone(r)])) } })
   bindFrames(copy)
+  bindLayouts(copy)
   return copy
 }
 
@@ -120,7 +122,8 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
   const shown = added.filter(isShape).length + updated.filter(([, [, to]]) => isShape(to)).length
   const gap = shown ? Math.min(250, Math.max(40, pace / shown)) : 0
   const one = async (d: Partial<Diff>, rec: BoardRecord) => {
-    store.applyDiff({ added: {}, updated: {}, removed: {}, ...d }, 'user')
+    // laid out on the copy already: a bento grid must not read the pieces as drags
+    settled(store, () => store.applyDiff({ added: {}, updated: {}, removed: {}, ...d }, 'user'))
     if (!isShape(rec)) return
     const b = pageBounds(rec as never)
     point(b.x + b.w / 2, b.y + b.h / 2)
@@ -128,7 +131,7 @@ export async function putLive(store: StoreType, diff: Diff, done: StoreType, poi
   }
   for (const rec of added) await one({ added: { [rec.id]: rec } }, rec)
   for (const [id, pair] of updated) await one({ updated: { [id]: pair } }, pair[1])
-  if (Object.keys(diff.removed).length) store.applyDiff({ added: {}, updated: {}, removed: diff.removed }, 'user')
+  if (Object.keys(diff.removed).length) settled(store, () => store.applyDiff({ added: {}, updated: {}, removed: diff.removed }, 'user'))
 }
 
 // Images: the board tools take an image as data; the agent names a file instead

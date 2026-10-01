@@ -184,6 +184,25 @@ A frame never grows by itself: its size may be the point (a 16:9 slide), and a b
 - **Not sure how big it gets** (usually): build in free space — add without `--in` — then enclose it with `frame --around`, and line frames up with `arrange` (it counts their titles).
 - **The frame's size is given** (it exists, or has an aspect like 16:9): build in free space, then `quickdraw fit FRAME_ID ID,ID,…` — it shrinks the frame's contents and those shapes together, keeping their layout, to fit inside. It never enlarges; if things would get too small to read, it refuses: use a bigger frame, or several.
 - `--in FRAME_ID` is for a few items: when the frame is full it refuses rather than piling them up.
+- **It will keep growing** (ideas, findings, a plan filled in over time): use a bento grid instead (below).
+
+## Work that grows: a bento grid
+
+A bento grid is an area whose frames (cells) pack themselves with no gaps. Widen or lengthen one and the cells after it move along; the grid grows downwards to hold them. So you never have to move the neighbours of a frame that got crowded.
+
+```sh
+quickdraw bento [--cols 4] [--width 1200] [--at X,Y]   # the grid; prints its id
+quickdraw frame "Ideas" --in GRID_ID --span 2x2        # a cell at the end, 2 columns × 2 rows of units
+quickdraw frame "Notes" --in GRID_ID --auto            # a cell whose rows follow what is in it
+quickdraw note "First idea" --in CELL_ID               # fill a cell; when it is full it grows a row
+quickdraw span CELL_ID 3x1                             # a cell's size in units: the others move along
+quickdraw span CELL_ID --auto                          # rows follow its contents (again: off)
+quickdraw columns GRID_ID 6                            # the grid's columns; its cells pack again
+```
+
+- Plan the cells first (one per topic), give the main one more span, then fill them with `--in CELL_ID`.
+- A cell's size is its span: `update --size` refuses it. `move` a cell onto another's place to reorder; moved out of the grid, it is a plain frame again.
+- `read` lists each grid's cells in order ("bento cell 2×1"); `tidy` moves a grid as one, its cells with it.
 
 ## Diagrams and bigger changes: `apply`
 
@@ -205,7 +224,7 @@ Write the steps as JSON and apply them as **one** operation (one undo). Name wha
 quickdraw apply steps.json      # or: … apply - < steps.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
+Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`, `at`), `span` (`id`, `span`, `auto`), `columns` (`id`, `cols`), `arrow` (`from`, `to`), `update` (`id`, `text`, `color`), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`. If any step fails, nothing is applied.
 
 ## Change and tidy
 

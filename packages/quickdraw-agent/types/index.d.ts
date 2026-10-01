@@ -6,6 +6,11 @@ export interface Point { x: number, y: number }
 export interface Placement { color?: ColorId, at?: Point, inFrame?: string, w?: number, h?: number }
 
 /** The operations, bound to one operation id. Adds return the new shape's id. */
+/** A bento cell's size in grid units: columns × rows. */
+export interface Span { c: number, r: number }
+/** A span from { c, r } or "2x1". */
+export function spanOf(v: Span | string | null | undefined): Span | undefined
+
 export interface Operations {
   note(text: string, opts?: Placement): string
   text(text: string, opts?: Placement): string
@@ -19,7 +24,14 @@ export interface Operations {
   ticket(title: string, what?: { body?: string, to?: string | null }, opts?: Placement): string
   /** Moves a ticket on; in a kanban it changes column. `by` defaults to this agent. */
   status(id: string, status: TicketStatus, change?: { by?: string | null, result?: string }): string
-  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[] }): string
+  /** With `inFrame` a bento grid's id: a cell at its end, `span` units big (`auto`: rows follow its contents). */
+  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[], span?: Span, auto?: boolean }): string
+  /** A bento grid (quickdraw-layouts): an area whose frames (cells) pack themselves, `cols` columns `w` wide. */
+  layout(opts?: { cols?: number, w?: number, gap?: number }, where?: { at?: Point }): string
+  /** A cell's size in grid units, or whether its rows follow its contents; the other cells move along. */
+  span(id: string, opts: Partial<Span> & { auto?: boolean }): string
+  /** A bento grid's columns; its cells pack again. */
+  columns(id: string, cols: number): string
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames) */
   update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number }): string
@@ -61,7 +73,11 @@ export interface BoardDescription {
     /** a snapshot of a shared screen (quickdraw-screenshare): when and by whom */
     snapshot?: { at: number, by: string },
     /** a kanban's column (quickdraw-tickets) */
-    kanban?: { id: string, status: 'todo' | 'doing' | 'done' } }[]
+    kanban?: { id: string, status: 'todo' | 'doing' | 'done' },
+    /** a bento cell (quickdraw-layouts): its grid and size in units */
+    cell?: { layout: string, c: number, r: number, auto?: boolean } }[]
+  /** bento grids (quickdraw-layouts), with their cells (frames) in order */
+  layouts?: { id: string, type: string, cols: number, x: number, y: number, w: number, h: number, cells: string[] }[]
   /** `by`: who made it; `edited_by`: who changed it last, when someone else */
   items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, edited_by?: string, x: number, y: number, w: number, h: number,
     /** a ticket's state: who it is for (null: any agent), who has it, and how it went */
