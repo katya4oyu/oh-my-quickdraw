@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — clipboard example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>html, body { margin: 0; height: 100%; } #board { position: fixed; inset: 0; }</style>
+  <!-- in your own project, a bundler resolves these from node_modules -->
+  <script type="importmap">
+    { "imports": {
+      "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js",
+      "quickdraw-import": "../../packages/quickdraw-import/src/index.js"
+    } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindClipboard } from '../../packages/quickdraw-clipboard/src/index.js'
+
+    const { editor } = createQuickdraw({ container: document.getElementById('board') })
+    // ⌘C / ⌘V through the browser's own clipboard events: works on plain http too.
+    // Copy the note into another app (its text), or paste text, an image or SVG code here.
+    bindClipboard(editor)
+    editor.store.put({ id: 'shape:hello', typeName: 'shape', type: 'note', x: 120, y: 120, rot: 0, z: 1, props: { text: 'Select me, ⌘C, ⌘V', color: 'yellow', size: 'm', font: 'draw', scale: 1 } })
+  </script>
+</body>
+</html>

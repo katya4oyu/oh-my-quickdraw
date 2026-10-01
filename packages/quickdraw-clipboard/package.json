@@ -1,0 +1,29 @@
+{
+  "name": "quickdraw-clipboard",
+  "version": "0.1.0",
+  "description": "Copy and paste on a Quickdraw board through the browser's own clipboard events: no permission, any browser, plain http too.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "quickdraw-import": "*"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}

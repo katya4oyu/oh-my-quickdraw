@@ -40,6 +40,15 @@ export const limitLevel = (limit) => (limit.usedPercent >= 100 ? 'full' : limit.
 // the agent's most-used limit
 const topLimit = (agent) => (agent?.limits || []).reduce((a, b) => (!a || b.usedPercent > a.usedPercent ? b : a), null)
 
+/** A new request's id: a UUID (crypto.randomUUID is only on https and localhost pages; plain http gets one made the same way). */
+export function requestId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID()
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('')
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
 /** A committed note beginning with @AI or a known agent name is a request. */
 export function detectAgentMention(text, agents) {
   const value = String(text || '').trim()
@@ -461,11 +470,13 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const copy = el('button', 'qda-btn', 'Copy')
     copy.type = 'button'
     copy.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(command)
-        copy.textContent = 'Copied'
-        setTimeout(() => { copy.textContent = 'Copy' }, 1500)
-      } catch { getSelection()?.selectAllChildren(code) } // no clipboard here: selected, to copy by hand
+      let done = false
+      try { await navigator.clipboard.writeText(command); done = true } catch {
+        // plain http has no navigator.clipboard: the browser's own copy, of the command selected
+        getSelection()?.selectAllChildren(code)
+        try { done = document.execCommand('copy') } catch {}
+      }
+      if (done) { copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy' }, 1500) }
     })
     const row = el('div')
     row.append(el('span', 'qda-muted', text || ''), copy)
@@ -848,12 +859,12 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const v = editor.viewportPageBounds()
     const anchor = first ? { shapeId: first.id, x: first.x, y: first.y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 }
     return sendRequest(buildAgentRequest({
-      id: crypto.randomUUID(), to: currentAgent(), text, editor, options: optionsFor(currentAgent()),
+      id: requestId(), to: currentAgent(), text, editor, options: optionsFor(currentAgent()),
       shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id), anchor, ...(area ? { area } : {}),
     }))
   }
   function askText(text, anchor = {}) {
-    return sendRequest(buildAgentRequest({ id: crypto.randomUUID(), to: currentAgent(), text, editor, anchor, options: optionsFor(currentAgent()) }))
+    return sendRequest(buildAgentRequest({ id: requestId(), to: currentAgent(), text, editor, anchor, options: optionsFor(currentAgent()) }))
   }
   function openForSelection(shapeIds) {
     pendingShapeIds = [...shapeIds]
@@ -871,7 +882,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
     const mention = detectAgentMention(shape.props.text, getAgents().filter((a) => !host.cannotAsk?.(a)))
     if (!mention) return
     sendRequest(buildAgentRequest({
-      id: crypto.randomUUID(), to: mention.to, text: mention.text, editor, options: optionsFor(mention.to),
+      id: requestId(), to: mention.to, text: mention.text, editor, options: optionsFor(mention.to),
       shapeIds: [id], anchor: { shapeId: id, x: shape.x, y: shape.y },
     }))
   }
