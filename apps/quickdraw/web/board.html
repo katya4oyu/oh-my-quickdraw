@@ -66,7 +66,7 @@
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
-    import { createAgentPanel, agentTools, buildAgentRequest, requestId } from 'quickdraw-agent'
+    import { createAgentPanel, agentTools, buildAgentRequest, requestId, bindArrows } from 'quickdraw-agent'
     import { createVoice, voiceTools } from 'quickdraw-voice'
     import { createScreenShare, screenShareTools, pendingFeedback, markSent } from 'quickdraw-screenshare'
     import { bindAuthorship, createPresence, ACTIVITIES } from 'quickdraw-presence'
@@ -79,6 +79,7 @@
     bindFrames(board.editor.store)
     bindLayouts(board.editor.store) // bento grids pack their cells again as they change
     bindKanban(board.editor.store) // a ticket dragged into a kanban column takes its status
+    bindArrows(board.editor) // an arrow drawn between two shapes follows them as they move
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
     bindTicketEditing(board.editor)
     const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
