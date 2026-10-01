@@ -42,7 +42,7 @@ function box(s) {
 }
 
 // the shape an arrow end touches: the smallest one within reach of the point
-function shapeAt(shapes, x, y, reach = 16) {
+export function shapeAt(shapes, x, y, reach = 16) {
   let best = null, area = Infinity
   for (const s of shapes) {
     const b = pageBounds(s)
@@ -563,7 +563,7 @@ function withTitle(store, s) {
 }
 
 // the segment between two rects' centres, cut at their edges (plus a gap)
-function route(store, [ra, rb]) {
+export function route(store, [ra, rb]) {
   const [a, b] = [ra, rb].map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 }))
   const clip = (r, p, q) => {
     if (!r.w || !r.h) return p

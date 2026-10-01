@@ -301,3 +301,10 @@ export function pendingApproval(thread: AgentThread, answered?: Set<string>): Ex
 export function markedArea(a: Point, b: Point, min?: number): Rect | null
 export function undoAgentRequest(store: Store, diffs: Diff[]): { reverted: number, skipped: string[] }
 export function hasAgentThreadForAnchor(shapeId: string, threads: Iterable<AgentThread>): boolean
+
+/** The two shapes an arrow's ends land on (not frames, not other arrows), or null. */
+export function arrowEnds(store: unknown, arrow: unknown): { from: string, to: string } | null
+/** Where a linked arrow goes now, from edge to edge, or null when an end is gone. */
+export function arrowRoute(store: unknown, arrow: unknown): { x: number, y: number, dx: number, dy: number } | null
+/** Arrows follow what they connect, for this page's edits: linked once drawn between two shapes, rerouted as they move. Returns an unbind. */
+export function bindArrows(editor: unknown): () => void
