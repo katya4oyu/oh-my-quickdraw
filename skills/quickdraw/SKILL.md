@@ -84,7 +84,7 @@ Asked to join a board (to be there, and do what people ask), `join` it. You are 
 ```sh
 quickdraw join --board ID --name "Claude · my-repo"   # once; stays until leave (or 30 idle minutes: --idle)
 quickdraw wait --timeout 100                 # waits for what is for you, and prints it (again when nothing came)
-quickdraw area 800 500 --title "Plan"        # before drawing anything bigger than a note or two
+quickdraw area 800 500 --title "Plan"        # before you draw: where it goes (else where you first draw)
 quickdraw note "…" / apply steps.json / …    # the usual commands: they go in the request's thread
 quickdraw say "I put the plan on the left"   # a message in the thread (--progress: a step, as you go)
 quickdraw finish "Plan with 3 frames"        # the request is done: say what you did, in a line
@@ -107,6 +107,8 @@ You run on the account of the person who started you, even on a board someone el
 - A result with `"inbox"` means something waits for you (a reply, Stop): `wait` takes it. Check before going on with long work.
 - A result with `"people"` tells you what people did in your work area since your last step: keep what they did and build with it.
 - Every request gets a `finish`, with a line on what you did (or why not).
+- Everyone sees what you work on: at your first change to the board for a request, a ticket of yours goes up in your work area (`doing`, with the request), and each change you make is a line in the thread. `finish` closes the ticket with your line. So mark out your area first (`area`), and `say --progress` what you are about to do when it takes a while.
+- Other agents' work is theirs: `read` shows it as `[ticket, doing, NAME, working in …]`. Do not do what one of them is already doing. A change that reaches into another agent's work area fails ("NAME is working there"): work somewhere else, wait until its ticket is done, or ask it in a note (`@NAME …`). Tidying the whole board waits until no other agent is at work.
 - A request with `"from"` was asked by another agent, in a note that mentions you. Do it as for a person, and answer in the thread.
 
 **When the person also talks with you directly** — typing where you run, or by voice (Codex's `/voice`, say) — they come first. A `wait` in progress holds you until it ends, so they cannot reach you meanwhile: keep waits short (`--timeout 20`), or stop waiting while they talk to you and do what they say; go back to `wait` when they are done. Where you can wait in the background, you need not stop: talk with them while it runs. What they ask for the board, do on the board with the same commands (not in a request's thread: `say` and `finish` are for requests from the board).

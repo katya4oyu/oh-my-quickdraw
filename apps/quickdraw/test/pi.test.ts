@@ -150,9 +150,9 @@ describe('quickdraw agent pi', () => {
     // the model chosen in the panel, and the instructions for a board
     expect(sessions[0].options.model).toBe(MODELS[1])
     expect(sessions[0].options.resourceLoader.options.appendSystemPromptOverride([])[0]).toMatch(/You cannot generate images here/)
-    // what it runs on, what it says while it works, the note, the command declined
+    // what it runs on, what it says while it works, the note (and the work area it marks out), the command declined
     expect(person.events.map((e) => [e.type, e.text])).toEqual([
-      ['progress', 'm1 · medium'], ['progress', 'Adding a note.'], ['op', undefined], ['progress', 'Cleaning up.'],
+      ['progress', 'm1 · medium'], ['progress', 'Adding a note.'], ['area', undefined], ['op', undefined], ['progress', 'Cleaning up.'],
       ['approval', 'Run rm -rf build'], ['message', 'Added a note (blocked: A person on the board declined it.).'], ['done', undefined],
     ])
     const op = person.events.find((e) => e.type === 'op')
