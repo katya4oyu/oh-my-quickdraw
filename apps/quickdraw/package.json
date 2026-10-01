@@ -23,6 +23,7 @@
     "quickdraw-import": "*",
     "quickdraw-layouts": "*",
     "quickdraw-markdown": "*",
+    "quickdraw-members": "*",
     "quickdraw-presence": "*",
     "quickdraw-screenshare": "*",
     "quickdraw-tickets": "*",

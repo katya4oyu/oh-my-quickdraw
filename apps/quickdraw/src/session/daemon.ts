@@ -10,6 +10,7 @@ import { basename, join } from 'node:path'
 import { pageBounds, type BoardRecord, type Diff, type Store } from '@quickdrawjs/core'
 import { describeBoard, textOf, type AgentRequest } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
+import { teamOf } from '../board/team.ts'
 import { joinBoard, type BoardAgent } from '../agent/board-agent.ts'
 import { linkPreview, serverOfBoard } from '../board/link-preview.ts'
 import { parseCommand, runCommand } from '../commands/index.ts'
@@ -26,6 +27,8 @@ export interface SessionOptions {
   cwd: string
   /** minutes without a command before it leaves the board (default 30) */
   idle?: number
+  /** its role on the board (quickdraw-members) */
+  role?: string
   /** takes requests from anyone on the board, not only this computer */
   remote?: boolean
 }
@@ -41,10 +44,10 @@ const STREAMING = new Set(['next', 'wait', 'watch'])
 const clip = (s: string, n = 80) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
 
-export async function startSession({ url, name, cwd, idle = 30, remote = false }: SessionOptions) {
+export async function startSession({ url, name, cwd, idle = 30, remote = false, role }: SessionOptions) {
   const board = await openBoard({ url, name })
   const id = 'cli-' + (name + '-' + basename(cwd)).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-  const agent = await joinBoard(board, { id, name, knows: [basename(cwd)], remote }, {
+  const agent = await joinBoard(board, { id, name, knows: [basename(cwd)], remote, role }, {
     imageRoots: [cwd], preview: (link) => linkPreview(serverOfBoard(url), link),
   })
   const store = board.store
@@ -138,13 +141,14 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       const centre = v && { x: v.x + v.w / 2, y: v.y + v.h / 2 }
       const inView = v ? store.shapes().filter((f) => isFrame(f) && (() => { const b = pageBounds(f as never); return b.x < v.x + v.w && b.x + b.w > v.x && b.y < v.y + v.h && b.y + b.h > v.y })()) : []
       return {
-        name: p.name ?? '?', agent: !!p.agent,
+        name: p.name ?? '?', agent: !!p.agent, ...(p.agent && p.name && board.members?.get(p.name)?.role ? { role: board.members.get(p.name)!.role } : {}),
         ...(p.agent ? { status: p.agentStatus ?? 'idle', ...(p.agentActivity ? { doing: p.agentActivity + (p.agentNote ? ': ' + p.agentNote : '') } : {}) } : p.status ? { status: p.status } : {}),
         ...(p.x != null && p.y != null ? { cursor: { x: Math.round(p.x), y: Math.round(p.y) } } : {}),
         ...(centre ? { looking_at: { x: Math.round(centre.x), y: Math.round(centre.y), frames: inView.slice(0, 5).map((f) => ({ id: f.id, title: frameTitle(store as never, f.id) })) } } : {}),
       }
     })
-    return { you: name, here: peers }
+    const mine = board.members?.get(name)?.role
+    return { you: name, ...(mine ? { your_role: mine } : {}), here: peers }
   }
 
   // ---- a request, as `next` gives it ----
@@ -159,6 +163,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       viewport: r.context.viewport,
       ...(fb?.text ? { feedback: { text: fb.text, images: fb.images } } : {}),
       changes: changes(),
+      team: teamOf(board, name), // who does what: roles, and what each works on
     }
   }
 

@@ -7,6 +7,7 @@ import { openBoard } from '../src/board/open.ts'
 import { main } from '../src/commands/index.ts'
 import { createQuickdrawServer } from '../src/serve/index.ts'
 import { startSession } from '../src/session/daemon.ts'
+import { joinBoard } from '../src/agent/board-agent.ts'
 import { sessionFile } from '../src/session/client.ts'
 import { AGENT, PRESENCE, packAgent, packPresence, unpackAgent, unpackPresence } from '../src/protocol.js'
 
@@ -35,7 +36,8 @@ describe('a session: an agent with a shell, on the board', () => {
   let app: ReturnType<typeof createQuickdrawServer> | undefined
   let session: Awaited<ReturnType<typeof startSession>> | undefined
   const home = process.cwd()
-  afterEach(async () => { await session?.close(); session = undefined; process.chdir(home); await app?.close() })
+  const cleanupLater: (() => unknown)[] = []
+  afterEach(async () => { for (const fn of cleanupLater.splice(0)) await fn(); await session?.close(); session = undefined; process.chdir(home); await app?.close() })
 
   async function setup(idle?: number) {
     app = createQuickdrawServer()
@@ -86,6 +88,33 @@ describe('a session: an agent with a shell, on the board', () => {
     // its ticket for the request: up at its first note, done with it
     const [ticket] = (await run('tickets')).flat().filter((t: any) => t?.work?.request === 'r1')
     expect(ticket).toMatchObject({ title: 'Put a note here', status: 'done', by: 'Claude', result: 'Two notes' })
+    ws.close()
+  }, 20_000)
+
+  it('keeps roles: its own and others\', for the team, with each request', async () => {
+    const { url, ws, agents, run } = await setup()
+    const other = await openBoard({ url, name: 'Codex · api' })
+    await joinBoard(other, { id: 'codex', name: 'Codex · api', knows: [], role: 'researcher' }).then((a) => cleanupLater.push(() => a.close()))
+    await new Promise((r) => setTimeout(r, 200))
+
+    expect((await run('role', 'reviewer', '--about', 'Reads the PRs'))[0].member).toMatchObject({ name: 'Claude', role: 'reviewer', about: 'Reads the PRs', by: 'Claude' })
+    const [team] = await run('members')
+    expect(team.map((m: any) => [m.name, m.role ?? null, m.here, !!m.you])).toEqual([['Claude', 'reviewer', true, true], ['Codex · api', 'researcher', true, false]])
+    const [who] = await run('who')
+    expect(who.your_role).toBe('reviewer')
+    expect(who.here.find((p: any) => p.name === 'Codex · api')?.role).toBe('researcher')
+    // given another's, then taken off
+    await run('role', 'note taker', '--of', 'Codex · api')
+    expect(other.members!.get('Codex · api')).toMatchObject({ role: 'note taker', by: 'Claude' })
+    await run('role', '--clear')
+    expect((await run('members'))[0].find((m: any) => m.name === 'Claude').role).toBeUndefined()
+    // a request comes with the team; read ends with it
+    ws.send(packAgent({ kind: 'request', request: request('r1', agents[0].id) }))
+    const [got] = await run('next', '--timeout', '5')
+    expect(got.team.find((m: any) => m.name === 'Codex · api')).toMatchObject({ role: 'note taker', here: true })
+    const lines: string[] = []
+    await main(['read'], (l) => { lines.push(l) })
+    expect(lines.join('\n')).toMatch(/## Team: [^\n]*\n\n- Claude \(you\) — no role yet\n- Codex · api — role: note taker, set by Claude/)
     ws.close()
   }, 20_000)
 

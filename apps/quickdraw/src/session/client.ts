@@ -83,7 +83,7 @@ const BIN = fileURLToPath(new URL('../../bin/quickdraw.ts', import.meta.url))
  * Joins a board for the agents of this directory: starts the session process,
  * which stays after this command, and returns once it is on the board.
  */
-export async function joinSession(url: string, { name = 'Agent', idle, remote = false, cwd = process.cwd() }: { name?: string, idle?: number, remote?: boolean, cwd?: string } = {}) {
+export async function joinSession(url: string, { name = 'Agent', idle, remote = false, role, cwd = process.cwd() }: { name?: string, idle?: number, remote?: boolean, role?: string, cwd?: string } = {}) {
   const had = await findSession(cwd)
   if (had) {
     if (had.url === url && had.name === name) return { joined: true, already: true, board: had.url, name: had.name }
@@ -93,7 +93,7 @@ export async function joinSession(url: string, { name = 'Agent', idle, remote = 
   // what quickdraw keeps here (the session, its log, the op log) is this computer's, not the project's
   if (!existsSync(join(cwd, '.quickdraw', '.gitignore'))) writeFileSync(join(cwd, '.quickdraw', '.gitignore'), '*\n')
   const log = openSync(join(cwd, '.quickdraw', 'session.log'), 'a')
-  const child = spawn(process.execPath, [BIN, 'session', '--board', url, '--name', name, ...(idle ? ['--idle', String(idle)] : []), ...(remote ? ['--allow-remote'] : [])], {
+  const child = spawn(process.execPath, [BIN, 'session', '--board', url, '--name', name, ...(idle ? ['--idle', String(idle)] : []), ...(remote ? ['--allow-remote'] : []), ...(role ? ['--role', role] : [])], {
     cwd, detached: true, stdio: ['ignore', 'pipe', log], env: process.env,
   })
   // its first line says it is on the board (or why not); after that it is on its own
