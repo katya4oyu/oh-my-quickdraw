@@ -48,6 +48,7 @@ quickdraw markdown --md-file notes.md                # a Markdown card (write th
 quickdraw frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses existing shapes
 quickdraw frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
 quickdraw board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
+                                                        # read lists the boards on cards: title, frames, how much is in them
 quickdraw frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
                                                         # --title-inside: its title inside its top-left corner, not above
 quickdraw arrow FROM_ID TO_ID [--line]                # follows the shapes when they move in later operations; --line: no arrowhead

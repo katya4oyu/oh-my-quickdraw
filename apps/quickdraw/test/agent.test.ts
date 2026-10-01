@@ -496,6 +496,29 @@ describe('work tickets', () => {
     await expect(readPet('dog')).rejects.toThrow(/no pet "dog" in .*pets \(there: mio, rocket-cat\)/)
   }, 60_000)
 
+  it('reads the boards on this board\'s cards: their titles, frames and how much is in them', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const home = app.boards.create('Home').id, road = app.boards.create('Roadmap').id, gone = app.boards.create('Old').id
+    const url = (id: string) => `ws://127.0.0.1:${port}/ws/${id}`
+    const other = await openBoard({ url: url(road), name: 'Ann' })
+    applySteps(other.store as never, 'Ann', [
+      { do: 'frame', title: 'Q1', at: { x: 0, y: 0 }, w: 600, h: 400, ref: 'f' }, { do: 'note', text: 'Launch', in: '@f' }, { do: 'note', text: 'Hire', in: '@f' },
+      { do: 'note', text: 'Loose', at: { x: 900, y: 0 } },
+    ] as never)
+    await other.close()
+    app.boards.archive(gone, true)
+    const board = await openBoard({ url: url(home), name: 'Codex' })
+    const agent = await joinBoard(board, { id: 'codex', name: 'Codex', knows: [] })
+    cleanup.push(() => agent.close())
+    applySteps(board.store as never, 'Codex', [{ do: 'board', board: road, title: 'Roadmap', live: true }, { do: 'board', board: gone, title: 'Old', at: { x: 0, y: 600 } }] as never)
+    await new Promise((r) => setTimeout(r, 300))
+    const read = await agent.runTool('r', 'read_board', {})
+    expect(read).toMatch(new RegExp(`## Boards on this board \\(board cards: .*\\)\\n\\n- Roadmap \\(board ${road}, live\\): frames: Q1 \\(2 in it\\); 1 shape outside frames`))
+    expect(read).toMatch(new RegExp(`- Old \\(board ${gone}\\): not on the server now`))
+  }, 20_000)
+
   it('keeps out only of the work of agents on the board, and puts its ticket in the Doing column of a kanban', async () => {
     const { person, ada, adaBoard, bo, boBoard } = await twoAgents('Kanban')
     const { columns } = createKanban(adaBoard.store as never, { x: -2000, y: 0 }) as { columns: Record<string, string> }

@@ -29,6 +29,7 @@ import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { linkedBoardsText } from '../board/linked.ts'
 import { setPet } from '../board/avatar.ts'
 
 import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
@@ -416,8 +417,10 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     }
     if (name === 'read_board' || name === 'check_board') { // reading: by default, check_board checks its work area
       const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name, area: work.get(requestId)?.area }) as unknown
-      const team = name === 'read_board' && (args as { format?: string } | null)?.format !== 'json' ? teamText(teamOf(board, me.name)) : '' // who does what
-      return (typeof result === 'string' ? result : JSON.stringify(result)) + (team ? '\n\n' + team : '')
+      const md = name === 'read_board' && (args as { format?: string } | null)?.format !== 'json'
+      const team = md ? teamText(teamOf(board, me.name)) : '' // who does what
+      const linked = md ? await linkedBoardsText(board) : '' // the boards its cards show
+      return (typeof result === 'string' ? result : JSON.stringify(result)) + [linked, team].filter(Boolean).map((t) => '\n\n' + t).join('')
     }
     const area = work.get(requestId)?.area
     return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
