@@ -1,0 +1,26 @@
+{
+  "name": "quickdraw-gif",
+  "version": "0.1.0",
+  "description": "Animated GIFs on a Quickdraw board: they move for everyone looking at them.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}
