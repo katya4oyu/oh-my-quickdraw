@@ -47,6 +47,7 @@ quickdraw shape rectangle "Label" [--size 180x100]   # rectangle ellipse triangl
 quickdraw markdown --md-file notes.md                # a Markdown card (write the file first; "\n" in quotes is not a newline)
 quickdraw frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses existing shapes
 quickdraw frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
+quickdraw frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
 quickdraw arrow FROM_ID TO_ID [--line]                # follows the shapes when they move in later operations; --line: no arrowhead
 ```
 
@@ -178,7 +179,7 @@ quickdraw tidy                       # all frames, close together in reading ord
 quickdraw tidy F1,F2 --at 0,0        # some of them, from a point; --gap 80, --width 1600
 ```
 
-Each frame brings what is in it and its title; a kanban's columns stay together; what is in no frame stays where it is. Then `lint` what you moved.
+Each frame brings what is in it and its title (frames in it too: only the outermost are laid out); a kanban's columns stay together; what is in no frame stays where it is. Then `lint` what you moved.
 
 ## Frames keep their size
 

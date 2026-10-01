@@ -1,10 +1,15 @@
-// Frames (Excalidraw-style, not nested) built from plain records, with no
-// core change: a frame is a straight-edged, unfilled geo rectangle marked
-// `isFrame`, sent to the back; its title is a text shape above its top-left
-// corner; members carry `frameId`. The title is a member too, so it moves
-// with the frame. exportFrame renders just the contents, cut at the edges.
+// Frames (Excalidraw-style) built from plain records, with no core change: a
+// frame is a straight-edged, unfilled geo rectangle marked `isFrame`, behind
+// what is in it; its title is a text shape above its top-left corner; members
+// carry `frameId`. The title is a member too, so it moves with the frame.
+// exportFrame renders just the contents, cut at the edges.
 //
-// A shape marked `frameless` never joins a frame (quickdraw-layouts' areas).
+// Frames nest: a frame (or a layout's area: quickdraw-layouts) wholly inside
+// another is its member, as is anything else whose centre is inside it — in
+// the innermost frame that holds it. A frame stays above the frame it is in.
+//
+// A shape marked `frameless` never joins a frame (a layout's area excepted:
+// older boards marked them so; they now nest like frames).
 //
 // A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape.
 // It also carries its own id as `frameKey`, and its title `isFrameTitle`:
@@ -12,12 +17,14 @@
 // ids, which is how a copied frame is recognized and given its contents.
 //
 // bindFrames keeps it consistent on local edits:
-// - a shape dropped with its center inside a frame joins it; dragged out, it leaves
-// - moving a frame moves its members; resizing keeps the aspect, carries the
-//   title along with the top-left corner and re-checks what is inside
-// - deleting a frame deletes its title and releases its members
-// - a copied frame gets a title and copies of the original's members, or
-//   adopts the member copies made alongside it; it goes to the back
+// - a shape dropped with its center inside a frame joins it (a frame: dropped
+//   wholly inside); dragged out, it leaves
+// - moving a frame moves its members, and theirs (frames in it); resizing
+//   keeps the aspect, carries the title along with the top-left corner and
+//   re-checks what is inside
+// - deleting a frame deletes its title; its members join the frame around it, if any
+// - a copied frame gets a title and copies of the original's members (frames
+//   in it with theirs), or adopts the member copies made alongside it
 import { pageBounds, composeDiff, newId, drawShape } from '@quickdrawjs/core'
 
 export { frameTools, FRAME_ICONS, FRAME_RATIOS } from './tools.js'
@@ -35,7 +42,9 @@ export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, titl
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
     putTitle(store, store.get(id), title)
-    for (const s of store.shapes()) if (!isFrame(s) && !s.frameless && s.frameId !== id && inside(pageBounds(s), store.get(id))) setFrame(store, s, id)
+    // what it holds (frames wholly inside it too) joins it, unless a frame inside it holds it
+    for (const s of store.shapes()) if (s.id !== id && !isTitle(s) && joins(s) && frameAt(store, s)?.id === id) setFrame(store, s, id)
+    stack(store)
   })
   return id
 }
@@ -96,7 +105,8 @@ export async function exportFrame(editor, frameId, { scale = 2, background = tru
     ctx.fillRect(0, 0, canvas.width, canvas.height)
   }
   ctx.setTransform(k, 0, 0, k, -f.x * k, -f.y * k)
-  const shapes = editor.shapesSorted().filter((s) => s.frameId === frameId && s.id !== frameId + '-title')
+  const within = frameShapeIds(editor.store, frameId) // frames in it, with what is in them
+  const shapes = editor.shapesSorted().filter((s) => within.has(s.id) && s.id !== frameId && s.id !== frameId + '-title')
   await decodeImages(editor.store, shapes)
   for (const s of shapes) drawShape(ctx, s, { theme: editor.theme, store: editor.store, zoom: k })
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
@@ -113,11 +123,35 @@ function decodeImages(store, shapes) {
   }))
 }
 
-// the frame, its title and its members
+// the frame, its title and its members, and theirs (frames in it)
 export function frameShapeIds(store, frameId) {
   const ids = new Set([frameId])
-  for (const s of store.shapes()) if (s.frameId === frameId) ids.add(s.id)
+  for (const s of store.shapes()) if (inFrame(store, s, frameId)) ids.add(s.id)
   return ids
+}
+
+/** Whether a shape is in a frame, directly or in a frame inside it. */
+export function inFrame(store, s, frameId) {
+  for (let f = s?.frameId, n = 0; f && n < 64; f = store.get(f)?.frameId, n++) if (f === frameId) return true
+  return false
+}
+
+/** The frame a frame is in (its parent), or null. */
+export const parentFrame = (store, frame) => (frame?.frameId && isFrame(store.get(frame.frameId)) ? store.get(frame.frameId) : null)
+
+// what joins a frame only when wholly inside it: frames, layouts' areas
+const whole = (s) => isFrame(s) || s.isLayout === true
+const joins = (s) => !s.frameless || s.isLayout === true
+
+// Frames above the frame they are in (frames are sent to the back when made
+// or copied): a frame in another goes just above it, outer ones first.
+function stack(store) {
+  const depth = (f) => depthOf(store, f)
+  const nested = store.shapes().filter((f) => (isFrame(f) || f.isLayout) && f.frameId && store.get(f.frameId)).sort((a, b) => depth(a) - depth(b))
+  for (const f of nested) {
+    const p = store.get(f.frameId)
+    if (f.z <= p.z) store.update(f.id, { z: p.z + 0.5 })
+  }
 }
 
 // sets or clears a shape's frameId (cleared = no key, not undefined)
@@ -145,12 +179,27 @@ function inside(b, frame) {
   const p = frame.props
   return cx >= frame.x && cx <= frame.x + p.w && cy >= frame.y && cy <= frame.y + p.h
 }
+function wholly(b, frame) {
+  const p = frame.props
+  return b.x >= frame.x && b.y >= frame.y && b.x + b.w <= frame.x + p.w && b.y + b.h <= frame.y + p.h
+}
 
-// the frame a shape belongs in by position: the topmost containing its center
+// The frame a shape belongs in by position: the innermost frame holding its
+// centre — or, for a frame or an area, holding all of it — innermost by how
+// deep frames are in frames; side by side (overlapping, neither in the
+// other), the topmost. Never the shape itself, nor (for a frame) one inside it.
+const depthOf = (store, f) => { let d = 0; for (let p = parentFrame(store, f); p && d < 64; p = parentFrame(store, p)) d++; return d }
 function frameAt(store, shape) {
   const b = pageBounds(shape)
-  let best = null
-  for (const f of store.shapes()) if (isFrame(f) && inside(b, f) && (!best || f.z > best.z)) best = f
+  const w = whole(shape)
+  let best = null, bestDepth = -1
+  for (const f of store.shapes()) {
+    if (!isFrame(f) || f.id === shape.id || (w && inFrame(store, f, shape.id))) continue
+    if (shape.layoutId && f.layoutId === shape.layoutId) continue // cells of one grid sit side by side, never one in another
+    if (!(w ? wholly(b, f) : inside(b, f))) continue
+    const d = depthOf(store, f)
+    if (!best || d > bestDepth || (d === bestDepth && f.z > best.z)) { best = f; bestDepth = d }
+  }
   return best
 }
 
@@ -166,17 +215,20 @@ export function bindFrames(store) {
     try {
       store.transact(() => {
         for (const rec of Object.values(diff.added)) if (isFrame(rec) && rec.frameKey !== rec.id && store.has(rec.id)) adoptCopy(rec)
-        // deleted frames: drop the title, release the members
+        // deleted frames: drop the title; the members join the frame around, if any
         for (const [id, rec] of Object.entries(diff.removed)) {
           if (!isFrame(rec)) continue
           for (const s of store.shapes()) {
             if (s.frameId !== id) continue
             if (s.id === id + '-title') store.remove([s.id])
-            else setFrame(store, s, undefined)
+            else assign(store.get(s.id), true)
           }
         }
-        // moved frames drag their members along, unless those moved in the
-        // same change (a joint drag, or an undo/redo of one)
+        // moved frames drag their members along (and theirs: frames in them),
+        // unless those moved in the same change (a joint drag, or an undo/redo
+        // of one); each shape by the nearest frame around it that moved
+        const moved = new Map()
+        let reassign = false
         for (const [id, [from, to]] of Object.entries(diff.updated)) {
           if (!isFrame(to) || !store.has(id)) continue
           const resized = to.props.w !== from.props.w || to.props.h !== from.props.h
@@ -187,19 +239,28 @@ export function bindFrames(store) {
             const dx = f.x - from.x, dy = f.y - from.y
             const t = store.get(id + '-title')
             if (t && (dx || dy) && !touched.has(t.id)) store.update(t.id, { x: t.x + dx, y: t.y + dy })
-            for (const s of store.shapes()) if (!isFrame(s) && !isTitle(s)) assign(s)
-          } else if (to.x !== from.x || to.y !== from.y) {
-            const dx = to.x - from.x, dy = to.y - from.y
-            for (const s of store.shapes()) if (s.frameId === id && !touched.has(s.id)) store.update(s.id, { x: s.x + dx, y: s.y + dy })
+            reassign = true
+          } else if (to.x !== from.x || to.y !== from.y) moved.set(id, { dx: to.x - from.x, dy: to.y - from.y })
+        }
+        if (moved.size) {
+          for (const s of store.shapes()) {
+            if (touched.has(s.id)) continue
+            for (let f = s.frameId, n = 0; f && n < 64; f = store.get(f)?.frameId, n++) {
+              const d = moved.get(f)
+              if (d) { store.update(s.id, { x: s.x + d.dx, y: s.y + d.dy }); break }
+            }
           }
         }
-        // added or moved shapes join or leave frames by where they land
+        // a resized frame takes in, or lets go of, what is (or is not) inside it now
+        if (reassign) for (const s of store.shapes()) if (!isTitle(s)) assign(s)
+        // added, moved or resized shapes (frames too) join or leave frames by where they land
         for (const id of touched) {
           const s = store.get(id)
-          if (!s || s.typeName !== 'shape' || isFrame(s) || isTitle(s) || handled.has(id)) continue // not an image's asset
+          if (!s || s.typeName !== 'shape' || isTitle(s) || handled.has(id)) continue // not an image's asset
           const [from] = diff.updated[id] || []
-          if (!from || from.x !== s.x || from.y !== s.y || from.rot !== s.rot) assign(s)
+          if (!from || from.x !== s.x || from.y !== s.y || from.rot !== s.rot || (whole(s) && (from.props?.w !== s.props?.w || from.props?.h !== s.props?.h))) assign(s)
         }
+        stack(store)
       })
     } finally { busy = false }
     // a change outside a gesture batch (e.g. a keyboard nudge) left our
@@ -209,16 +270,17 @@ export function bindFrames(store) {
       store.undos.push(composeDiff(store.undos.pop(), ours))
     }
 
-    function assign(s) {
-      if (s.frameless) return // marked to stay out of frames (a layout's area, say)
-      setFrame(store, s, frameAt(store, s)?.id)
+    function assign(s, released = false) {
+      if (!s || !joins(s)) return // marked to stay out of frames
+      const f = frameAt(store, s)?.id
+      if (f !== s.frameId || released) setFrame(store, s, f)
     }
 
     // a frame copy: frameKey still names the original
     function adoptCopy(copy) {
       const id = copy.id, srcId = copy.frameKey
       const src = store.get(srcId)
-      store.put({ ...copy, frameKey: id, z: store.minZ() - 1 })
+      store.put({ ...store.get(id), frameKey: id, z: store.minZ() - 1 }) // as it is now: a frame around it may have adopted it already
       // shapes copied alongside it still point at the original
       const mates = srcId ? Object.values(diff.added).filter((s) => s.frameId === srcId && store.has(s.id)) : []
       let title = null
@@ -227,15 +289,19 @@ export function bindFrames(store) {
         if (isTitle(s)) { title ??= s.props.text; store.remove([s.id]) } // recreated below under the frame's id
         else setFrame(store, store.get(s.id), id)
       }
-      // copied on its own: copy the original's members too, keeping their offsets
-      if (!mates.some((s) => !isTitle(s)) && isFrame(src)) {
-        const dx = copy.x - src.x, dy = copy.y - src.y
-        let z = store.maxZ()
-        for (const s of store.shapes().filter((m) => m.frameId === srcId && !isTitle(m)).sort((a, b) => a.z - b.z)) {
-          store.put({ ...s, id: newId(), frameId: id, x: s.x + dx, y: s.y + dy, z: ++z })
+      // copied on its own: copy the original's members too, keeping their offsets (frames in it with theirs)
+      if (!mates.some((s) => !isTitle(s)) && isFrame(src)) copyMembers(srcId, id, copy.x - src.x, copy.y - src.y)
+      putTitle(store, store.get(id), title ?? ((src && frameTitle(store, srcId)) || 'Frame'))
+    }
+    function copyMembers(srcId, id, dx, dy) {
+      for (const s of store.shapes().filter((m) => m.frameId === srcId && !isTitle(m)).sort((a, b) => a.z - b.z)) {
+        const nid = newId()
+        store.put({ ...s, id: nid, frameId: id, x: s.x + dx, y: s.y + dy, z: store.maxZ() + 1, ...(isFrame(s) ? { frameKey: nid } : {}) })
+        if (isFrame(s)) {
+          putTitle(store, store.get(nid), frameTitle(store, s.id) || 'Frame')
+          copyMembers(s.id, nid, dx, dy)
         }
       }
-      putTitle(store, store.get(id), title ?? ((src && frameTitle(store, srcId)) || 'Frame'))
     }
   }, { source: 'user' })
 }

@@ -4,7 +4,7 @@
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
 import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
-import { createFrame, frameTitle, freeSpot, isFrame, renameFrame } from 'quickdraw-frames'
+import { createFrame, frameTitle, freeSpot, inFrame, isFrame, renameFrame } from 'quickdraw-frames'
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
@@ -67,11 +67,12 @@ export function describeBoard(store) {
     ...(isCell(f) ? { cell: { layout: f.layoutId, c: f.span.c, r: f.span.r, ...(f.span.auto ? { auto: true } : {}) } } : {}), // a bento cell (quickdraw-layouts)
     ...(typeof f.snapshot?.at === 'number' ? { snapshot: { at: f.snapshot.at, by: f.snapshot.by ?? '' } } : {}),
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
+    ...(f.frameId && isFrame(store.get(f.frameId)) ? { frame: f.frameId } : {}), // in another frame
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   // bento grids (quickdraw-layouts): their cells are frames, in order
   const layouts = shapes.filter(isLayout).map((a) => ({
-    id: a.id, type: a.layout.type, cols: a.layout.cols, ...box(a),
+    id: a.id, type: a.layout.type, cols: a.layout.cols, ...box(a), ...(a.frameId && isFrame(store.get(a.frameId)) ? { frame: a.frameId } : {}),
     cells: shapes.filter((f) => isCell(f) && f.layoutId === a.id).sort((p, q) => p.order - q.order).map((f) => f.id),
   })).sort(byPosition)
   const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s) && !isLayout(s)).map((s) => ({
@@ -113,15 +114,21 @@ export function boardToMarkdown(store) {
     out.push(`## Bento grid (${l.cols} columns; id ${l.id})`, '', 'Its cells are frames that pack themselves: widen one (span) and the rest move along.', '',
       ...(l.cells.length ? l.cells.map((id) => `- ${titles.get(id)} (cell; id ${id})`) : ['- (no cells)']), '')
   }
-  for (const f of frames) {
+  // frames in frames: under the frame they are in, a heading level down
+  const framesById = new Map(frames.map((f) => [f.id, f]))
+  const section = (f, depth) => {
     const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback'
       : f.kanban ? `kanban column: ${f.kanban.status} tickets`
       : f.cell ? `bento cell ${f.cell.c}×${f.cell.r}${f.cell.auto ? ', rows follow its contents' : ''} in ${f.cell.layout}`
       : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
-    out.push(`## ${f.title || 'Frame'} (${kind}; id ${f.id})`, '')
+    const inside = f.frame ? `, in ${titles.get(f.frame)}` : ''
+    out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${kind}${inside}; id ${f.id})`, '')
     const members = f.members.map((id) => byId.get(id)).filter(Boolean)
-    out.push(...(members.length ? members.map(line) : ['- (empty)']), '')
+    const children = f.members.map((id) => framesById.get(id)).filter(Boolean)
+    out.push(...(members.length ? members.map(line) : children.length ? [] : ['- (empty)']), ...(members.length || !children.length ? [''] : []))
+    for (const c of children) section(c, depth + 1)
   }
+  for (const f of frames) if (!f.frame || !framesById.has(f.frame)) section(f, 2)
   const loose = items.filter((it) => !it.frame)
   if (loose.length) out.push(frames.length ? '## Outside frames' : '## Shapes', '', ...loose.map(line), '')
   const links = arrows.filter((a) => a.from && a.to)
@@ -183,8 +190,10 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const fb = pageBounds(f)
       // its members, and what lies on it but is not one yet: what this operation
       // put there (membership follows only once the operation is done)
+      // (not the frames it is in: they hold it all)
+      const around = (s) => (isFrame(s) || isLayout(s)) && (() => { const b = pageBounds(s); return b.x <= fb.x && b.y <= fb.y && b.x + b.w >= fb.x + fb.w && b.y + b.h >= fb.y + fb.h })()
       const taken = store.shapes()
-        .filter((s) => s.id !== f.id && !isTitle(s) && !isLayout(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
+        .filter((s) => s.id !== f.id && !isTitle(s) && !isLayout(s) && !around(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
         .map(pageBounds)
       for (let y = fb.y + 24; y + h <= fb.y + fb.h - 16; y += 24) {
         for (let x = fb.x + 24; x + w <= fb.x + fb.w - 16; x += 24) {
@@ -346,7 +355,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         w = Math.max(...bs.map((b) => b.x + b.w)) - x + pad
         h = Math.max(...bs.map((b) => b.y + b.h)) - y + pad
         if (aspect) { if (w / h < aspect) w = h * aspect; else h = w / aspect }
-      } else if (x == null) ({ x, y } = place(w, h + 40))
+      } else if (x == null) ({ x, y } = place(w, h + 40, { inFrame: opts.inFrame })) // in a frame: a frame in it
       const id = createFrame(store, { x, y: opts.around?.length || opts.at ? y : y + 40, w, h, aspect, title: String(title) })
       store.update(id, { agent })
       store.update(id + '-title', { agent })
@@ -441,10 +450,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const f = need(frameId)
       if (!isFrame(f)) throw new Error(`${frameId} is not a frame`)
       const named = ids.map(need)
-      for (const s of named) if (isFrame(s)) throw new Error(`${s.id} is a frame: frames do not nest`)
+      // what is in it (a frame in it counts as itself; what is in that comes along)
       const shapes = [...new Map([...store.shapes().filter((s) => s.frameId === f.id && !isTitle(s)), ...named].map((s) => [s.id, s])).values()]
       if (!shapes.length) return []
       const bs = shapes.map(pageBounds)
+      const listed = new Set(shapes.map((s) => s.id))
+      const along = shapes.filter(isFrame).flatMap((g) => store.shapes().filter((s) => !listed.has(s.id) && inFrame(store, s, g.id))) // frames' titles and members
       const g = { x: Math.min(...bs.map((b) => b.x)), y: Math.min(...bs.map((b) => b.y)) }
       g.w = Math.max(...bs.map((b) => b.x + b.w)) - g.x
       g.h = Math.max(...bs.map((b) => b.y + b.h)) - g.y
@@ -452,10 +463,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const k = Math.min(1, room.w / g.w, room.h / g.h)
       if (k < MIN_FIT) throw new Error(`too much to fit in ${frameId}: it would take shrinking to ${Math.round(k * 100)}% (at least ${MIN_FIT * 100}%); use a bigger frame, or several`)
       const x0 = f.x + PAD + (room.w - g.w * k) / 2, y0 = f.y + PAD + (room.h - g.h * k) / 2 // centred
-      shapes.forEach((s, i) => {
+      const abs = along.map(pageBounds)
+      ;[...shapes, ...along].forEach((s, i) => {
+        const b = i < shapes.length ? bs[i] : abs[i - shapes.length]
         const scaled = k < 1 ? scaleShape(s, k, k) : s
         const nb = pageBounds(scaled)
-        const x = x0 + (bs[i].x - g.x) * k, y = y0 + (bs[i].y - g.y) * k
+        const x = x0 + (b.x - g.x) * k, y = y0 + (b.y - g.y) * k
         store.put({ ...scaled, x: scaled.x + x - nb.x, y: scaled.y + y - nb.y })
       })
       focus = { x: f.x, y: f.y }
@@ -497,7 +510,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // grew outwards, gathered. A frame brings what is in it and its title; a
     // kanban's columns go together. What is in no frame stays where it is.
     tidy({ ids, at, gap = GAP * 2, width = 2400 } = {}) {
-      const frames = ids?.length ? ids.map(need) : store.shapes().filter((s) => isFrame(s) || isLayout(s))
+      const frames = ids?.length ? ids.map(need) : store.shapes().filter((s) => (isFrame(s) || isLayout(s)) && !isFrame(store.get(s.frameId))) // frames in frames come with theirs
       for (const f of frames) if (!isFrame(f) && !isLayout(f)) throw new Error(`${f.id} is not a frame`)
       // what moves together: a frame, all the columns of its kanban, or a bento
       // grid (moved alone: its cells follow it)

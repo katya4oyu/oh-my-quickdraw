@@ -205,3 +205,37 @@ describe('bento layouts', () => {
     expect(store.get(a).span.c).toBe(1)
   })
 })
+
+describe('bento grids and frames in frames', () => {
+  it('a bento grid wholly inside a frame moves with it, cells and all, and stays packed', () => {
+    const store = new Store()
+    bindFrames(store)
+    bindLayouts(store)
+    const outer = createFrame(store, { x: -100, y: -100, w: 1500, h: 900, title: 'Project' })
+    const area = createLayout(store, { x: 0, y: 0, w: 1200, cols: 4, gap: 24 })
+    const a = addCell(store, area)
+    store.put(box('shape:in-a', col(0) + 40, row(0) + 40))
+    expect(store.get(area).frameId).toBe(outer)
+    expect(store.get(a).frameId).toBe(outer)
+    expect(store.get('shape:in-a').frameId).toBe(a)
+    gesture(store, outer, { x: 400, y: -100 })
+    expect(pos(store, area)).toEqual([500, 0])
+    expect(pos(store, a)).toEqual([col(0) + 500, row(0)])
+    expect(pos(store, 'shape:in-a')).toEqual([col(0) + 540, row(0) + 40])
+  })
+
+  it('a frame wholly inside a cell is in it, and moves with the cell when the grid packs again', () => {
+    const { store, area } = setup()
+    const a = addCell(store, area, { c: 2, r: 1 })
+    const inner = createFrame(store, { x: col(0) + 20, y: row(0) + 20, w: 200, h: 150, title: 'Inside' })
+    store.put(box('shape:deep', col(0) + 60, row(0) + 80))
+    expect(store.get(inner).frameId).toBe(a)
+    expect(store.get('shape:deep').frameId).toBe(inner)
+    // a new big cell first: the grid packs again, and the frame in a cell (with its own) comes along
+    const big = addCell(store, area, { c: 4, r: 1 })
+    store.update(big, { order: -1 })
+    const [ax, ay] = pos(store, a)
+    expect(pos(store, inner)).toEqual([ax + 20, ay + 20])
+    expect(pos(store, 'shape:deep')).toEqual([ax + 60, ay + 80])
+  })
+})
