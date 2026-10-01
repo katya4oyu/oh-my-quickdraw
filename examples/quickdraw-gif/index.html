@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — GIF example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>html, body { margin: 0; height: 100%; } #board { position: fixed; inset: 0; }</style>
+  <!-- in your own project, a bundler resolves these from node_modules -->
+  <script type="importmap">
+    { "imports": { "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js" } }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindGifs } from '../../packages/quickdraw-gif/src/index.js'
+
+    const { editor } = createQuickdraw({ container: document.getElementById('board') })
+    bindGifs(editor) // GIFs in view move; drop or paste a GIF file to add one
+
+    // two of the same GIF: the left one moves; the right one keeps still while a note is on it
+    const src = 'data:image/gif;base64,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'
+    editor.store.put({ id: 'asset:bounce', typeName: 'asset', src, w: 160, h: 120 })
+    const gif = (id, x) => editor.store.put({ id, typeName: 'shape', type: 'image', x, y: 120, rot: 0, z: editor.store.maxZ() + 1, props: { w: 320, h: 240, assetId: 'asset:bounce' } })
+    gif('shape:moves', 80)
+    gif('shape:under', 480)
+    editor.store.put({ id: 'shape:on-top', typeName: 'shape', type: 'note', x: 700, y: 280, rot: 0, z: editor.store.maxZ() + 1, props: { text: 'On top: it keeps still', color: 'yellow', size: 'm', font: 'draw', scale: 1 } })
+  </script>
+</body>
+</html>

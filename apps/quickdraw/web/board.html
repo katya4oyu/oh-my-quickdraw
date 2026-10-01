@@ -38,6 +38,7 @@
         "quickdraw-layouts": "/_/quickdraw-layouts/src/index.js",
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
+        "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
         "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js",
         "quickdraw-screenshare": "/_/quickdraw-screenshare/src/index.js",
         "quickdraw-presence": "/_/quickdraw-presence/src/index.js",
@@ -59,6 +60,7 @@
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
+    import { bindGifs } from 'quickdraw-gif'
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
@@ -78,6 +80,7 @@
     bindMarkdownEditing(board.editor) // before syncing, so remote cards draw too
     bindTicketEditing(board.editor)
     const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
+    bindGifs(board.editor) // GIFs move (the canvas alone shows their first frame)
 
     // link previews through the server's /preview proxy (browsers cannot read
     // other sites' HTML); the card keeps what it got, so viewers never contact the site
