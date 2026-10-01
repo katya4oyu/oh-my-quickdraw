@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { edgePoint, fitView, centreOn, wellInside, initials } from '../src/geometry.js'
-import { presenceLabel } from '../src/presence.js'
+import { presenceLabel, presenceParts } from '../src/presence.js'
 
 const box = { w: 800, h: 600 }
 
@@ -68,5 +68,9 @@ describe('labels', () => {
     // an agent, and whose it is
     expect(presenceLabel({ name: 'Claude · app', agent: true, owner: 'ann', agentActivity: 'drawing' })).toBe('Claude · app (ann) · drawing')
     expect(presenceLabel({ name: 'Ann', owner: 'x' })).toBe('Ann')
+    // in parts, for the cursor: the name, and what it is doing on a line of its own
+    expect(presenceParts({ name: 'Claude · app', agent: true, owner: 'ann', agentActivity: 'searching', agentNote: 'tldraw pricing' })).toEqual({ name: 'Claude · app (ann)', status: 'searching the web', note: 'tldraw pricing' })
+    expect(presenceParts({ name: 'Ann', status: 'away' })).toEqual({ name: 'Ann', status: 'away', note: '' })
+    expect(presenceParts({ name: 'Codex', agent: true })).toEqual({ name: 'Codex', status: '', note: '' })
   })
 })

@@ -1,4 +1,5 @@
 import { pageBounds } from '@quickdrawjs/core'
+import { bindMentionPicker } from './mention-picker.js'
 import { textOf, undoDiff } from './ops.js'
 
 /** Build the common request shape from a panel, selection, or committed note. */
@@ -880,6 +881,8 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
   offs.push(editor.on('change', () => { if (!panel.hidden) renderFoot() })) // feedback comes and goes with the board
   offs.push(editor.on('camera', () => { if (Date.now() > panning) following = null })) // the person took the view
   offs.push(editor.on('edit', onEdit))
+  // "@" at the start of a note: the agents this person may ask, to write one's full name
+  offs.push(bindMentionPicker({ editor, container, agents: () => getAgents().filter((a) => !host.cannotAsk?.(a)) }))
   offs.push(editor.on('selection', () => {
     if (panel.hidden) return
     pendingShapeIds = editor.selection.size ? [...editor.selection] : null

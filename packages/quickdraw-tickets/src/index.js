@@ -1,9 +1,11 @@
 // Tickets for agents: a card people write ("do this") and an agent takes,
 // works on and closes. A custom shape type ('ticket') drawn on the canvas, so
 // it selects, moves, exports and follows the theme like any other shape.
-// Record: { type: 'ticket', props: { title, body, to, from, status, by, result, created, w } }
+// Record: { type: 'ticket', props: { title, body, to, from, status, by, result, created, w, work } }
 // - to: the agent it is for (its name), or null for any agent
 // - status: todo | doing | done | failed; by: who took it; result: a word on how it went
+// - work (optional): an agent's own ticket for a request it works on — { request,
+//   area }: the request, and the part of the board it works in (others keep out)
 // The height follows the text; corner-resizing changes the width.
 //
 // A kanban (kanban.js) is three frames, Todo / Doing / Done, marked `kanban`:
@@ -196,6 +198,8 @@ export function createTicket(store, { x, y, w = W, title = '', body = '', to = n
   return id
 }
 
+const isRect = (r) => r && typeof r === 'object' && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite(r[k])) && r.w >= 0 && r.h >= 0
+const validWork = (w) => typeof w === 'object' && optionalString(w.request, 200) && (w.area == null || isRect(w.area))
 const optionalString = (v, max) => v == null || (typeof v === 'string' && v.length <= max)
 
 // For quickdraw-import's `types` option: { types: { ticket: validateTicket } }.
@@ -209,6 +213,7 @@ export function validateTicket(shape) {
   if (!optionalString(p.result, MAX_BODY)) return 'bad props.result'
   if (p.created != null && !Number.isFinite(p.created)) return 'bad props.created'
   if (!Number.isFinite(p.w) || p.w <= 0 || p.w > MAX_W) return 'bad props.w'
+  if (p.work != null && !validWork(p.work)) return 'bad props.work'
   return null
 }
 
@@ -218,8 +223,17 @@ export function describeTicket(s) {
   return {
     id: s.id, title: p.title, ...(p.body ? { body: p.body } : {}), to: p.to ?? null, ...(p.from ? { from: p.from } : {}),
     status: p.status, by: p.by ?? null, ...(p.result ? { result: p.result } : {}), ...(p.created ? { created: p.created } : {}),
-    ...(s.frameId ? { frame: s.frameId } : {}),
+    ...(s.frameId ? { frame: s.frameId } : {}), ...(p.work ? { work: p.work } : {}),
   }
+}
+
+// What agents are working on now, and where: their own tickets for requests
+// (`work`) still `doing`, with the part of the board each works in. except:
+// an agent's name, left out (its own work).
+export function workInProgress(store, { except } = {}) {
+  return listTickets(store, { status: 'doing' })
+    .filter((s) => s.props.work?.area && s.props.by && !(except != null && sameName(s.props.by, except)))
+    .map((s) => ({ id: s.id, by: s.props.by, title: s.props.title, area: s.props.work.area, request: s.props.work.request ?? null }))
 }
 
 const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase()

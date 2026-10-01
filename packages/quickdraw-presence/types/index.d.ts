@@ -67,6 +67,8 @@ export function createPresence(options: {
   key?: string
 }): PresenceHandle
 /** "Ann · reviewing", "Codex · working" */
+/** A label in parts: the name (an agent's with whose it is), the status or what the agent is doing, and on what ('' when none). */
+export function presenceParts(p: Partial<Presence> & { name: string }): { name: string, status: string, note: string }
 export function presenceLabel(p: Partial<Presence> & { name: string }): string
 /** what each activity says on the label */
 export const ACTIVITIES: Record<AgentActivity, string>

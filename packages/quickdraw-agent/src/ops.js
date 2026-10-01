@@ -80,7 +80,7 @@ export function describeBoard(store) {
     // who made it (an agent, or a person whose page marked it), and who changed it last if not them
     ...((s.made?.by ?? s.agent?.name) ? { by: s.made?.by ?? s.agent.name } : {}),
     ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
-    ...(s.type === TICKET ? { ticket: { status: s.props.status, to: s.props.to ?? null, by: s.props.by ?? null, ...(s.props.result ? { result: s.props.result } : {}) } } : {}),
+    ...(s.type === TICKET ? { ticket: { status: s.props.status, to: s.props.to ?? null, by: s.props.by ?? null, ...(s.props.result ? { result: s.props.result } : {}), ...(s.props.work?.area ? { area: s.props.work.area } : {}) } } : {}),
   })).sort(byPosition)
   const arrows = shapes.filter(isLine).map((s) => {
     const from = shapeAt(solid, s.x, s.y), to = shapeAt(solid, s.x + s.props.dx, s.y + s.props.dy)
@@ -99,7 +99,9 @@ export function boardToMarkdown(store) {
     if (it.ticket) {
       const t = it.ticket
       const who = t.status === 'todo' ? ` → ${t.to ?? 'any agent'}` : t.by ? `, ${t.by}` : ''
-      return `- [ticket, ${t.status}${who}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
+      // an agent at work on a request: where (others keep out)
+      const where = t.status === 'doing' && t.area ? `, working in x ${Math.round(t.area.x)}, y ${Math.round(t.area.y)}, ${Math.round(t.area.w)} × ${Math.round(t.area.h)}` : ''
+      return `- [ticket, ${t.status}${who}${where}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
     }
     if (it.type === MARKDOWN) return `- ${tag}(id ${it.id})\n` + text.split('\n').map((l) => '  > ' + l).join('\n')
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`

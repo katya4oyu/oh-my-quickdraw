@@ -27,7 +27,14 @@ const STYLE = `
 .qdp-cursor{position:absolute;left:0;top:0;font:600 11px system-ui,-apple-system,sans-serif;transition:transform 80ms linear}
 .qdp-cursor svg{display:block}
 .qdp-cursor span,.qdp-edge span{position:absolute;padding:1px 6px;border-radius:6px;color:#fff;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
-.qdp-cursor span{left:14px;top:16px}
+.qdp-cursor span{left:14px;top:16px;max-width:200px}
+/* what it is doing, under its name: a line of its own, so a long name never hides it */
+.qdp-cursor em,.qdp-edge em{position:absolute;left:14px;top:34px;padding:1px 6px;border-radius:6px;border:1.5px solid;background:var(--qd-pop-bg,#fff);
+  font:600 11px system-ui,-apple-system,sans-serif;font-style:normal;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
+.qdp-edge em{top:9px;left:12px;max-width:180px}
+.qdp-cursor.flip span,.qdp-cursor.flip em{left:auto;right:4px} /* near the right edge: to its left */
+.qdp-edge.flip em{left:auto;right:12px}
+.qdp-cursor em small{font-weight:400;font-size:11px;color:var(--qd-ink-soft,#666)}
 /* how an agent's cursor moves for what it is doing: it mulls in a small circle, sweeps
    as it reads, glances about as it searches, nods while busy, bobs while it waits
    for you, and gives a little hop when done; drawing is its own movement */
@@ -48,7 +55,7 @@ const STYLE = `
 .qdp-edge{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;font:600 11px system-ui,-apple-system,sans-serif}
 .qdp-edge i{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-sizing:border-box}
 .qdp-edge b{position:absolute;left:-4px;top:-4px;width:8px;height:8px;clip-path:polygon(0 0,100% 50%,0 100%)}
-.qdp-edge span{top:-9px;left:12px}
+.qdp-edge span{top:-9px;left:12px;max-width:180px}
 .qdp-edge.flip span{left:auto;right:12px}
 .qdp-frame{position:absolute;inset:0;border:3px solid;border-radius:2px;pointer-events:none}
 .qdp-row{position:absolute;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:2}
@@ -89,12 +96,19 @@ const localStore = {
   set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} },
 }
 
-/** What someone's label says: their name, and their status or what the agent is doing (and on what). */
-export function presenceLabel(p) {
+/**
+ * What someone's label says, in parts: their name (an agent's: and whose it is,
+ * as the host says), their status or what the agent is doing, and on what.
+ */
+export function presenceParts(p) {
   const act = p.agent && ACTIVITIES[p.agentActivity]
-  const status = act ? act + (p.agentNote ? `: ${p.agentNote}` : '') : p.agent ? AGENT_STATUS[p.agentStatus] : p.status
-  const name = p.agent && p.owner ? `${p.name} (${p.owner})` : p.name // an agent: and whose it is, as the host says
-  return status ? `${name} · ${status}` : name
+  const status = act || (p.agent ? AGENT_STATUS[p.agentStatus] : p.status) || ''
+  return { name: p.agent && p.owner ? `${p.name} (${p.owner})` : p.name, status, note: act && p.agentNote ? p.agentNote : '' }
+}
+/** The same, in a line. */
+export function presenceLabel(p) {
+  const { name, status, note } = presenceParts(p)
+  return status ? `${name} · ${status}${note ? `: ${note}` : ''}` : name
 }
 
 /** Live presence over a board; the host carries it (see above). */
@@ -177,9 +191,9 @@ export function createPresence({ editor, container = editor.container, host, def
     }
     if (!p) {
       const cursor = el('div', 'qdp-cursor')
-      cursor.innerHTML = ARROW + '<span></span>'
+      cursor.innerHTML = ARROW + '<span></span><em><b></b> <small></small></em>'
       const edge = el('button', 'qdp-edge')
-      edge.append(el('i'), el('b'), el('span'))
+      edge.append(el('i'), el('b'), el('span'), el('em'))
       edge.onclick = () => jumpTo(m.id)
       layer.append(cursor, edge)
       peers.set(m.id, p = { id: m.id, cursor, edge })
@@ -196,14 +210,23 @@ export function createPresence({ editor, container = editor.container, host, def
     const act = p.agentActivity || ''
     if (p.cursor.dataset.act !== act) p.cursor.dataset.act = act
     p.cursor.querySelector('path').setAttribute('fill', p.color)
-    const label = presenceLabel(p)
-    for (const span of [p.cursor.querySelector('span'), p.edge.querySelector('span')]) {
-      span.textContent = label
-      span.style.background = p.color
-    }
+    // by the cursor: its name, and under it what it is doing (and on what), in its colour
+    const { name, status, note } = presenceParts(p)
+    const tag = p.cursor.querySelector('span'), doing = p.cursor.querySelector('em')
+    tag.textContent = p.agent ? p.name : name // whose agent it is: in the row and at the edge
+    tag.style.background = doing.style.borderColor = doing.style.color = p.color
+    doing.hidden = !status
+    doing.querySelector('b').textContent = status
+    doing.querySelector('small').textContent = note
+    // at the edge of the screen: the same, without the detail
+    const edgeTag = p.edge.querySelector('span'), edgeDoing = p.edge.querySelector('em')
+    edgeTag.textContent = tag.textContent
+    edgeTag.style.background = edgeDoing.style.borderColor = edgeDoing.style.color = p.color
+    edgeDoing.hidden = !status
+    edgeDoing.textContent = status
     p.edge.querySelector('i').style.background = p.color
     p.edge.querySelector('b').style.background = p.color
-    p.edge.title = `Go to ${p.name}`
+    p.edge.title = `Go to ${presenceLabel(p)}`
     place(p)
     renderRow()
     if (following === p.id) keepUp(p)
@@ -216,7 +239,10 @@ export function createPresence({ editor, container = editor.container, host, def
     const edge = s && edgePoint({ w, h }, s)
     p.cursor.hidden = hidden || !!edge
     p.edge.hidden = !edge
-    if (s && !edge) p.cursor.style.transform = `translate(${s.x}px, ${s.y}px)`
+    if (s && !edge) {
+      p.cursor.style.transform = `translate(${s.x}px, ${s.y}px)`
+      p.cursor.classList.toggle('flip', s.x > w - 270) // its labels, kept on the screen
+    }
     if (edge) {
       p.edge.style.transform = `translate(${edge.x}px, ${edge.y}px)`
       p.edge.querySelector('b').style.transform = `rotate(${edge.angle}rad) translateX(10px)`

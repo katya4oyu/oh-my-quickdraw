@@ -105,6 +105,26 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
     const cut = <T>(list: T[]) => (list.length > 30 ? [...list.slice(0, 30), `…and ${list.length - 30} more`] : list)
     return { added: cut(added), changed: cut(changed), removed: cut(removed) }
   }
+  // what a command did, in a line for the request's thread: people see it work, as with Codex's own words
+  function didText(diff: Diff): string {
+    const kind = (s: BoardRecord) => String(said(s).type ?? 'shape')
+    const count = (list: BoardRecord[]) => {
+      const n = new Map<string, number>()
+      for (const s of list) n.set(kind(s), (n.get(kind(s)) ?? 0) + 1)
+      return [...n].map(([k, c]) => `${c} ${k}${c === 1 ? '' : 's'}`).join(', ')
+    }
+    const added = (Object.values(diff.added) as BoardRecord[]).filter(isShape)
+    const changed = Object.keys(diff.updated).map((id) => store.get(id) as BoardRecord | undefined).filter((s): s is BoardRecord => !!s && isShape(s))
+    const removed = (Object.values(diff.removed) as BoardRecord[]).filter(isShape)
+    const one = (s: BoardRecord) => { const t = said(s).text; return `${kind(s)}${t ? ` "${clip(t, 40)}"` : ''}` }
+    const parts = [
+      added.length ? `added ${added.length === 1 ? one(added[0]) : count(added)}` : '',
+      changed.length ? `changed ${changed.length === 1 ? one(changed[0]) : count(changed)}` : '',
+      removed.length ? `removed ${count(removed)}` : '',
+    ].filter(Boolean)
+    const text = parts.join('; ')
+    return text && text[0].toUpperCase() + text.slice(1)
+  }
   // its own work is not news
   const saw = (diff: Diff) => {
     for (const id of [...Object.keys(diff.added), ...Object.keys(diff.updated)]) { const s = store.get(id) as BoardRecord | undefined; if (s && isShape(s)) seen.set(id, summary(s)) }
@@ -268,7 +288,14 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false }
       await runCommand({
         board, url, boardKey: url, session: true,
         // what has no place goes where people look: the request's view (BoardAgent's), else by the people, else where it last worked
-        operate: async (make) => { const done = await agent.operate(request, make, { prefer: (request ? undefined : crowd() ?? lastSpot) ?? undefined }); saw(done.diff); if (done.focus) lastSpot = done.focus; return done },
+        operate: async (make) => {
+          const done = await agent.operate(request, make, { prefer: (request ? undefined : crowd() ?? lastSpot) ?? undefined })
+          saw(done.diff)
+          if (done.focus) lastSpot = done.focus
+          const did = request && didText(done.diff)
+          if (did) agent.emit(request, { type: 'progress', text: did })
+          return done
+        },
         stdin: async () => stdin ?? '',
       }, [...argv, '--name', name], out, { signal })
     } finally { settle(cmd === 'done' || cmd === 'fail') }

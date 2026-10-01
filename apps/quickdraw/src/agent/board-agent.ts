@@ -8,10 +8,16 @@
 // People watch it work: an operation is made on a copy of the board first
 // (so it is checked, all or nothing, and laid out as one), then put on the
 // board a piece at a time with the cursor on each — one undo, as before.
+//
+// Others see what it works on: at its first change to the board for a request
+// it puts up a ticket of its own (quickdraw-tickets, `doing`, with the request
+// and its work area), closed when the request is done. Agents keep out of each
+// other's work: a change that reaches into another agent's work area is refused.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { bindLayouts, settled } from 'quickdraw-layouts'
-import { applySteps, BOARD_TOOLS, freeSpot, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { applySteps, BOARD_TOOLS, freeSpot, runOp, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
+import { isColumn, isTicket, kanbanColumn, setTicketStatus, workInProgress } from 'quickdraw-tickets'
 import { snapshotFeedback } from 'quickdraw-screenshare'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -92,6 +98,13 @@ const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y
 export type Activity ='thinking' | 'reading' | 'searching' | 'running' | 'editing' | 'imaging' | 'drawing' | 'waiting' | 'done' | 'available'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
+const sameName = (a: unknown, b: unknown) => String(a).toLowerCase() === String(b).toLowerCase()
+const union = (a: Rect | undefined, b: Rect): Rect => {
+  if (!a) return { ...b }
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y }
+}
+const firstLine = (text: string, max = 200) => { const l = text.trim().split('\n')[0].trim(); return l.length > max ? l.slice(0, max - 1) + '…' : l }
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
 
 // the board as it is, to try an operation on
@@ -203,6 +216,11 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   // per request: its work area, and what was in it after its last step (to tell what people did since)
   const work = new Map<string, { area: Rect, title?: string, seen: Map<string, string>, moved?: boolean }>()
   const images = new Map<string, { file: string, transparent: boolean }[]>() // per request, in order
+  // per request: its own ticket (made at its first change to the board), what it said last,
+  // and what it changed with no work area (others keep out of that too)
+  const tickets = new Map<string, string>()
+  const lastSaid = new Map<string, string>()
+  const reach = new Map<string, Rect>()
   const holdCursor = () => clearTimeout(hideTimer)
   // the middle of what the person who asked was looking at: where what has no place goes
   const viewOf = (requestId: string | null) => {
@@ -244,6 +262,99 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
 
   function emit(requestId: string, event: Emitted) {
     relay.send({ kind: 'event', event: { ...event, requestId } })
+    if (event.type === 'message' && typeof event.text === 'string' && event.text.trim()) lastSaid.set(requestId, event.text)
+    if (event.type === 'area') noteArea(requestId)
+    // its ticket for the request closes with it
+    if (event.type === 'done') closeTicket(requestId, 'done', typeof event.text === 'string' && event.text ? event.text : lastSaid.get(requestId))
+    if (event.type === 'error') closeTicket(requestId, 'failed', typeof event.message === 'string' ? event.message : undefined)
+  }
+
+  // ---- its own ticket for a request: what it works on, and where, for everyone to see ----
+  const myTicket = (requestId: string) => {
+    const id = tickets.get(requestId)
+    const t = id ? board.store.get(id) : undefined
+    return t && isTicket(t) ? t as BoardRecord & { props: { status: string, work?: { area?: Rect } } } : undefined
+  }
+  function closeTicket(requestId: string, status: 'done' | 'failed', result?: string) {
+    const t = myTicket(requestId)
+    if (!t || t.props.status !== 'doing') return // a person may have moved it on already
+    setTicketStatus(board.store as never, t.id, status, { result: result ? firstLine(result) : null })
+  }
+  // where it works for the request, on its ticket: its work area, else what it changed
+  function noteArea(requestId: string) {
+    const t = myTicket(requestId)
+    const area = work.get(requestId)?.area ?? reach.get(requestId)
+    if (!t || !area) return
+    const was = t.props.work?.area
+    if (was && was.x === area.x && was.y === area.y && was.w === area.w && was.h === area.h) return
+    board.store.update(t.id, { props: { ...t.props, work: { request: requestId, area: { ...area } } } } as never)
+  }
+  /**
+   * Puts up its ticket for a request on `copy` (where the operation it is about
+   * was just made): at the top of the request's work area, just above what it
+   * adds (`top`: where that starts), as wide as the area allows; else where
+   * there is room in the area (or, in a board with a kanban, in its Doing
+   * column). Returns what to put on the board first; null when it has one
+   * already (a done one is open again: the request goes on).
+   */
+  function declare(requestId: string, copy: StoreType, area: Rect | undefined, top?: { x: number, y: number }, inside = false): { diff: Diff, id: string, area?: Rect } | null {
+    const had = myTicket(requestId)
+    if (had) {
+      if (had.props.status !== 'doing') setTicketStatus(board.store as never, had.id, 'doing', { by: me.name, result: null })
+      return null
+    }
+    const request = requests.get(requestId)
+    const [title = '', ...rest] = (request?.text ?? '').trim().split('\n')
+    // the board's first kanban (top-left first), if it has one
+    const column = copy.shapes().filter((f) => isColumn(f)).sort((a, b) => a.y - b.y || a.x - b.x)[0] as unknown as { kanban: { id: string } } | undefined
+    const doing = column && kanbanColumn(copy as never, column.kanban.id, 'doing') as { id: string } | null
+    const what = { title: firstLine(title, 120) || 'A request', body: rest.join('\n').trim().slice(0, 2000) }
+    let place: { inFrame?: string, at?: { x: number, y: number }, w?: number } = doing ? { inFrame: doing.id } : {}
+    if (!doing && area) {
+      const w = Math.max(160, Math.min(240, area.w - 48))
+      const h = pageBounds({ type: 'ticket', x: 0, y: 0, rot: 0, props: { ...what, w, status: 'doing' } } as never).h
+      const at = inside ? { x: Math.round(area.x + 24), y: Math.round(area.y + 44) } : { x: Math.round(top?.x ?? area.x + 24), y: Math.round((top?.y ?? area.y + 44) - h - 24) }
+      const free = !copy.shapes().some((s) => isShape(s as BoardRecord) && overlaps(pageBounds(s as never), { x: at.x - 12, y: at.y - 12, w: w + 24, h: h + 24 }))
+      place = free ? { at, w } : { w }
+    }
+    const made = runOp(copy as never, me.name, (ops: any) => {
+      const id = ops.ticket(what.title, { body: what.body, to: me.name }, place)
+      ops.status(id, 'doing')
+      return id
+    }, { area, prefer: area ? undefined : viewOf(requestId) }) as { diff: Diff, result: string, area?: Rect }
+    const id = made.result
+    if (request?.from) (made.diff.added[id] as any).props.from = request.from // who asked, when another agent did
+    tickets.set(requestId, id)
+    return { diff: made.diff, id, area: made.area }
+  }
+
+  // ---- keeping out of other agents' work ----
+  const present = (name: string) => [...relay.peers().values()].some((p) => p.agent && sameName(p.name, name))
+  const moved = (a: BoardRecord, b: BoardRecord) => (a as any).x !== (b as any).x || (a as any).y !== (b as any).y || JSON.stringify((a as any).props) !== JSON.stringify((b as any).props)
+  // the parts of the board an operation touches: what it adds, and what it changes or removes, before and after
+  function touched(diff: Diff, copy: StoreType): Rect[] {
+    const rects: Rect[] = []
+    for (const id of Object.keys(diff.added)) { const s = copy.get(id) as BoardRecord | undefined; if (s && isShape(s)) rects.push(pageBounds(s as never)) }
+    for (const [id, [a]] of Object.entries(diff.updated)) {
+      const b = copy.get(id) as BoardRecord | undefined
+      if (!b || !isShape(b) || !moved(a as BoardRecord, b)) continue
+      rects.push(pageBounds(a as never), pageBounds(b as never))
+    }
+    for (const r of Object.values(diff.removed)) if (isShape(r as BoardRecord)) rects.push(pageBounds(r as never))
+    return rects
+  }
+  // refuses an operation that reaches into the work area of another agent at work on the board
+  // (inside its margin: an area takes in a little room around what is in it, maybe over a neighbour's edge)
+  function keepOut(rects: Rect[]) {
+    if (!rects.length) return
+    const M = 24
+    for (const w of workInProgress(board.store as never, { except: me.name }) as { id: string, by: string, title: string, area: Rect }[]) {
+      const inner = { x: w.area.x + M, y: w.area.y + M, w: w.area.w - 2 * M, h: w.area.h - 2 * M }
+      if (!present(w.by) || inner.w <= 0 || inner.h <= 0 || !rects.some((r) => overlaps(r, inner))) continue
+      const a = w.area
+      throw new Error(`${w.by} is working there: "${w.title}" (its ticket ${w.id}, x ${Math.round(a.x)}, y ${Math.round(a.y)}, ${Math.round(a.w)} × ${Math.round(a.h)}). `
+        + `Agents keep out of each other's work: work somewhere else, wait until its ticket is done, or ask it in a note ("@${w.by} …").`)
+    }
   }
 
   // what the model gets back from a tool, with what people did in its work area since its last step
@@ -451,6 +562,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
     close: async () => {
       clearTimeout(hideTimer)
+      for (const requestId of tickets.keys()) closeTicket(requestId, 'failed', `${me.name} left the board before it was done.`)
       await renderer?.close()
       if (files) rmSync(files, { recursive: true, force: true })
       return board.close()
@@ -463,20 +575,56 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     return JSON.stringify({ op: r.op, ids: r.ids, ...(grew ? { area: grew } : {}) })
   }
   async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T) {
-    const copy = copyOf(board.store)
-    const r = make(copy)
+    let copy = copyOf(board.store)
+    let r = make(copy)
+    // a work area marked out already, and no ticket yet: its ticket at the top of it, then the operation again around it
+    let declared: ReturnType<typeof declare> = null
+    const marked = requestId ? work.get(requestId) : undefined
+    if (requestId && marked && !tickets.has(requestId) && (touched(r.diff, copy).length || Object.keys(r.diff.removed).length)) {
+      keepOut(touched(r.diff, copy)) // refused before it puts anything up
+      copy = copyOf(board.store)
+      declared = declare(requestId, copy, marked.area, undefined, true)
+      r = make(copy)
+    }
+    const rects = touched(r.diff, copy)
+    keepOut(rects)
     holdCursor()
-    const w = requestId ? work.get(requestId) : undefined
-    // the area grows to take in what it added (when full, or put beside it): people see so before it lands
-    const next = w && takeIn(r.area ?? w.area, Object.values(r.diff.added) as BoardRecord[])
-    const grew = w && next && (next.x !== w.area.x || next.y !== w.area.y || next.w !== w.area.w || next.h !== w.area.h)
-    if (grew) { w.area = next!; emit(requestId!, { type: 'area', area: w.area, ...(w.title ? { title: w.title } : {}) }) }
+    const added = Object.values(r.diff.added) as BoardRecord[]
+    const changes = rects.length > 0 || Object.keys(r.diff.removed).length > 0
+    let w = requestId ? work.get(requestId) : undefined
+    let fresh = false
+    // its first shapes with no work area: where it put them is its work area from now on
+    if (requestId && !w && added.some(isShape)) {
+      const first = rects[0]
+      w = { area: takeIn({ x: first.x, y: first.y, w: 0, h: 0 }, added), seen: new Map() }
+      work.set(requestId, w)
+      fresh = true
+    }
+    // before its first change for a request, its ticket: what it works on, and where (put up first, so people see it)
+    let ticket: BoardRecord | undefined
+    if (requestId && changes) {
+      if (!w) for (const b of rects) reach.set(requestId, union(reach.get(requestId), b))
+      // where what it adds starts: its ticket goes just above
+      const tops = Object.keys(r.diff.added).map((id) => copy.get(id) as BoardRecord | undefined).filter((x): x is BoardRecord => !!x && isShape(x)).map((x) => pageBounds(x as never))
+      const top = tops.length ? { x: Math.min(...tops.map((b) => b.x)), y: Math.min(...tops.map((b) => b.y)) } : undefined
+      declared ??= declare(requestId, copy, w ? (r.area ?? w.area) : undefined, top)
+      if (declared) {
+        board.store.applyDiff(declared.diff, 'user')
+        const t = copy.get(declared.id) as BoardRecord & { frameId?: string }
+        if (!(t.frameId && isColumn(copy.get(t.frameId)))) ticket = t // in a kanban's column, it is not in the work area
+      }
+    }
+    // the area grows to take in what it added (when full, or put beside it), and its ticket: people see so before it lands
+    const next = w && takeIn(r.area ?? w.area, ticket ? [...added, ticket] : added)
+    const grew = w && next && (fresh || next.x !== w.area.x || next.y !== w.area.y || next.w !== w.area.w || next.h !== w.area.h)
+    if (grew) { w!.area = next!; emit(requestId!, { type: 'area', area: w!.area, ...(w!.title ? { title: w!.title } : {}) }) }
+    if (requestId) noteArea(requestId)
     const ids = (r as { ids?: string[] }).ids ?? [...new Set([(r as { result?: unknown }).result].flat(Infinity).filter((v): v is string => typeof v === 'string'))]
     if (requestId) emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids }) // first, so the panel can take the view there
     await putLive(board.store, r.diff, copy, board.cursor)
     announceMentions(relay, r.diff) // a note to another agent ("@Claude …") asks it
     if (w) w.seen = snapshot(w.area) // its own work is not news
-    return { r, grew: grew ? w!.area : undefined }
+    return { r, grew: grew && !fresh ? w!.area : undefined }
   }
 
   async function imageStep(requestId: string, args: Record<string, any>) {
