@@ -30,6 +30,30 @@ describe('the CLI on a file board', () => {
     expect(JSON.parse(readFileSync(file, 'utf8')).shapes).toHaveLength(0)
   })
 
+  it('makes a bento grid, fills a cell until it grows, and resizes cells', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-bento-'))
+    const file = join(dir, 'board.json')
+    process.env.QUICKDRAW_LOG = join(dir, 'log.jsonl')
+    const run = async (...args: string[]) => { let s = ''; await main([...args, '--file', file, '--name', 'Claude'], (o) => { s += o }); return JSON.parse(s.startsWith('{') ? s : '{}') }
+    const shapes = () => Object.fromEntries((JSON.parse(readFileSync(file, 'utf8')).shapes as { id: string }[]).map((r) => [r.id, r as Record<string, any>]))
+    const { ids: [grid] } = await run('bento', '--cols', '2', '--width', '600', '--at', '0,0')
+    const { ids: [a] } = await run('frame', 'Ideas', '--in', grid, '--span', '2x1')
+    const { ids: [b] } = await run('frame', 'Next', '--in', grid)
+    expect(shapes()[a]).toMatchObject({ layoutId: grid, span: { c: 2, r: 1 } })
+    const bY = shapes()[b].y
+    for (let i = 0; i < 5; i++) await run('note', `idea ${i}`, '--in', a)
+    expect(shapes()[a].span.r).toBeGreaterThan(1) // grew a row rather than refusing
+    expect(shapes()[b].y).toBeGreaterThan(bY) // and the cell after it moved down
+    await run('span', b, '1x2')
+    expect(shapes()[b].span).toMatchObject({ c: 1, r: 2 })
+    await run('columns', grid, '3')
+    expect(shapes()[grid].layout.cols).toBe(3)
+    let md = ''
+    await main(['read', '--file', file], (o) => { md += o })
+    expect(md).toMatch(/## Bento grid \(3 columns/)
+    expect(md).toMatch(/## Ideas \(bento cell 2×\d/)
+  })
+
   it('lints the layout, all of it or a frame', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'qd-lint-'))
     const file = join(dir, 'board.json')

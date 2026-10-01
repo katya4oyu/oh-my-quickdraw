@@ -8,6 +8,7 @@ import { createFrame, frameTitle, freeSpot, isFrame, renameFrame } from 'quickdr
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
 
@@ -62,11 +63,17 @@ export function describeBoard(store) {
   const stills = new Set(shapes.filter((f) => isFrame(f) && f.snapshot?.imageId).map((f) => f.snapshot.imageId))
   const frames = shapes.filter(isFrame).map((f) => ({
     id: f.id, title: frameTitle(store, f.id), ...(f.aspect ? { aspect: f.aspect } : {}), ...box(f),
+    ...(isCell(f) ? { cell: { layout: f.layoutId, c: f.span.c, r: f.span.r, ...(f.span.auto ? { auto: true } : {}) } } : {}), // a bento cell (quickdraw-layouts)
     ...(typeof f.snapshot?.at === 'number' ? { snapshot: { at: f.snapshot.at, by: f.snapshot.by ?? '' } } : {}),
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
-  const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s)).map((s) => ({
+  // bento grids (quickdraw-layouts): their cells are frames, in order
+  const layouts = shapes.filter(isLayout).map((a) => ({
+    id: a.id, type: a.layout.type, cols: a.layout.cols, ...box(a),
+    cells: shapes.filter((f) => isCell(f) && f.layoutId === a.id).sort((p, q) => p.order - q.order).map((f) => f.id),
+  })).sort(byPosition)
+  const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s) && !isLayout(s)).map((s) => ({
     id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
@@ -79,12 +86,12 @@ export function describeBoard(store) {
     const from = shapeAt(solid, s.x, s.y), to = shapeAt(solid, s.x + s.props.dx, s.y + s.props.dy)
     return { id: s.id, type: s.type, ...(from ? { from: from.id } : {}), ...(to ? { to: to.id } : {}) }
   })
-  return { frames, items, arrows }
+  return { ...(layouts.length ? { layouts } : {}), frames, items, arrows }
 }
 
 // The board as a Markdown outline, for reading and summarizing.
 export function boardToMarkdown(store) {
-  const { frames, items, arrows } = describeBoard(store)
+  const { layouts = [], frames, items, arrows } = describeBoard(store)
   const byId = new Map(items.map((it) => [it.id, it]))
   const line = (it) => {
     const text = String(it.text ?? '').trim()
@@ -100,9 +107,16 @@ export function boardToMarkdown(store) {
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`
   }
   const out = ['# Board', '']
+  const titles = new Map(frames.map((f) => [f.id, f.title || 'Frame']))
+  for (const l of layouts) {
+    out.push(`## Bento grid (${l.cols} columns; id ${l.id})`, '', 'Its cells are frames that pack themselves: widen one (span) and the rest move along.', '',
+      ...(l.cells.length ? l.cells.map((id) => `- ${titles.get(id)} (cell; id ${id})`) : ['- (no cells)']), '')
+  }
   for (const f of frames) {
     const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback'
-      : f.kanban ? `kanban column: ${f.kanban.status} tickets` : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
+      : f.kanban ? `kanban column: ${f.kanban.status} tickets`
+      : f.cell ? `bento cell ${f.cell.c}×${f.cell.r}${f.cell.auto ? ', rows follow its contents' : ''} in ${f.cell.layout}`
+      : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
     out.push(`## ${f.title || 'Frame'} (${kind}; id ${f.id})`, '')
     const members = f.members.map((id) => byId.get(id)).filter(Boolean)
     out.push(...(members.length ? members.map(line) : ['- (empty)']), '')
@@ -169,7 +183,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       // its members, and what lies on it but is not one yet: what this operation
       // put there (membership follows only once the operation is done)
       const taken = store.shapes()
-        .filter((s) => s.id !== f.id && !isTitle(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
+        .filter((s) => s.id !== f.id && !isTitle(s) && !isLayout(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
         .map(pageBounds)
       for (let y = fb.y + 24; y + h <= fb.y + fb.h - 16; y += 24) {
         for (let x = fb.x + 24; x + w <= fb.x + fb.w - 16; x += 24) {
@@ -178,6 +192,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         }
       }
       // full: never grown (its size may be the point, like a 16:9 slide) nor piled up
+      // a bento cell makes room: a row more (the cells after it move along)
+      if (isCell(f)) {
+        if (f.span.r >= 20) throw new Error(`cell ${inFrame} is full at 20 rows: put the rest in another cell`)
+        setSpan(store, f.id, { r: f.span.r + 1 })
+        return place(w, h, { inFrame })
+      }
       throw new Error(`frame ${inFrame} is full: add without --in (it goes in free space), then fit ${inFrame} ID… shrinks everything to fit`)
     }
     if (area) return inArea(w, h)
@@ -228,9 +248,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
   function add(type, props, w, h, opts) {
     const at = opts.at ?? place(w, h, opts)
     const id = newId()
-    put({ id, type, x: at.x, y: at.y, props })
+    put({ id, type, x: at.x, y: at.y, props, ...member(opts) })
     return id
   }
+  // put in a frame: a member at once, so a cell that grows later in the same
+  // operation (and moves the cells after it) takes it along
+  const member = (opts) => (opts.inFrame && !opts.at ? { frameId: opts.inFrame } : {})
 
   const ops = {
     note(text, opts = {}) {
@@ -258,7 +281,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const w = opts.w ?? 360
       const at = opts.at ?? place(w, 240, opts)
       const id = createMarkdown(store, { x: at.x, y: at.y, w, md: String(md) })
-      store.update(id, { agent })
+      store.update(id, { agent, ...member(opts) })
       focus = at
       return id
     },
@@ -272,7 +295,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const id = createEmbed(store, { x: at.x, y: at.y, w, h, kind, url: url == null ? undefined : String(url), html: html == null ? undefined : String(html), title, preview })
       const err = validateEmbed(store.get(id))
       if (err) throw new Error(`embed: ${err === 'bad props.url' ? 'needs an http(s) URL, or html' : err}`)
-      store.update(id, { agent })
+      store.update(id, { agent, ...member(opts) })
       focus = at
       return id
     },
@@ -302,6 +325,15 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     },
     // title; aspect ('16:9'…); around: ids to enclose, or at/w/h
     frame(title = 'Frame', opts = {}) {
+      // in a bento grid: a cell at the end of it, `span` units ({ c, r }), `auto` rows
+      if (opts.inFrame && isLayout(store.get(opts.inFrame))) {
+        const id = addCell(store, opts.inFrame, { title: String(title), c: opts.span?.c, r: opts.span?.r, auto: !!opts.auto })
+        store.update(id, { agent })
+        store.update(id + '-title', { agent })
+        focus = { x: store.get(id).x, y: store.get(id).y }
+        return id
+      }
+      if (opts.span || opts.auto) throw new Error('span and auto are for a cell: put the frame in a bento grid (in: its id)')
       const aspect = parseRatio(opts.aspect)
       let { x, y } = opts.at ?? {}
       let w = opts.w ?? 480, h = opts.h ?? (aspect ? w / aspect : 320)
@@ -320,6 +352,31 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       focus = { x, y }
       return id
     },
+    // a bento grid: frames (cells) that pack themselves, `cols` columns `w` wide;
+    // its height follows its cells. Cells: frame(title, { inFrame: id, span })
+    layout({ cols = 4, w = 1200, gap = 24 } = {}, opts = {}) {
+      const at = opts.at ?? place(w, 400)
+      const id = createLayout(store, { x: at.x, y: at.y, w, cols, gap })
+      store.update(id, { agent })
+      focus = at
+      return id
+    },
+    // a cell's size in grid units ({ c, r }), or whether its rows follow its contents (auto)
+    span(id, { c, r, auto } = {}) {
+      const s = need(id)
+      if (!isCell(s)) throw new Error(`${id} is not a cell of a bento grid`)
+      setSpan(store, id, { c, r, auto })
+      focus = { x: s.x, y: s.y }
+      return id
+    },
+    columns(id, cols) {
+      const a = need(id)
+      if (!isLayout(a)) throw new Error(`${id} is not a bento grid`)
+      if (!(Number(cols) >= 1)) throw new Error('columns needs a number, 1 or more')
+      setColumns(store, id, Number(cols))
+      focus = { x: a.x, y: a.y }
+      return id
+    },
     // an arrow between two shapes' edges (or from/to points { x, y }); between
     // shapes it keeps `link` and is re-routed when they move in an operation
     arrow(from, to, opts = {}) {
@@ -334,7 +391,8 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const s = need(id)
       // a shape's size: boxes only (a frame keeps its size; fit_frame shrinks what is in it)
       if (w != null || h != null) {
-        if (s.type !== 'geo' || isFrame(s)) throw new Error(`${id} (${isFrame(s) ? 'a frame' : s.type}) cannot be resized; only shapes (rectangle, diamond, …) can`)
+        if (isCell(s)) throw new Error(`${id} is a bento cell: change its size with span (units), and the others move along`)
+        if (s.type !== 'geo' || isFrame(s) || isLayout(s)) throw new Error(`${id} (${isFrame(s) ? 'a frame' : isLayout(s) ? 'a bento grid' : s.type}) cannot be resized; only shapes (rectangle, diamond, …) can`)
         const size = (v, was) => (v == null ? was : Math.max(24, Math.min(4000, Number(v) || was)))
         store.update(id, { props: { w: size(w, s.props.w), h: size(h, s.props.h) } })
       }
@@ -438,13 +496,15 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // grew outwards, gathered. A frame brings what is in it and its title; a
     // kanban's columns go together. What is in no frame stays where it is.
     tidy({ ids, at, gap = GAP * 2, width = 2400 } = {}) {
-      const frames = ids?.length ? ids.map(need) : store.shapes().filter(isFrame)
-      for (const f of frames) if (!isFrame(f)) throw new Error(`${f.id} is not a frame`)
-      // what moves together: a frame, or all the columns of its kanban
+      const frames = ids?.length ? ids.map(need) : store.shapes().filter((s) => isFrame(s) || isLayout(s))
+      for (const f of frames) if (!isFrame(f) && !isLayout(f)) throw new Error(`${f.id} is not a frame`)
+      // what moves together: a frame, all the columns of its kanban, or a bento
+      // grid (moved alone: its cells follow it)
       const units = new Map()
       for (const f of frames) {
-        const key = f.kanban?.id ?? f.id
-        const all = f.kanban?.id ? store.shapes().filter((c) => isFrame(c) && c.kanban?.id === f.kanban.id) : [f]
+        const grid = isCell(f) ? store.get(f.layoutId) : isLayout(f) ? f : null
+        const key = grid?.id ?? f.kanban?.id ?? f.id
+        const all = grid ? [grid] : f.kanban?.id ? store.shapes().filter((c) => isFrame(c) && c.kanban?.id === f.kanban.id) : [f]
         if (!units.has(key)) units.set(key, all)
       }
       const boxes = [...units.values()].map((fs) => {
@@ -576,7 +636,10 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
         case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
         case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
-        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r) }); break
+        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto }); break
+        case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: s.at }); break
+        case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
+        case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h }); break
         case 'move': out = ops.move(r(s.id), s); break
@@ -591,6 +654,15 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
       return out
     })
   }, { area, prefer })
+}
+
+// a span as { c, r }, from that or "2x1"
+export function spanOf(v) {
+  if (v == null) return undefined
+  if (typeof v === 'object') return { c: v.c, r: v.r }
+  const m = /^(\d+)\s*[x×]\s*(\d+)$/.exec(String(v).trim())
+  if (!m) throw new Error(`a span is COLSxROWS, like 2x1 (not "${v}")`)
+  return { c: Number(m[1]), r: Number(m[2]) }
 }
 
 // ---- undo ------------------------------------------------------------------------

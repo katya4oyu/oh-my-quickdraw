@@ -23,6 +23,7 @@ undoDiff(store, diff) // later: reverts what nobody changed since
 | `read_board` | The board as a Markdown outline (frames, shapes, connections, with ids), or as data |
 | `check_board` | Layout problems in a frame, some shapes, or the work area (by default): to call once a piece of work is done; with `fix`, it fixes what needs no judgement first |
 | `add_note`, `add_text`, `add_shape`, `add_markdown`, `add_embed`, `add_frame`, `add_arrow` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
+| `add_bento`, `set_span`, `set_columns` | A bento grid ([`quickdraw-layouts`](../quickdraw-layouts)): frames (cells, `add_frame` with `in` the grid and `span`) that pack themselves; a full cell grows a row when something is put `in` it, and the cells after it move along |
 | `update_shape`, `move_shape`, `arrange_shapes` | Changes text or color, moves (a frame brings its members), lays out |
 | `delete_shapes` | Only what an agent added |
 | `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`) |

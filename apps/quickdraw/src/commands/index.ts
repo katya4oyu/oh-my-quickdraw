@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
-import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
+import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, spanOf, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
@@ -60,8 +60,18 @@ Writing (each command is one operation, undoable as a whole)
   image FILE --split COLSxROWS [--inset 0.1] [--width N] [--frame TITLE] [--at X,Y]
                                           a sheet cut into its cells, laid out as on the sheet
   frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH]
+  frame TITLE --in BENTO [--span 2x1] [--auto]
+                                          a cell at the end of a bento grid, COLSxROWS units big
+                                          (--auto: its rows follow what is in it)
+  bento [--cols 4] [--width 1200] [--at X,Y]
+                                          a bento grid: frames (cells) that pack themselves with no
+                                          gaps; its height follows its cells. --in CELL fills a cell,
+                                          which grows a row when full (the cells after it move along)
+  span CELL COLSxROWS | --auto            a cell's size in units, or rows following its contents
+                                          (--auto again: off); the other cells move along
+  columns BENTO N                         a bento grid's columns; its cells pack again
   arrow FROM TO [--color C] [--line]
-  update ID [--text TEXT] [--color C] [--size WxH]   --size: a shape's size (not a frame's)
+  update ID [--text TEXT] [--color C] [--size WxH]   --size: a shape's size (not a frame's; a cell: span)
   move ID (--to X,Y | --by DX,DY)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
@@ -193,13 +203,14 @@ const OPTIONS = {
   frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
   circle: { type: 'boolean' }, project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
+  span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -375,7 +386,16 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await operate((s, where) => applySteps(s, o.name, steps as never, where)); break
       }
       case 'frame':
-        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(',') })); break
+        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto })); break
+      case 'bento':
+        done = await op((ops) => ops.layout({ cols: o.cols ? Number(o.cols) : undefined, w: o.width ? Number(o.width) : undefined, gap: o.gap ? Number(o.gap) : undefined }, { at: point(o.at) })); break
+      case 'span': {
+        if (!args[0]) throw new Error('span needs a cell id')
+        const cell = store.get(args[0]) as { span?: { auto?: boolean } } | undefined
+        done = await op((ops) => ops.span(args[0], { ...spanOf(args[1] ?? o.span), ...(o.auto ? { auto: !cell?.span?.auto } : {}) })); break
+      }
+      case 'columns':
+        done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
       case 'arrow':
         done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
       case 'update':

@@ -27,6 +27,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-export`](packages/quickdraw-export) | Board or selection as a JSON file | No | — |
 | [`quickdraw-import`](packages/quickdraw-import) | Validated JSON import | No | — |
 | [`quickdraw-frames`](packages/quickdraw-frames) | Frames: membership, aspect ratios, content export | No | — |
+| [`quickdraw-layouts`](packages/quickdraw-layouts) | Layouts that keep themselves: a bento grid of frames that packs itself again as cells change | No | `quickdraw-frames` |
 | [`quickdraw-markdown`](packages/quickdraw-markdown) | Markdown cards drawn on the canvas | **Yes** — `registerShapeType` ([katya4oyu/quickdraw#2](https://github.com/katya4oyu/quickdraw/pull/2)) | — |
 | [`quickdraw-agent`](packages/quickdraw-agent) | What agents can do on a board: reading, undoable operations, and the same as tools for any agent runtime | No (Markdown cards need the fork, like `quickdraw-markdown`) | — |
 | [`quickdraw-toolbar`](packages/quickdraw-toolbar) | Icon toolbar: a rail for adding things, a bar over the selection; the packages ship their items | No | — |
@@ -49,6 +50,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | `examples/quickdraw-export` | Export the board or the selection as JSON |
 | `examples/quickdraw-import` | Import a JSON file, with validation |
 | `examples/quickdraw-frames` | Frames: add, move with members, export as PNG |
+| `examples/quickdraw-layouts` | A bento grid: resize, reorder, drag out or drop in a cell, change the columns |
 | `examples/quickdraw-markdown` | Markdown cards drawn on the canvas, edited in place |
 | `examples/quickdraw-embed` | A YouTube (or other allowed) page, a link card (with a made-up preview), and sandboxed inline HTML |
 | `examples/quickdraw-agent` | Agent participants, panel and note requests, pinned threads, approvals, and undo |

@@ -3,6 +3,7 @@ import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { bindKanban, createKanban, createTicket } from 'quickdraw-tickets'
+import { bindLayouts } from 'quickdraw-layouts'
 import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
@@ -613,3 +614,73 @@ describe('fixing the layout', () => {
   })
 })
 
+
+describe('bento grids', () => {
+  const grid = () => { const s = board(); bindLayouts(s); return s }
+
+  it('makes a grid and cells, and reads them back', () => {
+    const store = grid()
+    const { result: [g, main, side] } = applySteps(store, 'Claude', [
+      { do: 'layout', cols: 4, at: { x: 0, y: 0 }, ref: 'g' },
+      { do: 'frame', title: 'Main', in: '@g', span: '2x2' },
+      { do: 'frame', title: 'Side', in: '@g' },
+    ])
+    expect(store.get(main)).toMatchObject({ layoutId: g, span: { c: 2, r: 2 }, agent: { name: 'Claude' } })
+    const d = describeBoard(store)
+    expect(d.layouts).toMatchObject([{ id: g, cols: 4, cells: [main, side] }])
+    expect(d.frames.find((f) => f.id === main).cell).toMatchObject({ layout: g, c: 2, r: 2 })
+    expect(d.items.some((it) => it.id === g)).toBe(false) // the area is not a shape among the others
+    const md = boardToMarkdown(store)
+    expect(md).toMatch(/## Bento grid \(4 columns; id /)
+    expect(md).toMatch(/## Main \(bento cell 2×2 in /)
+  })
+
+  it('a full cell grows a row instead of refusing, and the cells after it move along', () => {
+    const store = grid()
+    const { result: [g, a, b] } = applySteps(store, 'Claude', [
+      { do: 'layout', cols: 2, w: 600, at: { x: 0, y: 0 }, ref: 'g' },
+      { do: 'frame', title: 'A', in: '@g', span: '2x1' },
+      { do: 'frame', title: 'B', in: '@g', span: '2x1' },
+    ])
+    const bBefore = store.get(b).y
+    const { result: notes } = applySteps(store, 'Claude', Array.from({ length: 6 }, (_, i) => ({ do: 'note', text: `n${i}`, in: a })))
+    expect(store.get(a).span.r).toBeGreaterThan(1)
+    expect(store.get(b).y).toBeGreaterThan(bBefore)
+    for (const id of notes) expect(store.get(id).frameId).toBe(a)
+    const cell = pageBounds(store.get(a))
+    for (const id of notes) { const n = pageBounds(store.get(id)); expect(n.y + n.h).toBeLessThanOrEqual(cell.y + cell.h) }
+    expect(lintBoard(store)).toEqual([]) // the area under the cells is not an overlap
+    expect(g).toBeTruthy()
+  })
+
+  it('span and columns change the grid; a cell cannot be sized like a shape', () => {
+    const store = grid()
+    const { result: [g, a, b] } = applySteps(store, 'Claude', [
+      { do: 'layout', cols: 4, at: { x: 0, y: 0 }, ref: 'g' },
+      { do: 'frame', title: 'A', in: '@g' },
+      { do: 'frame', title: 'B', in: '@g' },
+    ])
+    applySteps(store, 'Claude', [{ do: 'span', id: a, span: '4x1' }])
+    expect(store.get(b).y).toBeGreaterThan(store.get(a).y) // pushed to the next row
+    applySteps(store, 'Claude', [{ do: 'columns', id: g, cols: 2 }])
+    expect(store.get(g).layout.cols).toBe(2)
+    expect(store.get(a).span.c).toBe(4) // kept, packed as 2 wide
+    expect(() => applySteps(store, 'Claude', [{ do: 'update', id: a, w: 900 }])).toThrow(/span/)
+    expect(() => applySteps(store, 'Claude', [{ do: 'frame', title: 'X', span: '2x1' }])).toThrow(/bento grid/)
+  })
+
+  it('tidy moves a grid as one, its cells with it', () => {
+    const store = grid()
+    const { result: [g, a] } = applySteps(store, 'Claude', [
+      { do: 'layout', cols: 4, at: { x: 5000, y: 5000 }, ref: 'g' },
+      { do: 'frame', title: 'A', in: '@g' },
+    ])
+    applySteps(store, 'Claude', [{ do: 'note', text: 'in A', in: a }])
+    const before = store.get(a)
+    applySteps(store, 'Claude', [{ do: 'tidy', at: { x: 0, y: 0 } }])
+    const dx = store.get(g).x - 5000
+    expect(dx).not.toBe(0)
+    expect(store.get(a).x - before.x).toBe(dx)
+    expect(store.get(a).layoutId).toBe(g)
+  })
+})

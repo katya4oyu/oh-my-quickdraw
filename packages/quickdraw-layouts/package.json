@@ -1,0 +1,24 @@
+{
+  "name": "quickdraw-layouts",
+  "version": "0.1.0",
+  "description": "Layouts that keep themselves for Quickdraw: a bento grid of frames that packs itself again as cells change.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "quickdraw-frames": "*"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}
