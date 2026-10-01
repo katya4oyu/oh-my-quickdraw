@@ -64,7 +64,8 @@ export const BOARD_TOOLS = [
   }),
   step('add_frame', 'frame', 'A frame: a titled area that groups shapes. `around` encloses existing shapes (frames too: frames nest). With `in` a frame\'s id, it is a frame in that frame (in its free space); with `in` a bento grid\'s id, a cell at the end of that grid, `span` units big.', {
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
-    in: str('a frame id (a frame in it), or a bento grid id (a cell of it)'), span, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
+    in: str('a frame id (a frame in it), or a bento grid id (a cell of it)'), span,
+    title_inside: { type: 'boolean', description: 'its title just inside its top-left corner, not above it (handy for a frame in a frame, or with something just above)' }, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
   }, ['title']),
   step('add_bento', 'layout', 'A bento grid: an area whose frames (cells) pack themselves with no gaps, in `cols` columns. Make one when a piece of work will grow: '
     + 'add cells with add_frame (in: its id, span: 2x1…), fill them with in: a cell, and when one gets crowded give it more span (or it grows a row by itself when full) — the cells after it move along, and the grid grows. Its height follows its cells.', {

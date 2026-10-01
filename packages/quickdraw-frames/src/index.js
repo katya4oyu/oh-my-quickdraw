@@ -11,7 +11,10 @@
 // A shape marked `frameless` never joins a frame (a layout's area excepted:
 // older boards marked them so; they now nest like frames).
 //
-// A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape.
+// A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape,
+// and `titleInside` to have its title just inside its top-left corner rather
+// than above it (setTitleInside); by default it is above, leaving all of the
+// frame to what is in it (a slide, a snapshot).
 // It also carries its own id as `frameKey`, and its title `isFrameTitle`:
 // copies (the core's duplicate, paste, import) keep those fields but get new
 // ids, which is how a copied frame is recognized and given its contents.
@@ -33,12 +36,12 @@ export const isFrame = (rec) => !!rec && rec.isFrame === true
 const isTitle = (rec) => rec.isFrameTitle === true || rec.id === rec.frameId + '-title'
 
 // aspect: width / height to keep (h follows w), or omitted for a free frame
-export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, title = 'Frame' }) {
+export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, title = 'Frame', titleInside = false }) {
   const id = newId()
   if (aspect) h = w / aspect
   store.transact(() => {
     store.put({
-      id, typeName: 'shape', type: 'geo', isFrame: true, frameKey: id, ...(aspect ? { aspect } : {}), x, y, rot: 0, z: store.minZ() - 1,
+      id, typeName: 'shape', type: 'geo', isFrame: true, frameKey: id, ...(aspect ? { aspect } : {}), ...(titleInside ? { titleInside: true } : {}), x, y, rot: 0, z: store.minZ() - 1,
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
     putTitle(store, store.get(id), title)
@@ -49,9 +52,12 @@ export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, titl
   return id
 }
 
+/** Where a frame's title goes: above its top-left corner, or (titleInside) just inside it. */
+export const titleSpot = (frame) => (frame.titleInside ? { x: frame.x + 12, y: frame.y + 8 } : { x: frame.x, y: frame.y - 34 })
+
 function putTitle(store, frame, text) {
   store.put({
-    id: frame.id + '-title', typeName: 'shape', type: 'text', isFrameTitle: true, frameId: frame.id, x: frame.x, y: frame.y - 34, rot: 0, z: store.maxZ() + 1,
+    id: frame.id + '-title', typeName: 'shape', type: 'text', isFrameTitle: true, frameId: frame.id, ...titleSpot(frame), rot: 0, z: store.maxZ() + 1,
     props: { text, color: 'grey', size: 's', font: 'sans', autosize: true, scale: 1 },
   })
 }
@@ -79,6 +85,18 @@ export function renameFrame(store, frameId, title) {
   const t = store.get(frameId + '-title')
   if (t) store.update(t.id, { props: { text: title } })
   else if (isFrame(store.get(frameId))) putTitle(store, store.get(frameId), title)
+}
+
+// puts a frame's title inside its top-left corner (true) or above it (false)
+export function setTitleInside(store, frameId, inside) {
+  const f = store.get(frameId)
+  if (!isFrame(f) || !!f.titleInside === !!inside) return
+  const { titleInside: _, ...rest } = f
+  store.transact(() => {
+    store.put(inside ? { ...rest, titleInside: true } : rest)
+    const t = store.get(frameId + '-title')
+    if (t) store.update(t.id, titleSpot(store.get(frameId)))
+  })
 }
 
 // sets (keeping the width) or clears (null) a frame's aspect

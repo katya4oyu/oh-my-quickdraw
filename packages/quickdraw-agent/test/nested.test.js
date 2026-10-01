@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Store } from '@quickdrawjs/core'
+import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
 import { describeBoard, boardToMarkdown, applySteps, installMeasure, lintBoard } from '../src/index.js'
 
@@ -52,5 +52,21 @@ describe('frames in frames, for agents', () => {
     const i = store.get(inner), n = store.get(note)
     expect(n.x >= i.x && n.y >= i.y && n.x <= i.x + i.props.w && n.y <= i.y + i.props.h).toBe(true)
     void dy
+  })
+})
+
+describe('a frame with its title inside', () => {
+  it('is made so (title_inside), says so, and what goes in it keeps clear of its title', () => {
+    const store = board()
+    const { result: [f, n] } = applySteps(store, 'Codex', [
+      { do: 'frame', title: 'Inside', at: { x: 0, y: 0 }, w: 600, h: 400, title_inside: true, ref: 'f' },
+      { do: 'note', text: 'First', in: '@f' },
+    ])
+    const t = store.get(f + '-title')
+    expect(t).toMatchObject({ x: 12, y: 8 })
+    expect(describeBoard(store).frames[0]).toMatchObject({ id: f, title_inside: true })
+    const nb = pageBounds(store.get(n)), tb = pageBounds(t)
+    const clear = nb.x >= tb.x + tb.w || nb.x + nb.w <= tb.x || nb.y >= tb.y + tb.h || nb.y + nb.h <= tb.y
+    expect(clear).toBe(true) // not over its title
   })
 })

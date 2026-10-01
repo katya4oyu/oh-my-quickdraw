@@ -68,6 +68,7 @@ export function describeBoard(store) {
     ...(typeof f.snapshot?.at === 'number' ? { snapshot: { at: f.snapshot.at, by: f.snapshot.by ?? '' } } : {}),
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     ...(f.frameId && isFrame(store.get(f.frameId)) ? { frame: f.frameId } : {}), // in another frame
+    ...(f.titleInside ? { title_inside: true } : {}),
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   // bento grids (quickdraw-layouts): their cells are frames, in order
@@ -193,7 +194,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       // (not the frames it is in: they hold it all)
       const around = (s) => (isFrame(s) || isLayout(s)) && (() => { const b = pageBounds(s); return b.x <= fb.x && b.y <= fb.y && b.x + b.w >= fb.x + fb.w && b.y + b.h >= fb.y + fb.h })()
       const taken = store.shapes()
-        .filter((s) => s.id !== f.id && !isTitle(s) && !isLayout(s) && !around(s) && (s.frameId === f.id || intersects(pageBounds(s), fb)))
+        .filter((s) => s.id !== f.id && (!isTitle(s) || (f.titleInside && s.id === f.id + '-title')) && !isLayout(s) && !around(s) && (s.frameId === f.id || intersects(pageBounds(s), fb))) // its title, when inside it, is in the way too
         .map(pageBounds)
       for (let y = fb.y + 24; y + h <= fb.y + fb.h - 16; y += 24) {
         for (let x = fb.x + 24; x + w <= fb.x + fb.w - 16; x += 24) {
@@ -356,7 +357,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         h = Math.max(...bs.map((b) => b.y + b.h)) - y + pad
         if (aspect) { if (w / h < aspect) w = h * aspect; else h = w / aspect }
       } else if (x == null) ({ x, y } = place(w, h + 40, { inFrame: opts.inFrame })) // in a frame: a frame in it
-      const id = createFrame(store, { x, y: opts.around?.length || opts.at ? y : y + 40, w, h, aspect, title: String(title) })
+      const id = createFrame(store, { x, y: opts.around?.length || opts.at ? y : y + 40, w, h, aspect, title: String(title), titleInside: !!opts.titleInside })
       store.update(id, { agent })
       store.update(id + '-title', { agent })
       focus = { x, y }
@@ -650,7 +651,7 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
         case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
         case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
-        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto }); break
+        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto, titleInside: s.title_inside ?? s.titleInside }); break
         case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: s.at }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break

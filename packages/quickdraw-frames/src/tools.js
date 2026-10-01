@@ -1,7 +1,7 @@
 // Toolbar items for frames, as plain objects (the shape quickdraw-toolbar
 // takes; nothing here depends on it): a Frame button with aspect ratios for
 // the rail, and rename / aspect / export for a selected frame.
-import { createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect } from './index.js'
+import { createFrame, exportFrame, frameTitle, isFrame, renameFrame, setFrameAspect, setTitleInside } from './index.js'
 
 const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
 export const FRAME_ICONS = {
@@ -9,6 +9,8 @@ export const FRAME_ICONS = {
   rename: svg('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>'),
   aspect: svg('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10v4"/><path d="M17 10v4"/>'),
   exportImage: svg('<path d="M12 3v11"/><path d="m7 9 5 5 5-5"/><path d="M5 20h14"/>'),
+  // a frame with a short line (its title) in its top-left corner
+  titleInside: svg('<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M6.5 8h6"/>'),
 }
 
 export const FRAME_RATIOS = [['16:9', 16 / 9], ['16:10', 16 / 10], ['4:3', 4 / 3], ['1:1', 1], ['Free', null]]
@@ -54,6 +56,14 @@ export function frameTools() {
           id: 'frame-aspect-' + label, title: label,
           checked: ({ shape }) => (aspect ? Math.abs((shape.aspect ?? 0) - aspect) < 1e-6 : !shape.aspect),
           run: ({ editor, shape }) => setFrameAspect(editor.store, shape.id, aspect),
+        })),
+      },
+      {
+        id: 'frame-title-inside', title: 'Title inside the frame', icon: FRAME_ICONS.titleInside, when: isFrame,
+        menu: [[true, 'Title inside'], [false, 'Title above']].map(([inside, label]) => ({
+          id: 'frame-title-' + (inside ? 'inside' : 'above'), title: label,
+          checked: ({ shape }) => !!shape.titleInside === inside,
+          run: ({ editor, shape }) => setTitleInside(editor.store, shape.id, inside),
         })),
       },
       {
