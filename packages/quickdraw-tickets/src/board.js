@@ -73,7 +73,7 @@ const X_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stro
 
 /**
  * The team-and-tickets panel. team(): the agents, each
- * { name, role?, about?, here?, status?, doing? }; setRole(name, role): changes
+ * { name, role?, about?, here?, status?, doing?, elsewhere?: [{ title, working? }] }; setRole(name, role): changes
  * one (absent: roles are shown, not edited); avatar(mate): an element for its
  * picture (its pet, playing), kept by the host; setAvatar(name, file): sets one
  * from an image file a person picks (a promise; a rejection says why).
@@ -137,6 +137,13 @@ export function createTicketBoard({ editor, container = editor.container, team =
     const small = el('div', 'qdt-small', line)
     small.title = line
     card.append(small)
+    // the same agent on other boards: where, and whether it works there now
+    if (m.elsewhere?.length) {
+      const also = 'also on ' + m.elsewhere.map((b) => b.title + (b.working ? ' (working there)' : '')).join(', ')
+      const e = el('div', 'qdt-small', also)
+      e.title = also
+      card.append(e)
+    }
     if (setAvatar) {
       // its picture: a Codex pet's sprite sheet (spritesheet.webp or .png)
       const pick = el('input')

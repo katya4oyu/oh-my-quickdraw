@@ -316,6 +316,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
       access.set(participant, { owner: personOf.get(socket), with: m.agent.remote === true ? 'all' : 'owner' })
       send(socket, { kind: 'joined', id })
       announce(room)
+    } else if (m.kind === 'elsewhere' && agent && Array.isArray(m.boards)) {
+      // the other boards it is on (one agent on several), and whether it works there now: for the people here
+      const boards = m.boards.slice(0, 8).flatMap((b: any) => str(b?.id, 100) && str(b?.title, 200) ? [{ id: b.id, title: b.title, ...(b.working === true ? { working: true } : {}) }] : [])
+      if (boards.length) agent.elsewhere = boards
+      else delete agent.elsewhere
+      announce(room)
     } else if (m.kind === 'status' && agent && ['idle', 'working', 'waiting'].includes(m.status)) {
       agent.status = m.status
       announce(room)

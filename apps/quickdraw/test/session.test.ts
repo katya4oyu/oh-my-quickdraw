@@ -79,7 +79,7 @@ describe('a session: an agent with a shell, on the board', () => {
     await new Promise((r) => setTimeout(r, 100))
     const [again] = await run('note', 'Blue', '--color', 'blue')
     expect(again.inbox).toMatchObject({ reply: 1 })
-    expect((await run('next'))[0]).toEqual({ type: 'reply', request: 'r1', text: 'And a blue one' })
+    expect((await run('next'))[0]).toMatchObject({ type: 'reply', request: 'r1', board: { title: 'Live' }, text: 'And a blue one' })
 
     await run('say', 'Added two notes')
     expect(await page.event('message')).toMatchObject({ requestId: 'r1', text: 'Added two notes' })
@@ -117,6 +117,44 @@ describe('a session: an agent with a shell, on the board', () => {
     expect(lines.join('\n')).toMatch(/## Team: [^\n]*\n\n- Claude \(you\) — no role yet\n- Codex · api — role: note taker, set by Claude/)
     ws.close()
   }, 20_000)
+
+  it('is on several boards at once, and always says which: requests come with their board, commands go to it', async () => {
+    const { ws, agents, run, url } = await setup()
+    const second = url.replace(/\/ws\/[^/]+$/, '/ws/' + app!.boards.create('Roadmap').id)
+    const joined = (await run('join', '--board', second, '--name', 'Claude'))[0]
+    expect(joined).toMatchObject({ joined: true, boards: [{ title: 'Live' }, { title: 'Roadmap' }] })
+    // a page on the second board, asking there
+    const ws2 = new WebSocket(second)
+    ws2.binaryType = 'arraybuffer'
+    await new Promise((ok) => (ws2.onopen = ok))
+    const page2 = pageOf(ws2)
+    ws2.send(packAgent({ kind: 'hello' }))
+    const agents2 = (await page2.take((m) => m.kind === 'agents' && m.agents.length)).agents
+    expect(agents2[0].elsewhere).toEqual([{ id: url.split('/').pop(), title: 'Live' }]) // the people there see where else it is
+    ws2.send(packAgent({ kind: 'request', request: request('r2', agents2[0].id) }))
+    const [got] = await run('next', '--timeout', '5')
+    expect(got).toMatchObject({ type: 'request', id: 'r2', board: { title: 'Roadmap' } })
+    // a command while on it: on that board
+    const [made] = await run('note', 'On the roadmap')
+    const look = await openBoard({ url: second, name: 'Ann' })
+    expect(look.store.shapes().some((x: any) => x.props?.text === 'On the roadmap')).toBe(true) // there, not on the first
+    await look.close()
+    await run('finish', 'Done there')
+    // nothing to work on, two boards: which one?
+    await expect(run('note', 'Where?')).rejects.toThrow(/which board\? You are on Live \(.*\), Roadmap \(.*\): add --board ID/)
+    const [onFirst] = await run('note', 'Here', '--board', url.split('/').pop()!)
+    expect(onFirst.ids).toHaveLength(1)
+    const [whoThere] = await run('who', '--board', second.split('/').pop()!)
+    expect(whoThere).toMatchObject({ board: { title: 'Roadmap' }, your_boards: [{ title: 'Live' }, { title: 'Roadmap' }] })
+    // off one board: still on the other
+    const [left] = await run('leave', '--board', second.split('/').pop()!)
+    expect(left).toMatchObject({ left: { title: 'Roadmap' }, still_on: [{ title: 'Live' }] })
+    await new Promise((r) => setTimeout(r, 200))
+    const [n] = await run('note', 'Only one board now')
+    expect(n.ids).toHaveLength(1)
+    void made; void agents
+    ws2.close(); ws.close()
+  }, 30_000)
 
   it('sees who is here and what changed, gets tickets and Stop, and waits no longer than asked', async () => {
     const { url, ws, agents, run } = await setup()

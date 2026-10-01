@@ -217,7 +217,7 @@
       return names.map((name) => {
         const a = agents.find((x) => same(x.name, name)), p = presence.peers().find((x) => x.agent && same(x.name, name)), m = members.get(name)
         const act = p?.agentActivity && (ACTIVITIES[p.agentActivity] + (p.agentNote ? ': ' + p.agentNote : ''))
-        return { name, role: m?.role, about: m?.about, here: !!(a || p), status: a?.status ?? p?.agentStatus, doing: act || undefined }
+        return { name, role: m?.role, about: m?.about, here: !!(a || p), status: a?.status ?? p?.agentStatus, doing: act || undefined, elsewhere: a?.elsewhere }
       })
     }
     // agents' pets (Codex pets, from the table): one playing by each cursor, one in the Team panel
