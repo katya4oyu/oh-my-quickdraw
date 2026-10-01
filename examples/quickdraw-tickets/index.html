@@ -32,7 +32,7 @@
   <script type="module">
     import { createQuickdraw, pageBounds } from '@quickdrawjs/core'
     import { bindFrames } from 'quickdraw-frames'
-    import { bindKanban, bindTicketEditing, createKanban, createTicket, listTickets, placeInColumn, setTicketStatus, ticketTools } from '../../packages/quickdraw-tickets/src/index.js'
+    import { bindKanban, bindTicketEditing, createKanban, createTicket, createTicketBoard, listTickets, placeInColumn, setTicketStatus, ticketTools } from '../../packages/quickdraw-tickets/src/index.js'
     import { createToolbar } from '../../packages/quickdraw-toolbar/src/index.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -43,7 +43,10 @@
     bindTicketEditing(editor) // double-click a ticket to edit it
 
     // the rail adds a ticket (into the kanban in view) or a kanban; the selection bar edits one
-    const tools = ticketTools({ agents: () => [{ name: 'Codex' }, { name: 'pi' }], me: () => ({ name: 'You' }) })
+    // the team and every ticket, beside the board (the people icon on the rail); roles kept here in memory
+    const roles = { Codex: 'researcher', pi: '' }
+    const board = createTicketBoard({ editor, team: () => Object.entries(roles).map(([name, role]) => ({ name, role, here: true })), setRole: (name, role) => { roles[name] = role; board.refresh() } })
+    const tools = ticketTools({ agents: () => [{ name: 'Codex' }, { name: 'pi' }], me: () => ({ name: 'You' }), board })
     createToolbar(editor, tools)
 
     const { columns } = createKanban(store, { x: 40, y: 80 })

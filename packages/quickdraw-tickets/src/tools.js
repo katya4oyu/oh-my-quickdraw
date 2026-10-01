@@ -2,11 +2,13 @@
 // takes; nothing here depends on it): a ticket and a kanban from the rail;
 // edit, status and who it is for on a selected ticket.
 // agents(): the agents on the board ([{ name }]), to address a ticket to one;
-// me(): who is writing ({ name }), recorded as the ticket's `from`.
+// me(): who is writing ({ name }), recorded as the ticket's `from`;
+// board: a createTicketBoard() panel, opened from the rail (the team and every ticket).
 import { pageBounds } from '@quickdrawjs/core'
 import { freeSpot } from 'quickdraw-frames'
 import { createTicket, editTicket, isTicket, isTicketSupported, STATUSES } from './index.js'
 import { createKanban, kanbanColumn, kanbanNear, placeInColumn, setTicketStatus } from './kanban.js'
+import { TEAM_ICON } from './board.js'
 
 const svg = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
 export const TICKET_ICONS = {
@@ -58,12 +60,13 @@ function addKanban(editor) {
   editor.setSelection([columns.todo])
 }
 
-export function ticketTools({ agents = () => [], me = () => null } = {}) {
+export function ticketTools({ agents = () => [], me = () => null, board = null } = {}) {
   const available = isTicketSupported
   return {
     rail: [
       { id: 'ticket', title: 'Ticket for an agent', icon: TICKET_ICONS.ticket, available, run: ({ editor }) => addTicket(editor, me()?.name) },
       { id: 'kanban', title: 'Kanban', icon: TICKET_ICONS.kanban, available, run: ({ editor }) => addKanban(editor) },
+      ...(board ? [{ id: 'team', title: 'Team & tickets', icon: TEAM_ICON, available, run: () => board.toggle() }] : []),
     ],
     context: [
       { id: 'ticket-edit', title: 'Edit ticket', icon: TICKET_ICONS.edit, when: isTicket, run: ({ editor, shape }) => editTicket(editor, shape.id) },

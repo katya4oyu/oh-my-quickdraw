@@ -37,6 +37,7 @@
         "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
         "quickdraw-layouts": "/_/quickdraw-layouts/src/index.js",
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
+        "quickdraw-members": "/_/quickdraw-members/src/index.js",
         "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js",
         "quickdraw-screenshare": "/_/quickdraw-screenshare/src/index.js",
         "quickdraw-presence": "/_/quickdraw-presence/src/index.js",
@@ -57,13 +58,14 @@
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
-    import { bindKanban, bindTicketEditing, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
+    import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
+    import { bindMembers } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
     import { createAgentPanel, agentTools, buildAgentRequest } from 'quickdraw-agent'
     import { createVoice, voiceTools } from 'quickdraw-voice'
     import { createScreenShare, screenShareTools, pendingFeedback, markSent } from 'quickdraw-screenshare'
-    import { bindAuthorship, createPresence } from 'quickdraw-presence'
+    import { bindAuthorship, createPresence, ACTIVITIES } from 'quickdraw-presence'
     import { UPDATE, SV, PRESENCE, AGENT, SHARE, LIVE, pack, packPresence, unpackPresence, packAgent, unpackAgent, packShare, unpackShare } from '/protocol.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
@@ -121,7 +123,7 @@
     const agentCommand = () => `quickdraw agent codex --board ${boardRef()}`
     function onAgentMessage(m) {
       if (m.kind === 'you') { if (m.person) presence.suggestName(m.person); toPanel({ type: 'agents' }) } // your name, until you choose one
-      else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }) }
+      else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }); teamBoard.refresh() }
       else if (m.kind === 'threads') toPanel({ type: 'threads', threads: m.threads })
       else if (m.kind === 'thread') toPanel({ type: 'thread', thread: m.thread })
       else if (m.kind === 'event') toPanel({ type: 'event', event: m.event })
@@ -181,10 +183,26 @@
     const cards = markdownTools()
     const web = embedTools(embeds, { fetchPreview })
     const ai = agentTools(panel)
+    // the team (quickdraw-members: agents' roles, in the board's doc) and every ticket, in a panel beside the board
+    const members = bindMembers(ydoc)
+    const same = (a, b) => String(a).toLowerCase() === String(b).toLowerCase()
+    function team() {
+      const here = [...agents, ...presence.peers().filter((p) => p.agent && p.name)]
+      const names = []
+      for (const n of [...here.map((a) => a.name), ...members.list().map((m) => m.name)]) if (!names.some((x) => same(x, n))) names.push(n)
+      return names.map((name) => {
+        const a = agents.find((x) => same(x.name, name)), p = presence.peers().find((x) => x.agent && same(x.name, name)), m = members.get(name)
+        const act = p?.agentActivity && (ACTIVITIES[p.agentActivity] + (p.agentNote ? ': ' + p.agentNote : ''))
+        return { name, role: m?.role, about: m?.about, here: !!(a || p), status: a?.status ?? p?.agentStatus, doing: act || undefined }
+      })
+    }
+    const teamBoard = createTicketBoard({ editor: board.editor, team, setRole: (name, role) => members.set(name, { role }, presence.me().name) })
+    members.onChange(teamBoard.refresh)
     // tickets: work left for agents; one is addressed to an agent here (joined, or waiting from the CLI)
     const tickets = ticketTools({
       agents: () => [...agents, ...presence.peers().filter((p) => p.agent && p.name)],
       me: () => ({ name: presence.me().name }),
+      board: teamBoard,
     })
     createToolbar(board.editor, {
       rail: [
@@ -241,7 +259,7 @@
       ws.onmessage = ({ data }) => {
         const m = new Uint8Array(data)
         if (m[0] === UPDATE) Y.applyUpdate(ydoc, m.subarray(1), 'relay')
-        else if (m[0] === PRESENCE) { const p = unpackPresence(m); presenceListeners.forEach((fn) => fn(p)) }
+        else if (m[0] === PRESENCE) { const p = unpackPresence(m); presenceListeners.forEach((fn) => fn(p)); if (p.agent || p.gone) teamBoard.refresh() }
         else if (m[0] === AGENT) onAgentMessage(unpackAgent(m))
         else if (m[0] === LIVE) toShare({ kind: 'frame', data: m.subarray(1) })
         else if (m[0] === SHARE) toShare(unpackShare(m))
