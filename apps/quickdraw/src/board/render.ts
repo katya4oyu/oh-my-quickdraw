@@ -25,6 +25,7 @@ const ROOTS: Record<string, string> = {
   embed: pkgRoot('quickdraw-embed'),
   tickets: pkgRoot('quickdraw-tickets'),
   members: pkgRoot('quickdraw-members'),
+  boards: pkgRoot('quickdraw-boards'),
 }
 const TYPES: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' }
 
@@ -38,9 +39,10 @@ import { registerMarkdown } from '/markdown/src/index.js'
 import { registerEmbed } from '/embed/src/index.js'
 import { registerTicket } from '/tickets/src/index.js'
 import { registerMemberCard } from '/members/src/card.js'
+import { registerBoardCard } from '/boards/src/index.js'
 import { exportFrame } from '/frames/src/index.js'
 import { assetImage } from '/core/src/shapes.js'
-registerMarkdown(); registerEmbed(); registerTicket(); registerMemberCard() // embeds draw as their placeholders: no iframes here
+registerMarkdown(); registerEmbed(); registerTicket(); registerMemberCard(); registerBoardCard() // embeds draw as their placeholders: no iframes here
 const { editor } = createQuickdraw({ container: document.getElementById('b'), watermark: false })
 window.render = async ({ records, frame, ids, background, scale, theme }) => {
   editor.store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })

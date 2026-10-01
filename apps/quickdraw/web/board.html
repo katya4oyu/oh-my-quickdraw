@@ -40,6 +40,7 @@
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
         "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
         "quickdraw-clipboard": "/_/quickdraw-clipboard/src/index.js",
+        "quickdraw-boards": "/_/quickdraw-boards/src/index.js",
         "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js",
         "quickdraw-screenshare": "/_/quickdraw-screenshare/src/index.js",
         "quickdraw-presence": "/_/quickdraw-presence/src/index.js",
@@ -63,6 +64,7 @@
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
     import { bindGifs } from 'quickdraw-gif'
+    import { bindBoardCards, boardCardTools, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
@@ -174,7 +176,17 @@
     } })
 
     // shapes from other packages, checked by their own validators: in an imported file, or pasted
-    const shapeTypes = { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard }
+    const shapeTypes = { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard, [BOARDCARD]: validateBoardCard }
+    // a board in this board (quickdraw-boards): a card for another board, its picture or a live window onto it
+    const boardHost = {
+      boards: async () => (await (await fetch('/api/boards')).json()),
+      thumbnail: (id, at) => (at ? `/api/boards/${id}/thumbnail?at=${encodeURIComponent(at)}` : null),
+      view: (id) => `/b/${id}/view`,
+      open: (id) => { location.href = `/b/${id}` },
+      get current() { return location.pathname.split('/').pop() },
+    }
+    bindBoardCards(board.editor, boardHost)
+    const boardCards = boardCardTools(boardHost)
     // copy and paste through the browser's own clipboard events: any browser, plain http too
     // (shapes for a board, their text for elsewhere; images, SVG code, and other text as a note);
     // Paste on the rail and Copy on a selected shape, for a phone
@@ -261,7 +273,7 @@
       rail: [
         ...ai.rail, ...voiceTools(voice).rail, '-',
         ...clip.rail,
-        ...tickets.rail, ...cardTools.rail, ...frames.rail, ...layouts.rail, ...cards.rail, ...web.rail,
+        ...tickets.rail, ...cardTools.rail, ...boardCards.rail, ...frames.rail, ...layouts.rail, ...cards.rail, ...web.rail,
         '-',
         { id: 'more', title: 'More', icon: MORE_ICON, menu: [
           { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
@@ -276,7 +288,7 @@
           exportTool(),
         ] },
       ],
-      context: [...ai.context, ...clip.context, ...tickets.context, ...cardTools.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
+      context: [...ai.context, ...clip.context, ...boardCards.context, ...tickets.context, ...cardTools.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
     })
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it

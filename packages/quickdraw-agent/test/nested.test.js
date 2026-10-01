@@ -70,3 +70,13 @@ describe('a frame with its title inside', () => {
     expect(clear).toBe(true) // not over its title
   })
 })
+
+describe('a board in a board', () => {
+  it('puts a card for another board, and reads it as one', () => {
+    const store = board()
+    const { result: [card] } = applySteps(store, 'Codex', [{ do: 'board', board: 'b2', title: 'Roadmap', live: true }])
+    expect(store.get(card).props).toMatchObject({ board: 'b2', title: 'Roadmap', live: true })
+    expect(boardToMarkdown(store)).toMatch(/\[boardcard, by Codex\] Roadmap \(board b2, live\)/)
+    expect(() => applySteps(store, 'Codex', [{ do: 'board', board: '' }])).toThrow(/needs a board id/)
+  })
+})

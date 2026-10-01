@@ -8,6 +8,7 @@ import { createFrame, frameTitle, freeSpot, inFrame, isFrame, renameFrame } from
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
 import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
+import { createBoardCard, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
 import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
@@ -30,6 +31,7 @@ export function textOf(store, s) {
     case TICKET: return s.props.title + (s.props.body ? '\n' + s.props.body : '')
     case EMBED: return s.props.title || s.props.preview?.title || s.props.url || (s.props.kind === 'html' ? '(HTML)' : '')
     case 'member': return s.props.name + (s.props.role ? ` — ${s.props.role}` : '') // a profile card (quickdraw-members)
+    case BOARDCARD: return `${s.props.title} (board ${s.props.board}${s.props.live ? ', live' : ''})` // a board in this board (quickdraw-boards)
     case 'image': return '(image)'
     case 'draw': case 'highlight': return '(drawing)'
     default: return ''
@@ -306,6 +308,17 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const id = createEmbed(store, { x: at.x, y: at.y, w, h, kind, url: url == null ? undefined : String(url), html: html == null ? undefined : String(html), title, preview })
       const err = validateEmbed(store.get(id))
       if (err) throw new Error(`embed: ${err === 'bad props.url' ? 'needs an http(s) URL, or html' : err}`)
+      store.update(id, { agent, ...member(opts) })
+      focus = at
+      return id
+    },
+    // a card for another board (its id): its picture, or (live) a window onto it
+    board({ board, title = 'Board', live = false } = {}, opts = {}) {
+      const w = opts.w ?? 360, h = opts.h ?? 260
+      const at = opts.at ?? place(w, h, opts)
+      const id = createBoardCard(store, { x: at.x, y: at.y, w, h, board: String(board ?? ''), title: String(title), live: !!live })
+      const err = validateBoardCard(store.get(id))
+      if (err) throw new Error(`board card: ${err === 'bad props.board' ? 'needs a board id (quickdraw boards lists them)' : err}`)
       store.update(id, { agent, ...member(opts) })
       focus = at
       return id
@@ -649,6 +662,7 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'markdown': out = ops.markdown(s.text ?? s.md ?? '', opts(s)); break
         case 'image': out = ops.image(s.src, s.natural, opts(s)); break
         case 'embed': out = ops.embed({ url: s.url, html: s.html, link: s.link, title: s.title, preview: s.preview }, opts(s)); break
+        case 'board': out = ops.board({ board: s.board, title: s.title, live: s.live }, opts(s)); break
         case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
         case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto, titleInside: s.title_inside ?? s.titleInside }); break
