@@ -7,12 +7,13 @@ import { accountText, activityOf, commandText, initCodex, limitsOf, startAppServ
 import { realtimeVoices, runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
 import { createKanban } from 'quickdraw-tickets'
-import { setPet } from '../src/board/avatar.ts'
+import { readPet, setPet } from '../src/board/avatar.ts'
+import { main } from '../src/commands/index.ts'
 import { deflateSync } from 'node:zlib'
 import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENT, PRESENCE, packAgent, unpackAgent, unpackPresence } from '../src/protocol.js'
@@ -472,6 +473,25 @@ describe('work tickets', () => {
     await setPet(adaBoard, 'Ada', null, 'Ann')
     expect(adaBoard.members!.get('Ada')).toBeNull()
     expect(adaBoard.store.asset(avatar.asset)).toBeFalsy() // nothing else used it
+  }, 60_000)
+
+  it('finds a pet installed for Codex by its name, and lists them', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'qd-codex-'))
+    const was = process.env.CODEX_HOME
+    process.env.CODEX_HOME = home
+    cleanup.push(() => { if (was === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = was })
+    for (const [dir, name] of [['mio', 'Mio'], ['rocket-cat', 'Rocket Cat']]) {
+      mkdirSync(join(home, 'pets', dir), { recursive: true })
+      writeFileSync(join(home, 'pets', dir, 'pet.json'), JSON.stringify({ id: dir, displayName: name, description: `${name}, a pet`, spritesheetPath: 'spritesheet.png' }))
+      writeFileSync(join(home, 'pets', dir, 'spritesheet.png'), blankPng(1536, 1872))
+    }
+    mkdirSync(join(home, 'pets', 'not-a-pet'))
+    const lines: string[] = []
+    await main(['avatar', '--list'], (l) => { lines.push(l) }) // no board needed
+    expect(JSON.parse(lines.join('\n')).map((p: any) => [p.name, p.displayName])).toEqual([['mio', 'Mio'], ['rocket-cat', 'Rocket Cat']])
+    expect((await readPet('mio')).name).toBe('Mio') // its folder's name
+    expect((await readPet('rocket cat')).name).toBe('Rocket Cat') // or what it is called
+    await expect(readPet('dog')).rejects.toThrow(/no pet "dog" in .*pets \(there: mio, rocket-cat\)/)
   }, 60_000)
 
   it('keeps out only of the work of agents on the board, and puts its ticket in the Doing column of a kanban', async () => {

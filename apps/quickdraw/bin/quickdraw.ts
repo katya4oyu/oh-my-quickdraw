@@ -45,7 +45,8 @@ const USAGE = `quickdraw <command>
         pi's SDK: npm i -w apps/quickdraw @earendil-works/pi-coding-agent
   --role ROLE (any agent): its role on the board, as "transcriber" or
         "reviewer" (people and agents can change it: quickdraw role)
-  --avatar PET (any agent): its picture, a Codex pet (~/.codex/pets/NAME):
+  --avatar PET (any agent): its picture, a Codex pet (a name from
+        quickdraw avatar --list, or a pet's folder):
         it moves by its cursor as the agent works (quickdraw avatar)
 `
 
