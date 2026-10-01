@@ -44,6 +44,10 @@ button.qdt-role{cursor:text}
 button.qdt-role:hover{background:var(--qd-hover,rgba(0,0,0,.06))}
 .qdt-role.none{color:var(--qd-ink-soft);font-style:italic}
 input.qdt-role{background:transparent;border:1px solid var(--qd-ink-soft)}
+.qdt-pic{display:flex;align-items:flex-end;gap:6px;min-width:0}
+.qdt-pic .qdt-name{flex:1;min-width:0;padding-bottom:4px}
+.qdt-link{all:unset;cursor:pointer;font-size:11px;color:var(--qd-ink-soft);text-decoration:underline;text-underline-offset:2px;justify-self:start}
+.qdt-link.err{color:#e03131;text-decoration:none}
 .qdt-small{font-size:11px;color:var(--qd-ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qdt-cols{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:8px;overflow-x:auto}
 .qdt-col{border-radius:12px;background:var(--qd-hover,rgba(0,0,0,.04));padding:6px;display:flex;flex-direction:column;gap:6px;min-height:80px}
@@ -70,10 +74,13 @@ const X_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stro
 /**
  * The team-and-tickets panel. team(): the agents, each
  * { name, role?, about?, here?, status?, doing? }; setRole(name, role): changes
- * one (absent: roles are shown, not edited). Returns { show, hide, toggle,
- * refresh, destroy }; call refresh() when the team changes (tickets are watched).
+ * one (absent: roles are shown, not edited); avatar(mate): an element for its
+ * picture (its pet, playing), kept by the host; setAvatar(name, file): sets one
+ * from an image file a person picks (a promise; a rejection says why).
+ * Returns { show, hide, toggle, refresh, destroy }; call refresh() when the
+ * team changes (tickets are watched).
  */
-export function createTicketBoard({ editor, container = editor.container, team = () => [], setRole } = {}) {
+export function createTicketBoard({ editor, container = editor.container, team = () => [], setRole, avatar, setAvatar } = {}) {
   injectStyle()
   const store = editor.store
   const panel = el('section', 'qdt-team')
@@ -102,7 +109,8 @@ export function createTicketBoard({ editor, container = editor.container, team =
     dot.dataset.status = m.here === false ? '' : m.status || 'idle'
     name.append(dot, el('span', '', m.name))
     name.title = m.name
-    card.append(name)
+    const pic = avatar?.(m)
+    if (pic) { const top = el('div', 'qdt-pic'); top.append(pic, name); card.append(top) } else card.append(name)
     if (editing === m.name && setRole) {
       const input = el('input', 'qdt-role')
       input.value = m.role || ''
@@ -129,6 +137,23 @@ export function createTicketBoard({ editor, container = editor.container, team =
     const small = el('div', 'qdt-small', line)
     small.title = line
     card.append(small)
+    if (setAvatar) {
+      // its picture: a Codex pet's sprite sheet (spritesheet.webp or .png)
+      const pick = el('input')
+      pick.type = 'file'
+      pick.accept = 'image/webp,image/png'
+      pick.hidden = true
+      const b = el('button', 'qdt-link', pic ? 'Change its pet' : 'Give it a pet')
+      b.type = 'button'
+      b.title = "A Codex pet's sprite sheet: ~/.codex/pets/NAME/spritesheet.webp"
+      b.onclick = () => pick.click()
+      pick.onchange = async () => {
+        const file = pick.files?.[0]
+        if (!file) return
+        try { await setAvatar(m.name, file); b.textContent = 'Change its pet' } catch (e) { b.textContent = e.message; b.classList.add('err') }
+      }
+      card.append(pick, b)
+    }
     return card
   }
 

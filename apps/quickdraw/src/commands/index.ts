@@ -10,6 +10,7 @@ import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { setPet } from '../board/avatar.ts'
 import { pageBounds } from '@quickdrawjs/core'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
@@ -128,7 +129,9 @@ The team (live boards): agents' roles — a transcriber, a researcher, a reviewe
 there for and hands the rest to the one whose role fits; people and agents both set them
   members                                 the agents of the board: their roles, who is here, what each works on
   role ROLE [--about TEXT] [--of NAME]    sets your role (--of: another agent's); --clear takes it off
-  join … --role ROLE                      joins with a role
+  avatar PET [--of NAME]                  its picture: a Codex pet (~/.codex/pets/NAME, or its spritesheet),
+                                          played by its cursor as it works; --clear takes it off
+  join … --role ROLE --avatar PET         joins with a role and a pet
 
 History
   log                                       this board's operations, newest last
@@ -205,12 +208,12 @@ const OPTIONS = {
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
-  role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' },
+  role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -269,7 +272,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     if (file) throw new Error('join needs a live board (--board), not a file')
     // named "<agent> · <repository>" unless it says (see SKILL.md)
     const name = argv.some((a) => a === '--name' || a.startsWith('--name=')) ? o.name : `Agent · ${(await import('./skill.ts')).repoName()}`
-    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'], role: o.role })))
+    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'], role: o.role, avatar: o.avatar ? resolve(o.avatar.replace(/^~(?=$|\/)/, process.env.HOME ?? '~')) : undefined })))
   }
   if (!file) {
     const s = await findSession(process.cwd())
@@ -322,6 +325,16 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'members':
         needsLive()
         return out(JSON.stringify(teamOf(board, o.name), null, 2))
+      case 'avatar': {
+        needsLive()
+        const who = o.of ?? o.name
+        if (!who) throw new Error('avatar needs your --name (or --of NAME)')
+        if (!o.clear && !args[0]) throw new Error('avatar needs a Codex pet: its folder (~/.codex/pets/NAME) or its sprite sheet (or --clear)')
+        const set = await setPet(board, who, o.clear ? null : args[0], o.name ?? who)
+        if (live) await sleep(300)
+        const pet = set?.avatar as { name?: string } | null | undefined
+        return out(JSON.stringify({ name: who, avatar: pet?.name ?? null }))
+      }
       case 'role': {
         needsLive()
         const who = o.of ?? o.name

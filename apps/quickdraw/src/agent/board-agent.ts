@@ -29,6 +29,7 @@ import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { setPet } from '../board/avatar.ts'
 
 import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
@@ -40,6 +41,8 @@ export interface Participant {
   voice?: boolean
   /** its role on the board (quickdraw-members), set as it joins: "transcriber", "reviewer"… */
   role?: string
+  /** its pet, set as it joins: a Codex pet's folder (~/.codex/pets/NAME) or sprite sheet */
+  avatar?: string
   /** the voices it talks in (the board's picker), and the one it uses unless a person picks another */
   voices?: string[]
   defaultVoice?: string
@@ -668,7 +671,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       if (m.kind !== 'joined') return
       off()
       if (me.role && board.members) board.members.set(me.name, { role: me.role }, me.name) // the role it came with
-      resolve(agent)
+      const pet = me.avatar ? setPet(board, me.name, me.avatar, me.name).catch((e) => process.stderr.write(`--avatar: ${(e as Error).message}\n`)) : null
+      Promise.resolve(pet).then(() => resolve(agent))
     })
     relay.send({ kind: 'join', agent: me })
   })
