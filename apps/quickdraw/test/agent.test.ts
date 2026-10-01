@@ -11,7 +11,9 @@ import { readPet, setPet } from '../src/board/avatar.ts'
 import { main } from '../src/commands/index.ts'
 import { deflateSync } from 'node:zlib'
 import { findChrome } from '../src/board/chrome.ts'
-import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
+import { imageSize, imageSteps, loadImage, splitImage, within } from '../src/agent/images.ts'
+import { Store } from '@quickdrawjs/core'
+import { applySteps } from 'quickdraw-agent'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -584,6 +586,23 @@ it('puts a grown bento cell on the board a piece at a time, ending as on the cop
   await putLive(live, diff, copy, () => {}, 0)
   const plain = (s: typeof live) => JSON.stringify(s.all().filter((r) => r.typeName === 'shape').map((r: any) => [r.id, r.x, r.y, r.props.w, r.props.h, r.span, r.order, r.frameId]).sort())
   expect(plain(live)).toBe(plain(copy))
+})
+
+it('puts an SVG as it is, with a size from its viewBox; and does not cut one', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qd-svg-'))
+  writeFileSync(join(dir, 'icon.svg'), '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 12"><rect width="24" height="12" fill="teal"/></svg>\n')
+  writeFileSync(join(dir, 'fake.svg'), 'not svg at all')
+  const img = await loadImage(join(dir, 'icon.svg'), [dir])
+  expect(img.src).toMatch(/^data:image\/svg\+xml;base64,/)
+  expect([img.w, img.h]).toEqual([24, 12])
+  expect(Buffer.from(img.src.split(',')[1], 'base64').toString()).toContain('<svg width="24" height="12" xmlns=')
+  await expect(loadImage(join(dir, 'fake.svg'), [dir])).rejects.toThrow(/is not SVG/)
+  await expect(splitImage(join(dir, 'icon.svg'), { cols: 2, rows: 2 }, [dir])).rejects.toThrow(/an SVG is not cut into cells/)
+  // on a board: an image of its own size (400 wide unless told)
+  const store = new Store()
+  const { result } = applySteps(store as never, 'Agent', await imageSteps(join(dir, 'icon.svg'), { w: 240 }, [dir]) as never) as any
+  const shape = store.get(result[0]) as any
+  expect([shape.type, shape.props.w, shape.props.h]).toEqual(['image', 240, 120])
 })
 
 it('reads image sizes and keeps to the allowed folders', () => {

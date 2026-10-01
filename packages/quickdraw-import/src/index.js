@@ -2,10 +2,13 @@
 // ({ quickdraw: 1, shapes, assets }), which quickdraw-export also writes.
 // Files are untrusted, and an imported shape syncs to every peer, so the whole
 // payload is validated first — one bad shape rejects the file — against the
-// core's own style ids, and image assets must be inline raster data URLs.
+// core's own style ids, and image assets must be inline data URLs (raster, or
+// SVG: shown as an image, its scripts and links do nothing).
 // Types added by other packages (e.g. quickdraw-markdown) are accepted only
 // when the caller passes their validator: { types: { markdown: validateMarkdown } }.
 import { COLOR_IDS, SIZE_IDS, DASH_IDS, FILL_IDS, GEO_IDS, FONTS, newId } from '@quickdrawjs/core'
+
+export { isSvgText, svgSize, sizedSvg, svgDataUrl, bindSvgPaste } from './svg.js'
 
 const TYPES = ['draw', 'highlight', 'geo', 'arrow', 'line', 'text', 'note', 'image']
 const ENUMS = { color: COLOR_IDS, size: SIZE_IDS, labelSize: SIZE_IDS, dash: DASH_IDS, fill: FILL_IDS, geo: GEO_IDS, font: Object.keys(FONTS) }
@@ -13,7 +16,7 @@ const NUMBERS = ['w', 'h', 'dx', 'dy', 'bend', 'scale']
 const STRINGS = ['text', 'label', 'align', 'assetId']
 const BOOLEANS = ['done', 'autosize', 'isPen']
 const REQUIRED = { draw: ['pts'], highlight: ['pts'], geo: ['w', 'h'], arrow: ['dx', 'dy'], line: ['dx', 'dy'], text: ['text'], note: ['text'], image: ['w', 'h', 'assetId'] }
-const IMAGE_SRC = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/
+const IMAGE_SRC = /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/
 export const MAX_SHAPES = 5000
 export const MAX_FILE_BYTES = 25 * 1024 * 1024
 
@@ -42,7 +45,7 @@ function checkShape(s, assets, types) {
 
 function checkAsset(a) {
   if (!isObject(a) || typeof a.id !== 'string' || a.typeName !== 'asset') return 'not an asset record'
-  if (typeof a.src !== 'string' || !IMAGE_SRC.test(a.src)) return 'asset is not an inline png/jpeg/gif/webp image'
+  if (typeof a.src !== 'string' || !IMAGE_SRC.test(a.src)) return 'asset is not an inline png/jpeg/gif/webp/svg image'
   if (!finite(a.w) || !finite(a.h)) return 'bad asset size'
   return null
 }

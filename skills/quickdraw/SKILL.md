@@ -57,7 +57,7 @@ Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, gre
 ## Images, videos and web pages
 
 ```sh
-quickdraw image shot.png [--width 600] [--in FRAME_ID]           # PNG, JPEG, GIF or WebP from the working directory
+quickdraw image shot.png [--width 600] [--in FRAME_ID]           # PNG, JPEG, GIF, WebP or SVG from the working directory (an icon or a small figure: write an SVG file, then put it)
 quickdraw image stickers.png --split 4x3 [--frame "Stickers"]    # a sheet cut into its cells, one image each
 quickdraw embed https://youtu.be/…                               # a video, a Figma file, a map: plays live on the board
 quickdraw embed https://example.com/article [--title "…"]        # any other link: a card with its title and picture

@@ -21,9 +21,20 @@ An imported shape is synced to every peer, so a file is validated as a whole bef
 
 - Known shape types only, finite positions, and style values from the core's own `COLOR_IDS`, `SIZE_IDS`, `DASH_IDS`, `FILL_IDS`, `GEO_IDS` and `FONTS`.
 - Each type's required geometry must be present and numeric (`pts`, `w`/`h`, `dx`/`dy`, ...).
-- Image assets must be inline `data:` PNG, JPEG, GIF or WebP — no remote URLs, no SVG. Unreferenced assets are dropped.
+- Image assets must be inline `data:` PNG, JPEG, GIF, WebP or SVG — no remote URLs. (An SVG is shown as an image: its scripts and links do nothing, as when it is dropped on the board.) Unreferenced assets are dropped.
 - At most 5000 shapes and 25 MB per file.
 - Other shape types only through `types`: `{ [type]: (shape) => error | null }`. They still get the common checks (record shape, finite position, props object); the function checks the props.
+
+## SVG
+
+The core takes an SVG file as an image. Around it:
+
+```js
+import { bindSvgPaste, isSvgText, svgSize, sizedSvg, svgDataUrl } from 'quickdraw-import'
+bindSvgPaste(board.editor) // SVG code pasted (Figma's "Copy as SVG", a file's source) becomes an image
+```
+
+`svgSize` reads its size from `width`/`height`, else its `viewBox`; `sizedSvg` gives one with neither a size (an SVG with only a viewBox has none, and does not land as an image); `svgDataUrl` makes its data URL. They need no DOM (the CLI uses them).
 
 Example: `examples/quickdraw-import` (run `npm run examples` at the workspace root).
 

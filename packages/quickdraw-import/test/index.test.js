@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { exportJSON } from '../../quickdraw-export/src/index.js'
-import { importJSON, parseJSON, MAX_SHAPES } from '../src/index.js'
+import { importJSON, parseJSON, MAX_SHAPES, isSvgText, svgSize, sizedSvg, svgDataUrl } from '../src/index.js'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo='
 const geo = (id, x, y, z, props = {}) => ({ id, typeName: 'shape', type: 'geo', x, y, rot: 0, z, props: { geo: 'rectangle', w: 10, h: 10, color: 'blue', ...props } })
@@ -69,7 +69,7 @@ describe('parseJSON rejects untrusted input', () => {
     'bad pts': file([{ id: 's', typeName: 'shape', type: 'draw', x: 0, y: 0, z: 1, props: { pts: [1, 2] } }]),
     'image without asset': file([image('s', 'asset:none')]),
     'remote image url': file([image('s', 'asset:a')], { 'asset:a': asset('asset:a', 'https://evil.example/track.png') }),
-    'svg image': file([image('s', 'asset:a')], { 'asset:a': asset('asset:a', 'data:image/svg+xml;base64,PHN2Zz4=') }),
+    'svg not inline': file([image('s', 'asset:a')], { 'asset:a': asset('asset:a', 'https://evil.example/x.svg') }),
     'too many shapes': file(Array.from({ length: MAX_SHAPES + 1 }, (_, i) => geo('s' + i, 0, 0, i))),
   }
   for (const [name, data] of Object.entries(bad)) {
@@ -80,6 +80,34 @@ describe('parseJSON rejects untrusted input', () => {
     const store = new Store()
     expect(() => importJSON(fakeEditor(store), file([geo('ok', 0, 0, 1), geo('bad', 0, 0, 2, { size: 'huge' })]))).toThrow(/#2/)
     expect(store.size).toBe(0)
+  })
+})
+
+describe('SVG', () => {
+  it('is an image like any other (shown as an image, its scripts and links do nothing)', () => {
+    const data = file([image('s', 'asset:a')], { 'asset:a': asset('asset:a', 'data:image/svg+xml;base64,PHN2Zz4=') })
+    expect(Object.keys(parseJSON(data).assets)).toEqual(['asset:a'])
+  })
+
+  it('knows SVG code, and its size from width/height or its viewBox', () => {
+    expect(isSvgText('<svg viewBox="0 0 10 10"><rect/></svg>')).toBe(true)
+    expect(isSvgText('<?xml version="1.0"?>\n<!-- made by hand -->\n<!DOCTYPE svg>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>\n')).toBe(true)
+    expect(isSvgText('<div><svg></svg></div>')).toBe(false)
+    expect(isSvgText('hello <svg></svg>')).toBe(false)
+    expect(svgSize('<svg width="120" height="80px"></svg>')).toEqual({ w: 120, h: 80 })
+    expect(svgSize("<svg viewBox='0 0 24 12'></svg>")).toEqual({ w: 24, h: 12 })
+    expect(svgSize('<svg width="48" viewBox="0 0 24 12"></svg>')).toEqual({ w: 48, h: 24 })
+    expect(svgSize('<svg width="100%" viewBox="0,0,30,20"></svg>')).toEqual({ w: 30, h: 20 }) // % is no size
+    expect(svgSize('<svg></svg>')).toBeNull()
+  })
+
+  it('gets a size of its own when it has none, so it lands as an image', () => {
+    expect(sizedSvg('<svg viewBox="0 0 24 12" fill="red"><path/></svg>')).toBe('<svg width="24" height="12" viewBox="0 0 24 12" fill="red"><path/></svg>')
+    expect(sizedSvg('<svg viewBox="0 0 4000 2000"></svg>')).toMatch(/^<svg width="1024" height="512" /)
+    expect(sizedSvg('<svg width="100%" height="100%"></svg>')).toBe('<svg width="300" height="150"></svg>')
+    const sized = '<svg width="10" height="10"></svg>'
+    expect(sizedSvg(sized)).toBe(sized)
+    expect(atob(svgDataUrl('<svg>é</svg>').split(',')[1])).toBe(String.fromCharCode(...new TextEncoder().encode('<svg>é</svg>')))
   })
 })
 
