@@ -283,6 +283,8 @@ export function limitLevel(limit: AgentLimit): '' | 'high' | 'full'
 /** the ids of the feedback a request carries: `items` less the `skipped` ones */
 export function feedbackToSend(items: Array<{ id: string }> | undefined, skipped?: Set<string>): string[]
 export function agentOptions(agent: AgentParticipant | undefined, choice?: { model?: string, effort?: string }): { model: string, effort: string } | undefined
+/** A new request's id: a UUID, on plain http pages too (where crypto.randomUUID is not). */
+export function requestId(): string
 export function detectAgentMention(text: string, agents: AgentParticipant[]): { to: string, text: string } | null
 /** The agent name being written at the start of a note ("@Cla…"), if the caret is in it. */
 export function mentionQuery(value: string, caret?: number): { query: string, start: number, end: number } | null

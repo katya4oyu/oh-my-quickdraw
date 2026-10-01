@@ -39,6 +39,7 @@
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
         "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
+        "quickdraw-clipboard": "/_/quickdraw-clipboard/src/index.js",
         "quickdraw-toolbar": "/_/quickdraw-toolbar/src/index.js",
         "quickdraw-screenshare": "/_/quickdraw-screenshare/src/index.js",
         "quickdraw-presence": "/_/quickdraw-presence/src/index.js",
@@ -54,7 +55,8 @@
     import { createQuickdraw, pageBounds } from '@quickdrawjs/core'
     import { bindYjs } from 'quickdraw-yjs'
     import { exportTool } from 'quickdraw-export'
-    import { bindSvgPaste, importTool } from 'quickdraw-import'
+    import { importTool } from 'quickdraw-import'
+    import { bindClipboard, copyText } from 'quickdraw-clipboard'
     import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
@@ -64,7 +66,7 @@
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
-    import { createAgentPanel, agentTools, buildAgentRequest } from 'quickdraw-agent'
+    import { createAgentPanel, agentTools, buildAgentRequest, requestId } from 'quickdraw-agent'
     import { createVoice, voiceTools } from 'quickdraw-voice'
     import { createScreenShare, screenShareTools, pendingFeedback, markSent } from 'quickdraw-screenshare'
     import { bindAuthorship, createPresence, ACTIVITIES } from 'quickdraw-presence'
@@ -81,7 +83,6 @@
     bindTicketEditing(board.editor)
     const embeds = bindEmbeds(board.editor) // allowed URLs; inline HTML runs only when you press Run
     bindGifs(board.editor) // GIFs move (the canvas alone shows their first frame)
-    bindSvgPaste(board.editor) // SVG code pasted (Figma's "Copy as SVG") becomes an image, as an SVG file does
 
     // link previews through the server's /preview proxy (browsers cannot read
     // other sites' HTML); the card keeps what it got, so viewers never contact the site
@@ -146,7 +147,7 @@
         const selected = [...board.editor.selection].map((id) => board.editor.store.get(id)).filter(Boolean)
         const v = board.editor.viewportPageBounds()
         const request = buildAgentRequest({
-          id: crypto.randomUUID(), to: agent.id, text: '🎙 Voice conversation', editor: board.editor,
+          id: requestId(), to: agent.id, text: '🎙 Voice conversation', editor: board.editor,
           shapeIds: selected.map((s) => s.id), frameIds: selected.filter((s) => s.isFrame).map((s) => s.id),
           anchor: selected[0] ? { shapeId: selected[0].id, x: selected[0].x, y: selected[0].y } : { x: v.x + v.w / 2, y: v.y + v.h / 2 },
           options: panel.optionsFor(agent.id), // its voice (and model, effort) as picked in the AI panel
@@ -171,6 +172,11 @@
       onMessage(fn) { shareListeners.add(fn); return () => shareListeners.delete(fn) },
     } })
 
+    // shapes from other packages, checked by their own validators: in an imported file, or pasted
+    const shapeTypes = { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard }
+    // copy and paste through the browser's own clipboard events: any browser, plain http too
+    // (shapes for a board, their text for elsewhere; images, SVG code, and other text as a note)
+    bindClipboard(board.editor, { types: shapeTypes })
     // the right rail puts things on the board; the selection bar acts on the selected one.
     // Markdown and embeds hide themselves on a core without registerShapeType.
     const svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`
@@ -263,7 +269,7 @@
           ...screenShareTools(share).menu,
           '-',
           // Markdown cards, embeds and tickets are allowed in, checked by their own validators
-          importTool({ types: { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard } }),
+          importTool({ types: shapeTypes }),
           exportTool(),
         ] },
       ],
@@ -277,7 +283,7 @@
     fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then(showTitle)
     async function copyAgentCommand() {
       const command = agentCommand()
-      const copied = await navigator.clipboard.writeText(command).then(() => true, () => false)
+      const copied = await copyText(command)
       prompt(copied ? 'Copied. Run it in the folder the agent should work in (agent pi for pi):' : 'Run this in the folder the agent should work in (agent pi for pi):', command)
     }
     async function renameBoard() {

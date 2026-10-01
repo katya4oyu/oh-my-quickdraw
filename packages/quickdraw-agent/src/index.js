@@ -5,6 +5,6 @@ export { describeBoard, boardToMarkdown, textOf, runOp, applySteps, undoDiff, pa
 export { BOARD_TOOLS } from './tools.js'
 export { lintBoard, lintText, fixLayout, fixText } from './lint.js'
 export { createAgentPanel, agentTools, AGENT_ICON, buildAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, detectAgentMention, updateAgentThread, undoAgentRequest, dragArea, pendingApproval, markedArea } from './panel.js'
-export { hasAgentThreadForAnchor } from './panel.js'
+export { hasAgentThreadForAnchor, requestId } from './panel.js'
 export { installMeasure, estimateWidth } from './measure.js'
 export { bindMentionPicker, mentionQuery, matchAgents } from './mention-picker.js'
