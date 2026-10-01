@@ -69,6 +69,8 @@ describe('a session: an agent with a shell, on the board', () => {
     const op = await page.event('op')
     expect(op).toMatchObject({ requestId: 'r1', ids: made.ids })
     expect(Object.keys(op.diff.added)).toContain(made.ids[0]) // the panel can undo it
+    // the thread says what it did, a line a change, as it goes
+    expect(await page.take((m) => m.kind === 'event' && m.event.type === 'progress' && /^Added/.test(m.event.text)).then((m) => m.event.text)).toBe('Added note "Hello"')
 
     // a person answers while it works: the next result says so, and next gives it
     ws.send(packAgent({ kind: 'reply', requestId: 'r1', message: 'And a blue one' }))
@@ -81,6 +83,9 @@ describe('a session: an agent with a shell, on the board', () => {
     expect(await page.event('message')).toMatchObject({ requestId: 'r1', text: 'Added two notes' })
     await run('finish', 'Two notes')
     expect(await page.event('done')).toMatchObject({ requestId: 'r1', text: 'Two notes' })
+    // its ticket for the request: up at its first note, done with it
+    const [ticket] = (await run('tickets')).flat().filter((t: any) => t?.work?.request === 'r1')
+    expect(ticket).toMatchObject({ title: 'Put a note here', status: 'done', by: 'Claude', result: 'Two notes' })
     ws.close()
   }, 20_000)
 

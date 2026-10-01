@@ -6,6 +6,7 @@ import { joinBoard, putLive } from '../src/agent/board-agent.ts'
 import { accountText, activityOf, commandText, initCodex, limitsOf, startAppServer, runCodex } from '../src/agent/codex.ts'
 import { realtimeVoices, runVoice } from '../src/agent/voice.ts'
 import { placeSnapshot } from 'quickdraw-screenshare'
+import { createKanban } from 'quickdraw-tickets'
 import { findChrome } from '../src/board/chrome.ts'
 import { imageSize, loadImage, splitImage, within } from '../src/agent/images.ts'
 import { execFileSync } from 'node:child_process'
@@ -100,7 +101,7 @@ describe('quickdraw agent codex-app-server', () => {
     await person.until(() => person.events.some((e) => e.type === 'message' && e.requestId === 'v1'))
     // what the person said, as theirs; Codex's work as progress; what was said back, as the answer
     expect(person.events.filter((e) => e.requestId === 'v1').map((e) => [e.type, e.text ?? ''])).toEqual([
-      ['progress', 'fast'], ['reply', 'Put a note that says hi.'], ['op', ''], ['progress', 'Added it (true).'], ['message', 'Done, it says hi.'],
+      ['progress', 'fast'], ['reply', 'Put a note that says hi.'], ['area', ''], ['op', ''], ['progress', 'Added it (true).'], ['message', 'Done, it says hi.'],
     ])
     expect(board.store.all().some((r: any) => r.props?.text === 'hi')).toBe(true)
     expect(app.threads.get('v1')?.thread.request.voice).toBe(true)
@@ -179,8 +180,10 @@ describe('quickdraw agent codex-app-server', () => {
     const there = await agent.runTool('w1', 'add_note', { text: 'Summarize' })
     expect(there).toMatch(/People moved your work area to x 2000, y 0 \(600 × 400\): build there\./)
     expect(within(JSON.parse(there.split('\n')[0]).ids[0], moved)).toBe(true)
-    // kept with the thread: claimed, grown when Ann's note left no room, moved
-    expect(app.threads.get('w1')?.thread.events.filter((e: any) => e.type === 'area').map((e: any) => [e.area.y, e.area.h > 400, e.by ?? 'agent'])).toEqual([[200, false, 'agent'], [200, true, 'agent'], [0, false, 'person']])
+    // kept with the thread: claimed (its ticket at the top, notes around it and Ann's), moved
+    expect(app.threads.get('w1')?.thread.events.filter((e: any) => e.type === 'area').map((e: any) => [e.area.y, e.area.h > 400, e.by ?? 'agent'])).toEqual([[200, false, 'agent'], [0, false, 'person']])
+    const ticket = board.store.shapes().find((s: any) => s.type === 'ticket') as any
+    expect([ticket.x, ticket.y, ticket.props.status]).toEqual([324, 244, 'doing'])
 
     // put beside it, by a place of its own: the area takes it in, so it stays where the work is
     const far = JSON.parse((await agent.runTool('w1', 'add_note', { text: 'Far', at: { x: 3000, y: 600 } })).split('\n')[0])
@@ -287,7 +290,13 @@ describe('quickdraw agent codex-app-server', () => {
     person.send({ kind: 'reply', requestId: 'r1', message: { approval: approval.id, allow: true } })
     await person.until(() => person.events.some((e) => e.type === 'done'))
 
-    expect(person.events.map((e) => e.type)).toEqual(['progress', 'progress', 'op', 'progress', 'approval', 'message', 'done'])
+    // its first note marks out its work area (where it put it), and puts up its ticket there
+    expect(person.events.map((e) => e.type)).toEqual(['progress', 'progress', 'area', 'op', 'progress', 'approval', 'message', 'done'])
+    const ticket = board.store.shapes().find((s: any) => s.type === 'ticket') as any
+    expect(ticket.props).toMatchObject({ title: 'Add a note', to: 'Codex · repo', by: 'Codex · repo', status: 'done', result: 'Added a note (Add a note).', work: { request: 'r1' } })
+    const area = person.events.find((e) => e.type === 'area').area
+    expect(ticket.x >= area.x && ticket.y >= area.y && ticket.x + ticket.props.w <= area.x + area.w).toBe(true) // in its work area
+    expect(ticket.props.work.area).toEqual(area)
     expect(person.events[0].text).toBe('deep · high') // the model and effort chosen in the panel
     const op = person.events.find((e) => e.type === 'op')
     expect(op.diff).toBeTruthy()
@@ -338,6 +347,88 @@ describe('quickdraw agent codex-app-server', () => {
     await person.until(() => person.events.filter((e) => e.type === 'done').length === 2)
     expect(person.events.filter((e) => e.type === 'message').at(-1).text).toBe('You said: Thanks')
   })
+})
+
+describe('work tickets', () => {
+  const ask = (id: string, to: string, text: string) => ({ kind: 'request', request: { id, to, text, context: { shapeIds: [], frameIds: [], viewport: { x: 0, y: 0, w: 1200, h: 800 } }, anchor: {} } })
+  const ticketsOf = (store: any) => store.shapes().filter((s: any) => s.type === 'ticket')
+  const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms))
+  async function twoAgents(title: string) {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create(title).id}`
+    const person = await page(url)
+    const adaBoard = await openBoard({ url, name: 'Ada' })
+    const ada = await joinBoard(adaBoard, { id: 'ada', name: 'Ada', knows: [] })
+    const boBoard = await openBoard({ url, name: 'Bo' })
+    const bo = await joinBoard(boBoard, { id: 'bo', name: 'Bo', knows: [] })
+    cleanup.push(() => ada.close(), () => bo.close())
+    await person.until(() => person.agents.at(-1)?.length === 2)
+    return { person, ada, adaBoard, bo, boBoard }
+  }
+
+  it('puts up a ticket for what it works on, at its first change; agents keep out of each other\'s work; it closes when done, or fails when it leaves', async () => {
+    const { person, ada, adaBoard, bo, boBoard } = await twoAgents('Work')
+    person.send(ask('a1', 'ada', 'Map the flow\nwith the error paths'))
+    person.send(ask('b1', 'bo', 'Tidy the board'))
+    await settle()
+
+    // reading changes nothing: no ticket
+    await ada.runTool('a1', 'read_board', {})
+    expect(ticketsOf(adaBoard.store)).toEqual([])
+    const first = JSON.parse(await ada.runTool('a1', 'add_note', { text: 'Start' }))
+    const [ticket] = ticketsOf(adaBoard.store)
+    expect(ticket.props).toMatchObject({ title: 'Map the flow', body: 'with the error paths', to: 'Ada', by: 'Ada', status: 'doing', work: { request: 'a1' } })
+    const area = ticket.props.work.area
+    const note = adaBoard.store.get(first.ids[0]) as any
+    expect(note.x >= area.x && note.y >= area.y && note.x + 200 <= area.x + area.w && note.y + 200 <= area.y + area.h).toBe(true)
+    // only once: its next steps are in the same ticket and area
+    await ada.runTool('a1', 'add_note', { text: 'Then' })
+    expect(ticketsOf(adaBoard.store)).toHaveLength(1)
+
+    // Bo may not change what is in Ada's work, nor put things there
+    await settle()
+    await expect(bo.runTool('b1', 'update_shape', { id: first.ids[0], text: 'Mine now' })).rejects.toThrow(/^Ada is working there: "Map the flow" \(its ticket .*\)\. Agents keep out of each other's work/)
+    await expect(bo.runTool('b1', 'add_note', { text: 'Here', at: { x: area.x + 10, y: area.y + 10 } })).rejects.toThrow(/Ada is working there/)
+    expect((boBoard.store.get(first.ids[0]) as any).props.text).toBe('Start')
+    // elsewhere is fine
+    await bo.runTool('b1', 'add_note', { text: 'Elsewhere', at: { x: 6000, y: 6000 } })
+    expect(ticketsOf(boBoard.store).map((t: any) => [t.props.by, t.props.status])).toEqual([['Ada', 'doing'], ['Bo', 'doing']])
+
+    // done: its ticket says so, with what it said last; then its part of the board is open to others
+    ada.emit('a1', { type: 'message', text: 'Mapped it: 2 paths.\nMore below' })
+    ada.emit('a1', { type: 'done' })
+    expect(adaBoard.store.get(ticket.id)).toMatchObject({ props: { status: 'done', result: 'Mapped it: 2 paths.' } })
+    await settle()
+    await bo.runTool('b1', 'update_shape', { id: first.ids[0], text: 'Bo was here' })
+
+    // Bo leaves before it is done: its ticket failed
+    await bo.close()
+    await settle()
+    const bos = ticketsOf(adaBoard.store).find((t: any) => t.props.by === 'Bo')
+    expect(bos.props).toMatchObject({ status: 'failed', result: 'Bo left the board before it was done.' })
+  }, 20_000)
+
+  it('keeps out only of the work of agents on the board, and puts its ticket in the Doing column of a kanban', async () => {
+    const { person, ada, adaBoard, bo, boBoard } = await twoAgents('Kanban')
+    const { columns } = createKanban(adaBoard.store as never, { x: -2000, y: 0 }) as { columns: Record<string, string> }
+    person.send(ask('a1', 'ada', 'Draw a box'))
+    person.send(ask('b1', 'bo', 'Draw next to it'))
+    await settle()
+    const made = JSON.parse(await ada.runTool('a1', 'add_note', { text: 'Box' }))
+    const [ticket] = ticketsOf(adaBoard.store)
+    expect(ticket.frameId).toBe(columns.doing)
+    const areaEvent = person.events.find((e) => e.type === 'area' && e.requestId === 'a1')
+    expect(areaEvent.area.x).toBeGreaterThan(-500) // around its note, not the kanban
+    await settle()
+    // Ada is gone (its ticket left as it was, say): Bo may work there
+    await ada.close()
+    adaBoard.store.update(ticket.id, { props: { status: 'doing' } } as never)
+    await settle()
+    await bo.runTool('b1', 'update_shape', { id: made.ids[0], text: 'Box, by Bo' })
+    expect((boBoard.store.get(made.ids[0]) as any).props.text).toBe('Box, by Bo')
+  }, 20_000)
 })
 
 it('shows a shell command as the command it runs', () => {
