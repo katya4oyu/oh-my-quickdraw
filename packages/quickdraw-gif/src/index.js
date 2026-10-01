@@ -1,8 +1,10 @@
 // Animated GIFs on a board. The core draws images on its canvas, and a canvas
 // shows a GIF's first frame only; so over each GIF in view (that nothing is
 // drawn over) this lays the GIF itself, as an <img>, which the browser plays.
-// The canvas keeps its first frame beneath: exports, thumbnails and pages
-// without this still show it. With reduced motion, GIFs keep still.
+// While it plays, the screen does not draw the GIF beneath it (the core's
+// setDrawnElsewhere: else its first frame shows through a see-through GIF);
+// exports, thumbnails and pages without this still show the first frame. On a
+// core without setDrawnElsewhere, GIFs keep still. With reduced motion too.
 //
 // A GIF stays a GIF when it is pasted or dropped as a file (the core keeps
 // images up to 2048 px as they are); an image copied from a web page reaches
@@ -49,7 +51,8 @@ export function bindGifs(editor, { max = 12 } = {}) {
   Object.assign(layer.style, { position: 'absolute', inset: '0', overflow: 'hidden', pointerEvents: 'none' })
   editor.canvas.after(layer) // over the shapes, below the selection handles
   const live = new Map() // id -> { img, src }
-  const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const canHide = typeof editor.setDrawnElsewhere === 'function'
+  const still = () => !canHide || !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   let raf = 0
   const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; reconcile() }) }
 
@@ -61,6 +64,8 @@ export function bindGifs(editor, { max = 12 } = {}) {
       .slice(-max)
     const keep = new Set(wanted.map(([s]) => s.id))
     for (const [id, cur] of [...live]) if (!keep.has(id)) { cur.img.remove(); live.delete(id) }
+    // the screen leaves to each <img> the GIF it plays, once it shows (until then the canvas does)
+    const shown = () => editor.setDrawnElsewhere?.([...live].filter(([, c]) => c.ready).map(([id]) => id))
     for (const [s, src] of wanted) {
       let cur = live.get(s.id)
       if (cur && cur.src !== src) { cur.img.remove(); live.delete(s.id); cur = undefined }
@@ -69,10 +74,12 @@ export function bindGifs(editor, { max = 12 } = {}) {
         img.alt = ''
         img.draggable = false
         img.decoding = 'async'
+        const entry = { img, src, ready: false }
+        img.onload = () => { entry.ready = true; shown() }
         img.src = src
         Object.assign(img.style, { position: 'absolute', left: '0', top: '0', transformOrigin: '0 0', borderRadius: '4px', pointerEvents: 'none' })
         layer.append(img)
-        live.set(s.id, cur = { img, src })
+        live.set(s.id, cur = entry)
       }
       const { w, h } = s.props
       const p = editor.pageToScreen(s.x, s.y)
@@ -81,6 +88,7 @@ export function bindGifs(editor, { max = 12 } = {}) {
         transform: `translate(${p.x}px, ${p.y}px) scale(${editor.camera.z})` + (s.rot ? ` translate(${w / 2}px, ${h / 2}px) rotate(${s.rot}rad) translate(${-w / 2}px, ${-h / 2}px)` : ''),
       })
     }
+    shown()
   }
 
   const offs = [editor.store.listen(schedule), editor.on('camera', schedule)]
@@ -97,6 +105,7 @@ export function bindGifs(editor, { max = 12 } = {}) {
       motion?.removeEventListener?.('change', schedule)
       layer.remove()
       live.clear()
+      editor.setDrawnElsewhere?.([])
     },
   }
 }
