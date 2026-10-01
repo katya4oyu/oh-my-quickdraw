@@ -1,6 +1,6 @@
 # quickdraw-gif
 
-Animated GIFs that move on a Quickdraw board. The core draws images on its canvas, and a canvas shows only a GIF's first frame; so over each GIF in view this lays the GIF itself as an `<img>`, which the browser plays. The canvas keeps the first frame beneath it, so exports, thumbnails and pages without this package still show the GIF, still.
+Animated GIFs that move on a Quickdraw board. The core draws images on its canvas, and a canvas shows only a GIF's first frame; so over each GIF in view this lays the GIF itself as an `<img>`, which the browser plays. While it plays, the screen does not draw the GIF on the canvas beneath it (the core's `setDrawnElsewhere`; otherwise a see-through GIF shows its first frame through the frame playing); exports, thumbnails and pages without this package still show its first frame. On a core without `setDrawnElsewhere` (upstream Quickdraw), GIFs keep still.
 
 ```js
 import { bindGifs } from 'quickdraw-gif'
