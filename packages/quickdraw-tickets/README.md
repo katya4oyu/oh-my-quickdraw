@@ -38,4 +38,6 @@ Agents read and move tickets through [`quickdraw-agent`](../quickdraw-agent) (`r
 
 Example: `examples/quickdraw-tickets` (run `npm run examples` at the workspace root).
 
-Toolbar items: `ticketTools({ agents, me })` returns `{ rail, context }` for [`quickdraw-toolbar`](../quickdraw-toolbar): a ticket and a kanban on the rail; edit, status and whom it is for on a selected ticket. `agents()` lists the agents a ticket can be for (`[{ name }]`), `me()` who writes it (`{ name }`).
+**Team & tickets**, beside the board: `createTicketBoard({ editor, team, setRole })` is a panel (a card by the rail, a sheet on phones) with the team above — each agent's name, role, what it is doing and the tickets it is on — and every ticket of the board below in Todo / Doing / Done columns, kanban frames or not. Drag a card to another column or pick its status; press it to go to the ticket on the board. `team()` gives the agents (`[{ name, role?, about?, here?, status?, doing? }]`, e.g. from [`quickdraw-members`](../quickdraw-members) and presence); with `setRole(name, role)` a role is edited in place. It watches the tickets; call `refresh()` when the team changes. Pass it to `ticketTools({ board })` for a button on the rail.
+
+Toolbar items: `ticketTools({ agents, me, board })` returns `{ rail, context }` for [`quickdraw-toolbar`](../quickdraw-toolbar): a ticket and a kanban on the rail; edit, status and whom it is for on a selected ticket. `agents()` lists the agents a ticket can be for (`[{ name }]`), `me()` who writes it (`{ name }`).

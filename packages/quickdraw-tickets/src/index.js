@@ -15,6 +15,7 @@ import * as core from '@quickdrawjs/core'
 
 export { createKanban, bindKanban, setTicketStatus, placeInColumn, columnOf, kanbanColumn, kanbanNear, isColumn, COLUMNS } from './kanban.js'
 export { ticketTools, TICKET_ICONS } from './tools.js'
+export { createTicketBoard, TEAM_ICON } from './board.js'
 
 export const TYPE = 'ticket'
 export const STATUSES = ['todo', 'doing', 'done', 'failed']
