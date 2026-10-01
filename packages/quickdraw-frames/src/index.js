@@ -4,6 +4,8 @@
 // corner; members carry `frameId`. The title is a member too, so it moves
 // with the frame. exportFrame renders just the contents, cut at the edges.
 //
+// A shape marked `frameless` never joins a frame (quickdraw-layouts' areas).
+//
 // A frame may carry `aspect` (width / height, e.g. 16 / 9) to keep its shape.
 // It also carries its own id as `frameKey`, and its title `isFrameTitle`:
 // copies (the core's duplicate, paste, import) keep those fields but get new
@@ -33,7 +35,7 @@ export function createFrame(store, { x, y, w = 480, h = 320, aspect = null, titl
       props: { geo: 'rectangle', w, h, color: 'grey', size: 's', dash: 'solid', fill: 'none', font: 'sans' },
     })
     putTitle(store, store.get(id), title)
-    for (const s of store.shapes()) if (!isFrame(s) && s.frameId !== id && inside(pageBounds(s), store.get(id))) setFrame(store, s, id)
+    for (const s of store.shapes()) if (!isFrame(s) && !s.frameless && s.frameId !== id && inside(pageBounds(s), store.get(id))) setFrame(store, s, id)
   })
   return id
 }
@@ -208,6 +210,7 @@ export function bindFrames(store) {
     }
 
     function assign(s) {
+      if (s.frameless) return // marked to stay out of frames (a layout's area, say)
       setFrame(store, s, frameAt(store, s)?.id)
     }
 

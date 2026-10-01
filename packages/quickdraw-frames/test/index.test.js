@@ -87,6 +87,14 @@ describe('frames', () => {
     expect('frameId' in store.get('shape:in')).toBe(false)
   })
 
+  it('never takes in a shape marked frameless', () => {
+    const { store, frame } = setup()
+    store.put({ ...box('shape:free', 60, 60), frameless: true })
+    expect(store.get('shape:free').frameId).toBeUndefined()
+    store.update(frame, { props: { w: 300 } }) // a resize re-checks everything
+    expect(store.get('shape:free').frameId).toBeUndefined()
+  })
+
   it('joins a newly added shape by position', () => {
     const { store, frame } = setup()
     store.put(box('shape:new', 20, 20))

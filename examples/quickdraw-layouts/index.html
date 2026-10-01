@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quickdraw — layouts example</title>
+  <link rel="stylesheet" href="../../vendor/quickdraw/packages/core/src/quickdraw.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #board { position: fixed; inset: 0; }
+    .actions { position: fixed; top: 10px; right: 10px; left: 10px; z-index: 50; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; pointer-events: none; }
+    .actions button, .actions select { pointer-events: auto; }
+    .actions button, .actions select {
+      font: 500 13px system-ui; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.15); background: #fff; cursor: pointer;
+    }
+  </style>
+  <!-- in your own project, a bundler resolves these from node_modules -->
+  <script type="importmap">
+    {
+      "imports": {
+        "@quickdrawjs/core": "../../vendor/quickdraw/packages/core/src/index.js",
+        "quickdraw-frames": "../../packages/quickdraw-frames/src/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="board"></div>
+  <div class="actions">
+    <button id="cell">Add cell</button>
+    <select id="span" aria-label="Cell size">
+      <option value="">Cell size…</option>
+      <option value="1x1">1 × 1</option>
+      <option value="2x1">2 × 1</option>
+      <option value="1x2">1 × 2</option>
+      <option value="2x2">2 × 2</option>
+      <option value="auto">Rows follow contents</option>
+    </select>
+    <select id="cols" aria-label="Columns">
+      <option value="2">2 columns</option>
+      <option value="3">3 columns</option>
+      <option value="4" selected>4 columns</option>
+      <option value="6">6 columns</option>
+    </select>
+  </div>
+  <script type="module">
+    import { createQuickdraw } from '@quickdrawjs/core'
+    import { bindFrames } from 'quickdraw-frames'
+    import { bindLayouts, createLayout, addCell, setSpan, setColumns, isCell } from '../../packages/quickdraw-layouts/src/index.js'
+
+    const board = createQuickdraw({ container: document.getElementById('board') })
+    const { editor } = board
+    bindFrames(editor.store)
+    bindLayouts(editor.store)
+
+    // one bento grid: resize a cell (it snaps to whole units), drag it onto
+    // another's place, drag it out, or drop a frame in — the rest pack again
+    const v = editor.viewportPageBounds()
+    const w = Math.min(1200, v.w * 0.9)
+    const area = createLayout(editor.store, { x: v.x + (v.w - w) / 2, y: v.y + 60, w })
+    addCell(editor.store, area, { c: 2, r: 2, title: 'Main' })
+    for (const title of ['Ideas', 'Questions', 'Next']) addCell(editor.store, area, { title })
+
+    const selectedCell = () => {
+      const s = editor.store.get([...editor.selection][0])
+      return isCell(s) ? s : isCell(editor.store.get(s?.frameId)) ? editor.store.get(s.frameId) : null
+    }
+
+    document.getElementById('cell').onclick = () => {
+      editor.setTool('select')
+      editor.setSelection([addCell(editor.store, area)])
+    }
+
+    document.getElementById('span').onchange = (e) => {
+      const cell = selectedCell()
+      const v = e.target.value
+      e.target.value = ''
+      if (!cell) return alert('Select a cell first')
+      if (v === 'auto') setSpan(editor.store, cell.id, { auto: !cell.span.auto })
+      else { const [c, r] = v.split('x').map(Number); setSpan(editor.store, cell.id, { c, r, auto: false }) }
+    }
+
+    document.getElementById('cols').onchange = (e) => setColumns(editor.store, area, Number(e.target.value))
+  </script>
+</body>
+</html>
