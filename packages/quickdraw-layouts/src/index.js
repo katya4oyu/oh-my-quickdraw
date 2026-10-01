@@ -22,7 +22,7 @@
 //   leaves its cells as plain frames
 // Mid-gesture (a drag, a resize) nothing is packed: it happens on release.
 import { pageBounds, composeDiff, newId } from '@quickdrawjs/core'
-import { createFrame, isFrame } from 'quickdraw-frames'
+import { createFrame, isFrame, titleSpot } from 'quickdraw-frames'
 import { packBento } from './bento.js'
 
 export { packBento } from './bento.js'
@@ -96,7 +96,7 @@ function pack(store, layoutId, base = {}) {
     // the cell's title and what is in it come along
     for (const m of store.shapes()) {
       if (m.frameId !== s.id) continue
-      if (isTitle(m)) store.update(m.id, { x, y: y - 34 })
+      if (isTitle(m)) store.update(m.id, titleSpot({ ...s, x, y })) // above it, or inside it
       else if (dx || dy) store.update(m.id, { x: m.x + dx, y: m.y + dy })
     }
   }

@@ -60,7 +60,9 @@ Writing (each command is one operation, undoable as a whole)
                                           a PNG, JPEG, GIF, WebP or SVG in the working directory
   image FILE --split COLSxROWS [--inset 0.1] [--width N] [--frame TITLE] [--at X,Y]
                                           a sheet cut into its cells, laid out as on the sheet
-  frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH]
+  frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH] [--in FRAME] [--title-inside]
+                                          --in FRAME: a frame in that frame (frames nest); --title-inside: its title
+                                          inside its top-left corner, not above it
   frame TITLE --in BENTO [--span 2x1] [--auto]
                                           a cell at the end of a bento grid, COLSxROWS units big
                                           (--auto: its rows follow what is in it)
@@ -211,6 +213,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
+  'title-inside': { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
@@ -402,7 +405,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await operate((s, where) => applySteps(s, o.name, steps as never, where)); break
       }
       case 'frame':
-        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto })); break
+        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto, titleInside: o['title-inside'] })); break
       case 'bento':
         done = await op((ops) => ops.layout({ cols: o.cols ? Number(o.cols) : undefined, w: o.width ? Number(o.width) : undefined, gap: o.gap ? Number(o.gap) : undefined }, { at: point(o.at) })); break
       case 'span': {

@@ -322,3 +322,25 @@ describe('frames in frames', () => {
     expect(innerCopy.z).toBeGreaterThan(store.get(copy.id).z)
   })
 })
+
+describe('a title inside the frame', () => {
+  it('goes just inside the top-left corner, follows the frame, and goes back above when asked', async () => {
+    const { setTitleInside } = await import('../src/index.js')
+    const store = new Store()
+    bindFrames(store)
+    const f = createFrame(store, { x: 100, y: 100, w: 300, h: 200, title: 'Inside', titleInside: true })
+    expect(store.get(f + '-title')).toMatchObject({ x: 112, y: 108, frameId: f })
+    snapshot(store)
+    drag(store, [f], 50, 0)
+    expect(store.get(f + '-title')).toMatchObject({ x: 162, y: 108 })
+    setTitleInside(store, f, false)
+    expect(store.get(f).titleInside).toBeUndefined()
+    expect(store.get(f + '-title')).toMatchObject({ x: 150, y: 66 })
+    setTitleInside(store, f, true)
+    expect(store.get(f + '-title')).toMatchObject({ x: 162, y: 108 })
+    // a copy keeps it inside
+    const copy = { ...store.get(f), id: newId(), x: 1000 }
+    store.put(copy)
+    expect(store.get(copy.id + '-title')).toMatchObject({ x: 1012, y: 108 })
+  })
+})

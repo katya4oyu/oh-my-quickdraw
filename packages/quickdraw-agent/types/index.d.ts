@@ -25,7 +25,7 @@ export interface Operations {
   /** Moves a ticket on; in a kanban it changes column. `by` defaults to this agent. */
   status(id: string, status: TicketStatus, change?: { by?: string | null, result?: string }): string
   /** With `inFrame` a bento grid's id: a cell at its end, `span` units big (`auto`: rows follow its contents). */
-  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[], span?: Span, auto?: boolean }): string
+  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[], span?: Span, auto?: boolean, titleInside?: boolean }): string
   /** A bento grid (quickdraw-layouts): an area whose frames (cells) pack themselves, `cols` columns `w` wide. */
   layout(opts?: { cols?: number, w?: number, gap?: number }, where?: { at?: Point }): string
   /** A cell's size in grid units, or whether its rows follow its contents; the other cells move along. */
