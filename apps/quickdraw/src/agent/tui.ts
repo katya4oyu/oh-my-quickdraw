@@ -30,6 +30,8 @@ export interface TuiOptions {
   name: string
   cwd: string
   remote?: boolean
+  /** its role on the board (quickdraw-members): a transcriber, a reviewer… */
+  role?: string
   idle?: number
   /** without a skill anywhere: install it for you rather than in this repository */
   global?: boolean
@@ -125,7 +127,7 @@ export async function runTui(tui: Tui, o: TuiOptions): Promise<number> {
   say(ensureSkill({ cwd: o.cwd, global: o.global, home: o.home, tui }))
   if (tui === 'codex') say(ensureCodexRule(o.cwd))
   if (shim) say(`quickdraw: not on your PATH, so ${t.name} runs it through ${shim} (npm link -w apps/quickdraw puts it on your PATH)`)
-  const joined = await joinSession(o.url, { name: o.name, idle: o.idle, remote: o.remote, cwd: o.cwd })
+  const joined = await joinSession(o.url, { name: o.name, idle: o.idle, remote: o.remote, role: o.role, cwd: o.cwd })
   say(`the board: ${o.name} is on it (${o.url})${joined.already ? ', as before' : ''}`)
   say(`Starting ${t.name}…`)
   // Ctrl-C is the TUI's (the terminal sends it to both): this waits for it to exit, then leaves

@@ -9,6 +9,7 @@ import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parse
 import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
+import { teamOf, teamText } from '../board/team.ts'
 import { pageBounds } from '@quickdrawjs/core'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
 import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
@@ -107,10 +108,17 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
   finish [REQ] [TEXT]                     the request is done (TEXT: what you did, in a line)
   area W H [--title T] [--at X,Y]         marks out where you will draw for the request; what you add without a
                                           place goes in it
-  who                                     who is on the board: people and agents, their cursors, what they look at
+  who                                     who is on the board: people and agents (with their roles), their cursors,
+                                          what they look at
   changes                                 what changed on the board since you last looked
   leave                                   leaves the board
   Results say what waits for you as "inbox": take it with wait.
+
+The team (live boards): agents' roles — a transcriber, a researcher, a reviewer — so each does what it is
+there for and hands the rest to the one whose role fits; people and agents both set them
+  members                                 the agents of the board: their roles, who is here, what each works on
+  role ROLE [--about TEXT] [--of NAME]    sets your role (--of: another agent's); --clear takes it off
+  join … --role ROLE                      joins with a role
 
 History
   log                                       this board's operations, newest last
@@ -186,11 +194,12 @@ const OPTIONS = {
   circle: { type: 'boolean' }, project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
+  role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -249,7 +258,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     if (file) throw new Error('join needs a live board (--board), not a file')
     // named "<agent> · <repository>" unless it says (see SKILL.md)
     const name = argv.some((a) => a === '--name' || a.startsWith('--name=')) ? o.name : `Agent · ${(await import('./skill.ts')).repoName()}`
-    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'] })))
+    return out(JSON.stringify(await joinSession(await resolveBoard(o.board ?? env, server), { name, idle: o.idle ? Number(o.idle) : undefined, remote: o['allow-remote'], role: o.role })))
   }
   if (!file) {
     const s = await findSession(process.cwd())
@@ -294,8 +303,23 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     }
     const needsLive = () => { if (!live) throw new Error(`${cmd} needs a live board (--board), not a file`) }
     switch (cmd) {
-      case 'read':
-        return out(o.format === 'json' ? JSON.stringify(describeBoard(store), null, 2) : boardToMarkdown(store))
+      case 'read': {
+        if (o.format === 'json') return out(JSON.stringify(describeBoard(store), null, 2))
+        const team = live ? teamText(teamOf(board, o.name)) : '' // who does what
+        return out(boardToMarkdown(store) + (team ? '\n\n' + team : ''))
+      }
+      case 'members':
+        needsLive()
+        return out(JSON.stringify(teamOf(board, o.name), null, 2))
+      case 'role': {
+        needsLive()
+        const who = o.of ?? o.name
+        if (!who) throw new Error('role needs your --name (or --of NAME)')
+        if (!o.clear && !args.length && o.about === undefined) throw new Error('role needs a role (or --clear)')
+        const set = board.members!.set(who, o.clear ? { role: '', about: '' } : { ...(args.length ? { role: args.join(' ') } : {}), ...(o.about !== undefined ? { about: o.about } : {}) }, o.name)
+        if (live) await sleep(300) // out to the others before the board closes
+        return out(JSON.stringify(set ? { member: set } : { removed: who }))
+      }
       case 'lint': {
         const scope = { frame: o.frame, ids: o.ids?.split(',') }
         const fixedOp = o.fix ? fixLayout(store, o.name, scope) : null

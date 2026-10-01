@@ -410,6 +410,38 @@ describe('work tickets', () => {
     expect(bos.props).toMatchObject({ status: 'failed', result: 'Bo left the board before it was done.' })
   }, 20_000)
 
+  it('joins with a role; agents set roles; read_board ends with the team: roles, who is here, what each works on', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Team').id}`
+    const person = await page(url)
+    const adaBoard = await openBoard({ url, name: 'Ada' })
+    const ada = await joinBoard(adaBoard, { id: 'ada', name: 'Ada', knows: [], role: 'transcriber' })
+    const boBoard = await openBoard({ url, name: 'Bo' })
+    const bo = await joinBoard(boBoard, { id: 'bo', name: 'Bo', knows: [] })
+    cleanup.push(() => ada.close(), () => bo.close())
+    await person.until(() => person.agents.at(-1)?.length === 2)
+    person.send(ask('a1', 'ada', 'Write down what we said'))
+    person.send(ask('b1', 'bo', 'Look things up'))
+    await settle()
+    expect(boBoard.members!.get('ada')).toMatchObject({ role: 'transcriber', by: 'Ada' })
+
+    // Bo takes a role, and gives Ada a line on what it does
+    expect(JSON.parse(await bo.runTool('b1', 'set_role', { role: 'researcher', about: 'Looks things up on the web' })).member).toMatchObject({ name: 'Bo', role: 'researcher', by: 'Bo' })
+    await bo.runTool('b1', 'set_role', { name: 'Ada', role: 'transcriber', about: 'Writes down what people say' })
+    await ada.runTool('a1', 'add_note', { text: 'Notes' })
+    await settle()
+    const read = await bo.runTool('b1', 'read_board', {})
+    expect(read).toMatch(/## Team: the agents of this board, their roles and what they work on\n\n- Bo \(you\) — role: researcher \(Looks things up on the web\), set by Bo\n- Ada — role: transcriber \(Writes down what people say\), set by Bo — working on "Write down what we said" \(shape:/)
+    expect(await bo.runTool('b1', 'read_board', { format: 'json' })).not.toMatch(/Team/)
+    // an empty role takes it off
+    await bo.runTool('b1', 'set_role', { role: '' })
+    expect(boBoard.members!.get('Bo')).toBeNull()
+    await settle()
+    expect(adaBoard.members!.get('Bo')).toBeNull() // for everyone
+  }, 20_000)
+
   it('keeps out only of the work of agents on the board, and puts its ticket in the Doing column of a kanban', async () => {
     const { person, ada, adaBoard, bo, boBoard } = await twoAgents('Kanban')
     const { columns } = createKanban(adaBoard.store as never, { x: -2000, y: 0 }) as { columns: Record<string, string> }

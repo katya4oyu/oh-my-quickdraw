@@ -34,6 +34,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-screenshare`](packages/quickdraw-screenshare) | One person shares a screen, everyone watches it live, and snapshots land on the board to write feedback on | No | `quickdraw-frames` |
 | [`quickdraw-presence`](packages/quickdraw-presence) | Who is on a board: cursors with names, colours and statuses (an agent's says what it is doing), following someone, arrows at the edge for those out of sight | No | — |
 | [`quickdraw-tickets`](packages/quickdraw-tickets) | Tickets people leave for agents, and a kanban (Todo / Doing / Done frames) that follows their status | **Yes** — `registerShapeType` | `quickdraw-frames` |
+| [`quickdraw-members`](packages/quickdraw-members) | The agents of a board and their roles (transcriber, researcher, reviewer…), a table in the board's Yjs document that people and agents both edit | No | `yjs` |
 | [`quickdraw-voice`](packages/quickdraw-voice) | Talk with an agent on a board: a microphone, a WebRTC call straight to a voice model, and a bar with what is said while it works | No | — |
 
 "Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown`, `quickdraw-embed` and `quickdraw-tickets` still load: `isMarkdownSupported()` / `isEmbedSupported()` are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.

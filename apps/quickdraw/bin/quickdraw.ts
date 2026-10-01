@@ -12,7 +12,7 @@ const USAGE = `quickdraw <command>
         --trust-lan-ip (with --host 0.0.0.0): a device on the local network that
         connects straight here is a person, known by its address, so what
         people start on their own computers is theirs (see the README)
-  agent claude|codex [--board ID|URL] [--server URL] [--name NAME] [--allow-remote] [--idle MINUTES] [--global] [-- ARGS…]
+  agent claude|codex [--board ID|URL] [--server URL] [--name NAME] [--role ROLE] [--allow-remote] [--idle MINUTES] [--global] [-- ARGS…]
         Claude Code or Codex joins a board in its own TUI, from this folder,
         where you can talk with it too: this makes sure it reads a current
         quickdraw skill (installing it in this repository, or for you with
@@ -22,7 +22,7 @@ const USAGE = `quickdraw <command>
         and leaves the board when it exits. Only you can ask it, and whom you
         open it to from the board's AI panel (--allow-remote: everyone).
         What follows -- goes to claude or codex (--model …, say)
-  agent codex-app-server [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]
+  agent codex-app-server [--board ID|URL] [--server URL] [--name NAME] [--role ROLE] [--id ID] [--model M] [--effort E] [--allow-remote]
               [--voice NAME] [--voice-model M] [--no-voice]
         Codex joins a board through codex app-server, working in this directory
         (its files, AGENTS.md and your Codex settings), with no TUI: the board's
@@ -36,13 +36,15 @@ const USAGE = `quickdraw <command>
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
         hands the work to Codex; its voice is picked in the panel (--voice: the
         default), --no-voice turns it off
-  agent pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
+  agent pi [--board ID|URL] [--server URL] [--name NAME] [--role ROLE] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
            [--no-approval]
         pi joins a board the same way, with your pi settings and sign-ins; the
         panel offers the models pi can use. Its commands and file changes
         (bash, edit, write) wait for a person's approval in the panel;
         --no-approval lets them run. It does not talk or make images. Needs
         pi's SDK: npm i -w apps/quickdraw @earendil-works/pi-coding-agent
+  --role ROLE (any agent): its role on the board, as "transcriber" or
+        "reviewer" (people and agents can change it: quickdraw role)
 `
 
 const [command, ...rest] = process.argv.slice(2)
@@ -69,10 +71,10 @@ if (command === 'serve') {
   console.log(`http://${values.host === '0.0.0.0' ? 'localhost' : values.host}:${port}/   (data: ${data})`)
 } else if (command === 'session') {
   // the process `quickdraw join` leaves running (src/session): it says on its first line that it is on the board
-  const { values } = parseArgs({ args: rest, options: { board: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' } } })
+  const { values } = parseArgs({ args: rest, options: { board: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, role: { type: 'string' } } })
   try {
     const { startSession } = await import('../src/session/daemon.ts')
-    const s = await startSession({ url: values.board!, name: values.name ?? 'Agent', cwd: process.cwd(), idle: values.idle ? Number(values.idle) : undefined, remote: values['allow-remote'] === true })
+    const s = await startSession({ url: values.board!, name: values.name ?? 'Agent', cwd: process.cwd(), idle: values.idle ? Number(values.idle) : undefined, remote: values['allow-remote'] === true, role: values.role })
     process.stdout.write(JSON.stringify({ joined: true, board: s.info.url, name: s.info.name, cwd: s.info.cwd }) + '\n')
     const leave = () => void s.close()
     process.on('SIGINT', leave)
@@ -90,7 +92,7 @@ if (command === 'serve') {
   const cut = rest.indexOf('--')
   const { values } = parseArgs({
     args: rest.slice(1, cut < 0 ? undefined : cut),
-    options: { board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, global: { type: 'boolean' } },
+    options: { board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, global: { type: 'boolean' }, role: { type: 'string' } },
   })
   const { resolveBoard, serverOf, chooseBoard } = await import('../src/commands/boards.ts')
   const { runTui } = await import('../src/agent/tui.ts')
@@ -100,7 +102,7 @@ if (command === 'serve') {
     const url = await resolveBoard(values.board ?? process.env.QUICKDRAW_BOARD, serverOf(values.server), choose)
     process.exit(await runTui(tui, {
       url, name: values.name ?? `${tui === 'claude' ? 'Claude' : 'Codex'} · ${repoName()}`, cwd: process.cwd(),
-      remote: values['allow-remote'] === true, idle: values.idle ? Number(values.idle) : undefined, global: values.global === true,
+      remote: values['allow-remote'] === true, idle: values.idle ? Number(values.idle) : undefined, global: values.global === true, role: values.role,
       args: cut < 0 ? [] : rest.slice(cut + 1),
     }))
   } catch (e) {
@@ -115,6 +117,7 @@ if (command === 'serve') {
       board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
       model: { type: 'string' }, effort: { type: 'string' }, 'allow-remote': { type: 'boolean' },
       voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' }, 'no-approval': { type: 'boolean' },
+      role: { type: 'string' },
     },
   })
   const runtime = positionals[0]
@@ -163,7 +166,7 @@ if (command === 'serve') {
       const voices = voice ? await realtimeVoices(codex) : null
       if (values.voice && voices && !voices.voices.includes(values.voice)) process.stderr.write(`--voice ${values.voice}: not a voice it can talk in (${voices.voices.join(', ')}); using ${voices.default ?? 'the default'}\n`)
       const talk = voices ? { voices: voices.voices, defaultVoice: values.voice && voices.voices.includes(values.voice) ? values.voice : voices.default } : {}
-      agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice, ...talk }, { imageRoots: [cwd, generatedImages], preview })
+      agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice, ...talk, role: values.role }, { imageRoots: [cwd, generatedImages], preview })
       codex.onExit(() => leave(1, 'codex app-server stopped'))
       board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
       const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
@@ -175,7 +178,7 @@ if (command === 'serve') {
       })
       const offered = await initPi(sdk, cwd, { model: values.model, effort: values.effort })
       const board = await openBoard({ url, name })
-      agent = await joinBoard(board, { id, name, knows: [folder], models: offered.models, model: offered.model, effort: offered.effort, remote }, { imageRoots: [cwd], preview })
+      agent = await joinBoard(board, { id, name, knows: [folder], models: offered.models, model: offered.model, effort: offered.effort, remote, role: values.role }, { imageRoots: [cwd], preview })
       board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
       const running = await runPi(sdk, offered.runtime, agent, { cwd, name, model: offered.model, effort: offered.effort, approval: values['no-approval'] !== true })
       stop = running.close

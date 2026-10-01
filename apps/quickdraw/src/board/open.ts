@@ -6,6 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import type { BoardRecord, Store as StoreType } from '@quickdrawjs/core'
 import { installMeasure } from 'quickdraw-agent'
 import type { Relay } from './relay.ts'
+import type { Members } from 'quickdraw-members'
 
 installMeasure() // before the core lays out any text
 
@@ -21,6 +22,8 @@ export interface Board {
   close(): Promise<void>
   /** a live board's connection, for an agent's messages */
   relay?: Relay
+  /** a live board's agents and their roles (quickdraw-members) */
+  members?: Members
 }
 
 export type BoardSource = ({ url: string, file?: undefined } | { file: string, url?: undefined }) & { name?: string, color?: string }
@@ -39,7 +42,8 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     bindYjs(store, ydoc) // the doc already holds the board: the store loads it
     bindFrames(store)
     bindKanban(store)
-    return { store, cursor: relay.cursor, close: relay.close, relay }
+    const { bindMembers } = await import('quickdraw-members')
+    return { store, cursor: relay.cursor, close: relay.close, relay, members: bindMembers(ydoc) }
   }
   if (!file) throw new Error('open a board with { url } or { file }')
   let data: { document?: { store: Record<string, BoardRecord> }, shapes?: BoardRecord[], assets?: Record<string, BoardRecord> } | null = null

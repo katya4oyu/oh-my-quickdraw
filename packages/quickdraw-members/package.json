@@ -1,0 +1,30 @@
+{
+  "name": "quickdraw-members",
+  "version": "0.1.0",
+  "description": "The agents of a Quickdraw board and their roles: a table kept in the board's Yjs document, which people and agents both edit.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7",
+    "yjs": "^13.6.33"
+  },
+  "license": "MIT"
+}

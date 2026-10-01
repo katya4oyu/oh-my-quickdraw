@@ -27,6 +27,7 @@ import { resolve as resolvePath } from 'node:path'
 import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
+import { teamOf, teamText } from '../board/team.ts'
 
 import type { AgentLimit, AgentModel, EmbedPreview } from 'quickdraw-agent'
 
@@ -36,6 +37,8 @@ export interface Participant {
   remote?: boolean
   /** people can talk with it (its runtime sets onVoice) */
   voice?: boolean
+  /** its role on the board (quickdraw-members), set as it joins: "transcriber", "reviewer"… */
+  role?: string
   /** the voices it talks in (the board's picker), and the one it uses unless a person picks another */
   voices?: string[]
   defaultVoice?: string
@@ -167,6 +170,17 @@ const CLAIM_AREA = {
     title: { type: 'string', description: 'what you are making, in a few words, shown on the area' },
     x: { type: 'number', description: 'left edge, when the request says where (else it finds free space)' },
     y: { type: 'number', description: 'top edge, when the request says where' },
+  } },
+}
+
+const SET_ROLE = {
+  name: 'set_role',
+  description: 'Sets the role of an agent on this board (yours unless `name` says another\'s): what it is there for, in a few words ("transcriber", "researcher", "reviewer"), and optionally a line on what it does. '
+    + 'Roles are settled among the agents or given by people: set yours when people ask, or to agree with the other agents who does what; change another\'s only when they or people agree. read_board shows the team. An empty role takes it off.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['role'], properties: {
+    role: { type: 'string', description: 'a few words; empty to take the role off' },
+    about: { type: 'string', description: 'a line on what it does in that role' },
+    name: { type: 'string', description: 'another agent\'s name (as read_board\'s team says it), when it is not yours' },
   } },
 }
 
@@ -357,6 +371,14 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   // what the model gets back from a tool, with what people did in its work area since its last step
   async function runBoardTool(requestId: string, name: string, args: unknown): Promise<string> {
     if (name === 'claim_area') return claimArea(requestId, (args ?? {}) as { w?: number, h?: number, title?: string })
+    if (name === 'set_role') {
+      const a = (args ?? {}) as { role?: string, about?: string, name?: string }
+      if (!board.members) throw new Error('roles need a live board')
+      const role = String(a.role ?? '').trim()
+      // an empty role takes the agent off, with its line
+      const set = board.members.set(a.name || me.name, { role, ...(a.about !== undefined ? { about: a.about } : role ? {} : { about: '' }) }, me.name)
+      return JSON.stringify(set ? { member: set } : { removed: a.name || me.name })
+    }
     if (name === 'point_at') {
       const a = (args ?? {}) as { id?: string, x?: number, y?: number, circle?: boolean }
       const s = a.id ? board.store.get(a.id) : null
@@ -388,7 +410,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     }
     if (name === 'read_board' || name === 'check_board') { // reading: by default, check_board checks its work area
       const result = tool.run(board.store as never, (args ?? {}) as never, { name: me.name, area: work.get(requestId)?.area }) as unknown
-      return typeof result === 'string' ? result : JSON.stringify(result)
+      const team = name === 'read_board' && (args as { format?: string } | null)?.format !== 'json' ? teamText(teamOf(board, me.name)) : '' // who does what
+      return (typeof result === 'string' ? result : JSON.stringify(result)) + (team ? '\n\n' + team : '')
     }
     const area = work.get(requestId)?.area
     return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
@@ -469,7 +492,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, POINT_AT],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, POINT_AT, SET_ROLE],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -478,7 +501,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     },
     async runTool(requestId, name, args) {
       // by its cursor: reading or drawing, then back to thinking
-      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : 'drawing')
+      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : name === 'set_role' ? 'editing' : 'drawing')
       try { return await runBoardTool(requestId, name, args) } finally { agent.activity('thinking') }
     },
     lookAt(request) {
@@ -641,6 +664,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     const off = relay.onMessage((m) => {
       if (m.kind !== 'joined') return
       off()
+      if (me.role && board.members) board.members.set(me.name, { role: me.role }, me.name) // the role it came with
       resolve(agent)
     })
     relay.send({ kind: 'join', agent: me })
