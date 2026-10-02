@@ -1,6 +1,16 @@
-# Quickdraw Extensions
+# oh-my-quickdraw
 
-Optional packages, examples and an app that extend [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw), a fork of the Quickdraw whiteboard: frames, Markdown cards, embeds, presence, screen sharing, tickets, and agents that work on a board alongside people. The packages are not published to npm; use them from a checkout (npm workspaces).
+Quickdraw, batteries included. A whiteboard that people and AI agents share: the `quickdraw` app serves boards that sync across devices, and agents — Claude Code, Codex, or any that reads skills — join a board, take requests from the people on it, work through its tickets and watch a shared screen, drawing as they go. It is built on [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw), a fork of the Quickdraw whiteboard, with extension packages for frames, Markdown cards, embeds, presence, screen sharing, tickets and more.
+
+```sh
+git clone --recurse-submodules https://github.com/katya4oyu/oh-my-quickdraw.git
+cd oh-my-quickdraw && npm install
+npm link -w apps/quickdraw        # puts `quickdraw` on your PATH (Node 23.6 or later)
+quickdraw skill install           # teaches the agents on this machine the command
+quickdraw serve                   # http://127.0.0.1:8795/
+```
+
+See [`apps/quickdraw`](apps/quickdraw) for the app, and below for the packages. The packages are not published to npm; use them from a checkout (npm workspaces).
 
 ## Design boundaries
 
