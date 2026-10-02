@@ -120,15 +120,16 @@
       reply: (requestId, message) => sendAgent({ kind: 'reply', requestId, message }),
       // an agent is its owner's (it runs on their account): the server says whom it takes requests from
       cannotAsk: (agent) => (agent.canAsk === false ? `${agent.name} runs on ${agent.owner?.name ? agent.owner.name + '\'s' : 'someone else\'s'} account: only ${agent.owner?.name ?? 'they'} can ask it, unless they open it to you.` : undefined),
-      join: () => ({ text: `Bring your own: run this on your computer, in the folder the agent should work in (agent claude for Claude Code; another agent with the quickdraw skill: quickdraw join --board ${boardRef()} --name NAME). Only you can ask it, unless you open it to others.`, command: agentCommand() }),
+      join: () => ({ text: `Bring your own: install the quickdraw skill on your computer (once), then ask your agent — Claude Code, Codex, pi or any that reads skills — to join this board (${boardRef()}). Only you can ask it, unless you open it to others.`, command: SKILL_INSTALL }),
       // its owner opens an agent to everyone, or to people here (their presence ids), or closes it
       share: (agentId, withWhom) => sendAgent({ kind: 'share', agent: agentId, with: withWhom }),
       people: () => presence.peers().filter((p) => !p.agent && p.name).map((p) => ({ id: p.id, name: p.name })),
     } })
-    // `quickdraw agent codex` for this board: its id where that is enough (the
-    // default server), else its page URL, which says the server too
+    // this board for an agent: its id where that is enough (the default
+    // server), else its page URL, which says the server too
     const boardRef = () => (/^http:\/\/(localhost|127\.0\.0\.1):8795$/.test(location.origin) ? boardId : location.origin + '/b/' + boardId)
-    const agentCommand = () => `quickdraw agent codex --board ${boardRef()}`
+    // what teaches the agents on a computer the quickdraw command (skills/quickdraw)
+    const SKILL_INSTALL = 'quickdraw skill install'
     function onAgentMessage(m) {
       if (m.kind === 'you') { if (m.person) presence.suggestName(m.person); toPanel({ type: 'agents' }) } // your name, until you choose one
       else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }); teamBoard.refresh() }
@@ -279,7 +280,7 @@
           { id: 'boards', title: 'All boards', icon: ICONS.boards, run: () => { location.href = '/' } },
           { id: 'rename', title: 'Rename board…', icon: ICONS.rename, run: renameBoard },
           { id: 'versions', title: 'Versions…', icon: ICONS.versions, run: () => (versions ??= createVersions(boardId, board.editor.container)).open() },
-          { id: 'agent-command', title: 'Copy AI command', icon: ICONS.terminal, run: copyAgentCommand },
+          { id: 'skill-install', title: 'Bring your own AI', icon: ICONS.terminal, run: copySkillInstall },
           '-',
           ...screenShareTools(share).menu,
           '-',
@@ -296,10 +297,10 @@
     let boardTitle = ''
     const showTitle = (b) => { if (b) { boardTitle = b.title; document.title = `${b.title} — Quickdraw` } }
     fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then(showTitle)
-    async function copyAgentCommand() {
-      const command = agentCommand()
-      const copied = await copyText(command)
-      prompt(copied ? 'Copied. Run it in the folder the agent should work in:' : 'Run this in the folder the agent should work in:', command)
+    async function copySkillInstall() {
+      const copied = await copyText(SKILL_INSTALL)
+      const then = `then ask your agent (Claude Code, Codex, pi…) to join this board: ${boardRef()}`
+      prompt(copied ? `Copied. Run it once on your computer to teach your agents the quickdraw command; ${then}` : `Run this once on your computer to teach your agents the quickdraw command; ${then}`, SKILL_INSTALL)
     }
     async function renameBoard() {
       const title = prompt('Board title', boardTitle)

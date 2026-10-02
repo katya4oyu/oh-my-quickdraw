@@ -61,9 +61,7 @@ quickdraw agent codex-app-server --board ID     # "Codex · some-project" joins 
 
 No need to note the board's id down:
 
-- **Copy it from the board.** While no AI has joined, the board's AI panel (✦ on the right) shows the command for that board, with a Copy button; with an AI already there, "…" → *Copy AI command* copies it. It names the board by its id on this machine's `quickdraw serve` (port 8795), and by its page URL elsewhere (another port, or through `tailscale serve`), which says the server too.
-
-  <img src="docs/agent-join.png" alt="The AI panel of a board no AI has joined: the command quickdraw agent codex --board ID, with a Copy button" width="320">
+- **From the board.** While no AI has joined, the board's AI panel (✦ on the right) says how to bring your own: `quickdraw skill install` (once, with a Copy button), then ask your agent — Claude Code, Codex, pi or any that reads skills — to join the board it names; with an AI already there, "…" → *Bring your own AI* copies the install command and says the same. It names the board by its id on this machine's `quickdraw serve` (port 8795), and by its page URL elsewhere (another port, or through `tailscale serve`), which says the server too.
 
 - **Or choose it at the terminal.** Without `--board`, with several boards on the server, it asks which one:
 
