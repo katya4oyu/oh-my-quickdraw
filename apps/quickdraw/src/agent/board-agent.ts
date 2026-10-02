@@ -257,7 +257,7 @@ export interface JoinOptions {
 }
 
 export function joinBoard(board: Board, me: Participant, { imageRoots = [process.cwd()], preview }: JoinOptions = {}): Promise<BoardAgent> {
-  if (!board.relay) throw new Error('an agent needs a live board (quickdraw serve), not a file')
+  if (!board.relay) throw new Error('an agent needs a live board (omq serve), not a file')
   const relay = board.relay
   const approvals = new Map<string, { requestId: string, resolve: (allow: boolean) => void }>()
   const approvalBase = Date.now().toString(36)

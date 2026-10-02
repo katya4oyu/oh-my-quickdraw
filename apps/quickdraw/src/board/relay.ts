@@ -1,4 +1,4 @@
-// Joins a board through the relay of `quickdraw serve` (../protocol.js) like
+// Joins a board through the relay of `omq serve` (../protocol.js) like
 // any browser tab: it sends what it has, asks for the rest, and shows a cursor
 // while it works (a presence saying it is an agent, see quickdraw-presence). An agent also speaks AGENT messages on the same connection.
 import * as Y from 'yjs'

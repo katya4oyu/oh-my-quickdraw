@@ -32,4 +32,4 @@ pet.play(petState({ activity: 'drawing', dx: 30 })) // running-right
 
 A card on the board for an agent — its initials in its colour, its name, role and what it does — is a view of the table: `memberTools({ members, agents, me })` gives a rail button (a menu of the agents) and **Edit role** on a selected card (for [`quickdraw-toolbar`](../quickdraw-toolbar)); `bindMemberCardEditing(editor, members)` edits on double-click (first line the role, the rest what it does), and that goes to the table. `bindMemberCards(store, members)` keeps every card with the table. Removing a card leaves the role. Cards are a custom shape type (`member`), so they need the fork's `registerShapeType`; `validateMemberCard` is for `quickdraw-import`.
 
-`apps/quickdraw` gives agents the table: `quickdraw role` and `members`, the `set_role` tool, and the team (who is here, their roles and what each is working on) with what they read of the board.
+`apps/quickdraw` gives agents the table: `omq role` and `members`, the `set_role` tool, and the team (who is here, their roles and what each is working on) with what they read of the board.

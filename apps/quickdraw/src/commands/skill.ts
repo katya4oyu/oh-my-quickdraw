@@ -1,4 +1,4 @@
-// `quickdraw skill`: puts the quickdraw Skill (skills/quickdraw) where agents
+// `omq skill`: puts the quickdraw Skill (skills/quickdraw) where agents
 // look for skills, so an agent on this machine knows the command.
 // - ~/.agents/skills/quickdraw: the Agent Skills location, read by Codex, pi
 //   and others (a project's .agents/skills/ with --project)
@@ -74,7 +74,7 @@ function state(path: string, agentsDir: string) {
   return { installed: true as const, ours: name === NAME, current: name === NAME && same(path, SKILL_SOURCE) }
 }
 
-const onPath = () => { try { execFileSync(process.platform === 'win32' ? 'where' : 'which', ['quickdraw'], { stdio: 'ignore' }); return true } catch { return false } }
+const onPath = () => { try { execFileSync(process.platform === 'win32' ? 'where' : 'which', ['omq'], { stdio: 'ignore' }); return true } catch { return false } }
 
 export function installSkill(o: SkillOptions = {}) {
   const { which, base } = targets(o)
@@ -95,9 +95,9 @@ export function installSkill(o: SkillOptions = {}) {
   }
   return {
     installed: done, source: SKILL_SOURCE,
-    ...(o.link ? {} : { note: 'A copy: run quickdraw skill install again after updating quickdraw (quickdraw skill status says when it is behind).' }),
+    ...(o.link ? {} : { note: 'A copy: run omq skill install again after updating oh-my-quickdraw (omq skill status says when it is behind).' }),
     ...(o.project && o.link ? { warning_link: `The skill links to ${SKILL_SOURCE}, on this machine only: do not commit it (install without --link for a copy others can use).` } : {}),
-    ...(onPath() ? {} : { warning: 'quickdraw is not on your PATH, and the skill runs it by that name: npm link -w apps/quickdraw (from the oh-my-quickdraw checkout) puts it there.' }),
+    ...(onPath() ? {} : { warning: 'omq is not on your PATH, and the skill runs it by that name: npm link -w apps/quickdraw (from the oh-my-quickdraw checkout) puts it there.' }),
   }
 }
 
@@ -109,7 +109,7 @@ export function skillStatus(o: SkillOptions = {}) {
     skills: which.map((t) => {
       const path = dirOf(base, t)
       const s = state(path, agentsDir)
-      return { for: WHO[t], path, ...s, ...(s.installed && s.ours && !s.current ? { note: 'behind this quickdraw: quickdraw skill install' } : {}) }
+      return { for: WHO[t], path, ...s, ...(s.installed && s.ours && !s.current ? { note: 'behind this omq: omq skill install' } : {}) }
     }),
   }
 }

@@ -8,7 +8,7 @@ import { installSkill, repoName, skillStatus, uninstallSkill, SKILL_SOURCE } fro
 const temp = () => realpathSync(mkdtempSync(join(tmpdir(), 'qd-skill-')))
 const skill = readFileSync(join(SKILL_SOURCE, 'SKILL.md'), 'utf8')
 
-describe('quickdraw skill', () => {
+describe('omq skill', () => {
   it('installs for Agent Skills agents (a copy) and Claude Code (a link to it), and says when it is behind', () => {
     const home = temp()
     const r = installSkill({ home })

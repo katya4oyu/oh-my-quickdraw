@@ -318,7 +318,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const at = opts.at ?? place(w, h, opts)
       const id = createBoardCard(store, { x: at.x, y: at.y, w, h, board: String(board ?? ''), title: String(title), live: !!live })
       const err = validateBoardCard(store.get(id))
-      if (err) throw new Error(`board card: ${err === 'bad props.board' ? 'needs a board id (quickdraw boards lists them)' : err}`)
+      if (err) throw new Error(`board card: ${err === 'bad props.board' ? 'needs a board id (omq boards lists them)' : err}`)
       store.update(id, { agent, ...member(opts) })
       focus = at
       return id

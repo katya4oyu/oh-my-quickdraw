@@ -1,6 +1,6 @@
 // Which board a command works on, and the boards a server holds.
 // A board is named by its id (on the server: --server, $QUICKDRAW_SERVER, or
-// this machine's `quickdraw serve`), by its page URL (https://host/b/<id>, as
+// this machine's `omq serve`), by its page URL (https://host/b/<id>, as
 // the browser shows it), or by its relay URL (ws://host/ws/<id>).
 import { createInterface } from 'node:readline/promises'
 import type { BoardInfo } from '../serve/boards.ts'
@@ -14,7 +14,7 @@ const relayOf = (http: string, id: string) => http.replace(/^http/, 'ws') + '/ws
 async function call<T>(server: string, path: string, init?: RequestInit): Promise<T> {
   let res
   try { res = await fetch(server + path, { ...init, signal: AbortSignal.timeout(5000) }) } catch {
-    throw new Error(`no quickdraw serve at ${server} (start one with \`quickdraw serve\`, or pass --server)`)
+    throw new Error(`no omq serve at ${server} (start one with \`omq serve\`, or pass --server)`)
   }
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(`${server}${path}: ${body.error ?? res.status}`)
@@ -39,7 +39,7 @@ export async function resolveBoard(board: string | undefined, server: string, ch
   }
   const boards = await listBoards(server)
   if (boards.length === 1) return relayOf(server, boards[0].id)
-  if (!boards.length) throw new Error(`${server} has no boards yet: create one with \`quickdraw new "Title"\``)
+  if (!boards.length) throw new Error(`${server} has no boards yet: create one with \`omq new "Title"\``)
   if (choose) return relayOf(server, (await choose(boards)).id)
   const lines = boards.map((b) => `  ${b.id}  ${b.title}`).join('\n')
   throw new Error(`${server} has ${boards.length} boards; pass --board ID:\n${lines}`)

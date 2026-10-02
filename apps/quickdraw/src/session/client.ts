@@ -1,5 +1,5 @@
 // A session: an agent that has only a shell (a skill and this command) stays
-// on a board between its commands. `quickdraw join` starts a process that
+// on a board between its commands. `omq join` starts a process that
 // holds the board (./daemon.ts) and leaves it running; every later command in
 // the same directory is sent to it over a local socket and runs there, as the
 // agent: on the board it already has, in the thread of the request it works on.
@@ -74,12 +74,12 @@ export function viaSession(s: SessionInfo, argv: string[], out: (line: string) =
         else if (m.end) finish()
       }
     })
-    sock.on('error', (e) => finish(new Error(`the session in this directory is not answering (${(e as Error).message}): quickdraw leave, then join again`)))
+    sock.on('error', (e) => finish(new Error(`the session in this directory is not answering (${(e as Error).message}): omq leave, then join again`)))
     sock.on('close', () => finish(settled ? undefined : new Error('the session ended')))
   })
 }
 
-const BIN = fileURLToPath(new URL('../../bin/quickdraw.ts', import.meta.url))
+const BIN = fileURLToPath(new URL('../../bin/omq.ts', import.meta.url))
 
 /**
  * Joins a board for the agents of this directory: starts the session process,
@@ -88,7 +88,7 @@ const BIN = fileURLToPath(new URL('../../bin/quickdraw.ts', import.meta.url))
 export async function joinSession(url: string, { name = 'Agent', idle, remote = false, role, avatar, cwd = process.cwd() }: { name?: string, idle?: number, remote?: boolean, role?: string, avatar?: string, cwd?: string } = {}) {
   const had = await findSession(cwd)
   if (had) {
-    if (had.name !== name) throw new Error(`already on a board as ${had.name} from this directory: join as ${had.name}, or quickdraw leave first`)
+    if (had.name !== name) throw new Error(`already on a board as ${had.name} from this directory: join as ${had.name}, or omq leave first`)
     if (had.url === url || had.boards?.includes(url)) return { joined: true, already: true, board: url, name: had.name, ...(had.boards && had.boards.length > 1 ? { boards: had.boards } : {}) }
     // another board: the session here goes there too (one agent, on several boards)
     let line = ''
@@ -96,7 +96,7 @@ export async function joinSession(url: string, { name = 'Agent', idle, remote = 
     return JSON.parse(line)
   }
   mkdirSync(join(cwd, '.quickdraw'), { recursive: true })
-  // what quickdraw keeps here (the session, its log, the op log) is this computer's, not the project's
+  // what omq keeps here (the session, its log, the op log) is this computer's, not the project's
   if (!existsSync(join(cwd, '.quickdraw', '.gitignore'))) writeFileSync(join(cwd, '.quickdraw', '.gitignore'), '*\n')
   const log = openSync(join(cwd, '.quickdraw', 'session.log'), 'a')
   const child = spawn(process.execPath, [BIN, 'session', '--board', url, '--name', name, ...(idle ? ['--idle', String(idle)] : []), ...(remote ? ['--allow-remote'] : []), ...(role ? ['--role', role] : []), ...(avatar ? ['--avatar', avatar] : [])], {

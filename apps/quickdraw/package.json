@@ -3,16 +3,17 @@
   "license": "MIT",
   "private": true,
   "version": "0.1.0",
-  "description": "The quickdraw command: serves a board with every extension, for people and agents to share.",
+  "description": "The omq command: serves a board with every extension, for people and agents to share.",
   "type": "module",
   "bin": {
+    "omq": "./bin/omq.ts",
     "quickdraw": "./bin/quickdraw.ts"
   },
   "engines": {
     "node": ">=23.6"
   },
   "scripts": {
-    "dev": "node bin/quickdraw.ts serve",
+    "dev": "node bin/omq.ts serve",
     "test": "vitest run",
     "typecheck": "tsc -p ."
   },

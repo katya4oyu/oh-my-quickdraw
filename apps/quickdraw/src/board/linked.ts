@@ -1,6 +1,6 @@
 // The boards a board shows (quickdraw-boards' cards), for an agent reading it:
 // each one's title, its frames and how much is in them — enough to know what
-// is there without going to read it (quickdraw read --board ID does that).
+// is there without going to read it (omq read --board ID does that).
 // Read now, one level deep (the cards on those boards are not followed).
 import { describeBoard } from 'quickdraw-agent'
 import { listBoards } from '../commands/boards.ts'
@@ -48,5 +48,5 @@ export async function linkedBoardsText(board: Board, { max = 6, timeout = 4000 }
     } catch { return `${head}: could not read it now` }
   }))
   if (cards.size > max) lines.push(`- and ${cards.size - max} more`)
-  return ['## Boards on this board (board cards: another board, shown here; read one with quickdraw read --board ID)', '', ...lines].join('\n')
+  return ['## Boards on this board (board cards: another board, shown here; read one with omq read --board ID)', '', ...lines].join('\n')
 }

@@ -168,7 +168,7 @@ export function createVoice({ editor, container = editor.container, host, rtc })
       if (state !== 'off') return
       if (!rtc) return notice('This browser cannot talk (no microphone access).')
       const agent = host.agent()
-      if (!agent) return notice('No AI here to talk with. Run quickdraw agent codex-app-server for this board.')
+      if (!agent) return notice('No AI here to talk with. Run omq agent codex-app-server for this board.')
       who = agent
       state = 'connecting'
       lines = []

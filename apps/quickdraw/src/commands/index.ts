@@ -1,4 +1,4 @@
-// The board commands of `quickdraw`. Every command prints JSON (or Markdown
+// The board commands of `omq`. Every command prints JSON (or Markdown
 // for `read`), so an agent can call it from any shell.
 import { parseArgs } from 'node:util'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -53,7 +53,7 @@ Writing (each command is one operation, undoable as a whole)
   shape KIND [LABEL] [--color C] [--size WxH] [--in FRAME] [--at X,Y]   KIND: rectangle, ellipse, …
   markdown TEXT | --md-file PATH [--in FRAME] [--at X,Y]
   board-card BOARD [--live] [--size WxH] [--in FRAME] [--at X,Y]
-                                          a card for another board (its id: quickdraw boards): its picture and an
+                                          a card for another board (its id: omq boards): its picture and an
                                           Open button; --live: a window onto it as it is now
   embed URL [--link] [--title T] [--size WxH] [--in FRAME] [--at X,Y]
                                           a page (live from allowed sites: YouTube, Vimeo, Figma,
@@ -157,7 +157,7 @@ History
 
 --board takes an id, a board's page URL (https://host/b/ID) or its relay URL (ws://host/ws/ID);
 or set $QUICKDRAW_BOARD (the same, or a file path). Ids are looked up on --server, $QUICKDRAW_SERVER,
-or the \`quickdraw serve\` on this machine (http://localhost:8795). Without a board, the server's
+or the \`omq serve\` on this machine (http://localhost:8795). Without a board, the server's
 only board is used; when it has several, say which.`
 
 const pair = (s: string | undefined, what: string): [number, number] | undefined => {
@@ -287,7 +287,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   const envFile = env && !/^(wss?|https?):\/\//.test(env) && /[./\\]/.test(env) ? env : undefined
   const file = o.file ?? (o.board ? undefined : envFile)
 
-  // joined (quickdraw join): the session in this directory runs it, on its board
+  // joined (omq join): the session in this directory runs it, on its board
   if (cmd === 'join') {
     if (file) throw new Error('join needs a live board (--board), not a file')
     // named "<agent> · <repository>" unless it says (see SKILL.md)
@@ -300,7 +300,7 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     const onIt = (u: string) => u.includes(o.board!) || o.board!.includes(u.split('/').pop()!)
     if (s && (!o.board || [s.url, ...(s.boards ?? [])].some(onIt))) return viaSession(s, argv, out, { signal })
   }
-  if (SESSION_COMMANDS.has(cmd)) throw new Error(`${cmd} works once you are on a board: quickdraw join --board ID --name NAME first`)
+  if (SESSION_COMMANDS.has(cmd)) throw new Error(`${cmd} works once you are on a board: omq join --board ID --name NAME first`)
 
   const url = file ? undefined : await resolveBoard(o.board ?? env, server)
   const board = await openBoard(url ? { url, name: o.name } : { file: file!, name: o.name })
@@ -352,7 +352,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         needsLive()
         const who = o.of ?? o.name
         if (!who) throw new Error('avatar needs your --name (or --of NAME)')
-        if (!o.clear && !args[0]) throw new Error('avatar needs a Codex pet: its name (quickdraw avatar --list), its folder or its sprite sheet (or --clear)')
+        if (!o.clear && !args[0]) throw new Error('avatar needs a Codex pet: its name (omq avatar --list), its folder or its sprite sheet (or --clear)')
         const set = await setPet(board, who, o.clear ? null : args[0], o.name ?? who)
         if (live) await sleep(300)
         const pet = set?.avatar as { name?: string } | null | undefined
@@ -407,9 +407,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'board-card': {
         needsLive()
         const target = args[0]
-        if (!target) throw new Error('board-card needs a board id (quickdraw boards lists them)')
+        if (!target) throw new Error('board-card needs a board id (omq boards lists them)')
         const found = (await listBoards(serverOf(o.server ?? (url ? serverOfBoard(url) : undefined)))).find((b: { id: string }) => b.id === target)
-        if (!found) throw new Error(`no board ${target} on this server (quickdraw boards lists them)`)
+        if (!found) throw new Error(`no board ${target} on this server (omq boards lists them)`)
         done = await op((ops) => ops.board({ board: target, title: found.title, live: o.live }, common)); break
       }
       case 'embed': {

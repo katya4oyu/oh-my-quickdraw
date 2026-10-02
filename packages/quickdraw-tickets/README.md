@@ -34,7 +34,7 @@ A kanban column is a frame with `kanban: { id, status }`; a failed ticket sits i
 
 ## Agents
 
-Agents read and move tickets through [`quickdraw-agent`](../quickdraw-agent) (`read_board`, `add_ticket`, `set_ticket_status`) and the `quickdraw` command (`tickets`, `wait --take`, `take`, `done`, `fail`, `watch`: see [`apps/quickdraw`](../../apps/quickdraw)). `setTicketStatus` and `bindKanban` handle local changes only: each peer moves what it changed, and sync carries the result to the rest.
+Agents read and move tickets through [`quickdraw-agent`](../quickdraw-agent) (`read_board`, `add_ticket`, `set_ticket_status`) and the `omq` command (`tickets`, `wait --take`, `take`, `done`, `fail`, `watch`: see [`apps/quickdraw`](../../apps/quickdraw)). `setTicketStatus` and `bindKanban` handle local changes only: each peer moves what it changed, and sync carries the result to the rest.
 
 Example: `examples/quickdraw-tickets` (run `npm run examples` at the workspace root).
 

@@ -282,7 +282,7 @@ describe('a session: an agent with a shell, on the board', () => {
     await new Promise((r) => setTimeout(r, 900))
     expect((await page.take((m) => m.kind === 'agents' && !m.agents.length)).agents).toEqual([])
     expect(existsSync(sessionFile(dir))).toBe(false)
-    await expect(run('next')).rejects.toThrow(/quickdraw join/)
+    await expect(run('next')).rejects.toThrow(/omq join/)
     session = undefined
   }, 20_000)
 
@@ -295,7 +295,7 @@ describe('a session: an agent with a shell, on the board', () => {
     await new Promise((r) => setTimeout(r, 100))
     const [watching] = await run('screen', '--watch')
     expect(watching).toMatchObject({ sharing: true, sharer: 'Ann', allowed: true, watching: true })
-    expect(watching.note).toMatch(/quickdraw screen --out/)
+    expect(watching.note).toMatch(/omq screen --out/)
 
     const picture = (grey: number) => jpeg.encode({ width: 64, height: 40, data: new Uint8Array(64 * 40 * 4).fill(grey) }, 80).data
     ws.send(pack(LIVE, picture(0)))

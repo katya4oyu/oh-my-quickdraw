@@ -1,4 +1,4 @@
-// Opens a board: live through the relay of `quickdraw serve`, or from a JSON
+// Opens a board: live through the relay of `omq serve`, or from a JSON
 // file. Either way the result is a core Store bound exactly as a browser's
 // is — Yjs sync, frame, bento and kanban rules, Markdown, embed and ticket types —
 // so what gets written behaves like any peer's edit.

@@ -1,13 +1,13 @@
 # oh-my-quickdraw
 
-Quickdraw, batteries included. A whiteboard that people and AI agents share: the `quickdraw` app serves boards that sync across devices, and agents — Claude Code, Codex, or any that reads skills — join a board, take requests from the people on it, work through its tickets and watch a shared screen, drawing as they go. It is built on [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw), a fork of the Quickdraw whiteboard, with extension packages for frames, Markdown cards, embeds, presence, screen sharing, tickets and more.
+Quickdraw, batteries included. A whiteboard that people and AI agents share: the `omq` command serves boards that sync across devices, and agents — Claude Code, Codex, or any that reads skills — join a board, take requests from the people on it, work through its tickets and watch a shared screen, drawing as they go. It is built on [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw), a fork of the Quickdraw whiteboard, with extension packages for frames, Markdown cards, embeds, presence, screen sharing, tickets and more.
 
 ```sh
 git clone --recurse-submodules https://github.com/katya4oyu/oh-my-quickdraw.git
 cd oh-my-quickdraw && npm install
-npm link -w apps/quickdraw        # puts `quickdraw` on your PATH (Node 23.6 or later)
-quickdraw skill install           # teaches the agents on this machine the command
-quickdraw serve                   # http://127.0.0.1:8795/
+npm link -w apps/quickdraw        # puts `omq` on your PATH (Node 23.6 or later)
+omq skill install           # teaches the agents on this machine the command
+omq serve                   # http://127.0.0.1:8795/
 ```
 
 See [`apps/quickdraw`](apps/quickdraw) for the app, and below for the packages. The packages are not published to npm; use them from a checkout (npm workspaces).
@@ -24,8 +24,8 @@ See [`apps/quickdraw`](apps/quickdraw) for the app, and below for the packages. 
 - `vendor/quickdraw/`: pinned Git submodule of the `katya4oyu/quickdraw` fork.
 - `packages/*`: reusable extension packages, managed as npm workspaces.
 - `examples/*`: one small example per package, also npm workspaces. Static files only: no example needs a server.
-- `apps/quickdraw`: the app built from all of this — the `quickdraw` command. `quickdraw serve` serves boards with every package, a relay per board for sync across devices, SQLite persistence and link previews; the other commands list, make, read and edit boards, for people and agents.
-- `skills/quickdraw`: the [Agent Skill](skills/quickdraw/SKILL.md) that teaches an agent the `quickdraw` command; `quickdraw skill install` puts it where agents look for skills.
+- `apps/quickdraw`: the app built from all of this — the `omq` command (`quickdraw` is another name for it, for now). `omq serve` serves boards with every package, a relay per board for sync across devices, SQLite persistence and link previews; the other commands list, make, read and edit boards, for people and agents.
+- `skills/quickdraw`: the [Agent Skill](skills/quickdraw/SKILL.md) that teaches an agent the `omq` command; `omq skill install` puts it where agents look for skills.
 
 Add a package only when a concrete extension or example is ready to be named; there is no placeholder runtime package.
 
@@ -77,7 +77,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 
 ## App
 
-`npm run dev` runs `quickdraw serve` from [`apps/quickdraw`](apps/quickdraw): boards with every package, synced across devices, kept in `~/.quickdraw`.
+`npm run dev` runs `omq serve` from [`apps/quickdraw`](apps/quickdraw): boards with every package, synced across devices, kept in `~/.quickdraw`.
 
 ## License
 
