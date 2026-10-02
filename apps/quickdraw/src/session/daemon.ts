@@ -1,7 +1,7 @@
 // The session process (see ./client.ts): it holds a board as an agent — in the
 // AI panel, with a cursor — for an agent that has only a shell, and runs that
-// agent's commands on it. A third runtime of BoardAgent (../agent/board-agent.ts),
-// beside Codex and pi, whose "model" is the agent on the other end of the
+// agent's commands on it. A second runtime of BoardAgent (../agent/board-agent.ts),
+// beside Codex, whose "model" is the agent on the other end of the
 // commands: what reaches it (requests, people's replies, Stop, tickets) waits in
 // an inbox until `quickdraw next` takes it.
 import { createServer, type Server, type Socket } from 'node:net'

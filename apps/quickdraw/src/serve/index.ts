@@ -295,7 +295,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
       for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
       const knows = Array.isArray(m.agent.knows) ? m.agent.knows.filter((k: unknown) => str(k, 100)).slice(0, 8) : []
       // the models a person may choose from, per request, and the defaults
-      // (a model that takes no effort, as some of pi's, has none: efforts [] and effort '')
+      // (a model that takes no effort has none: efforts [] and effort '')
       const models = Array.isArray(m.agent.models) ? m.agent.models.slice(0, 100).flatMap((x: any) => {
         const efforts = Array.isArray(x?.efforts) ? x.efforts.filter((e: unknown) => str(e, 40)).slice(0, 12) : []
         const effort = efforts.length ? (str(x?.effort, 40) ? x.effort : '') : ''
