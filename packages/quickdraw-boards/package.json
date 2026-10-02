@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-boards",
+  "private": true,
   "version": "0.1.0",
   "description": "A board in a board: a card for another board (its title and picture; open it), or a live window onto it.",
   "type": "module",

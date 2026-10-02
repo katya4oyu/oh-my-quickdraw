@@ -1,6 +1,6 @@
 # Quickdraw Extensions
 
-A private workspace for optional packages and examples that extend [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw).
+Optional packages, examples and an app that extend [`katya4oyu/quickdraw`](https://github.com/katya4oyu/quickdraw), a fork of the Quickdraw whiteboard: frames, Markdown cards, embeds, presence, screen sharing, tickets, and agents that work on a board alongside people. The packages are not published to npm; use them from a checkout (npm workspaces).
 
 ## Design boundaries
 
@@ -29,7 +29,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-frames`](packages/quickdraw-frames) | Frames: membership, aspect ratios, content export | No | — |
 | [`quickdraw-layouts`](packages/quickdraw-layouts) | Layouts that keep themselves: a bento grid of frames that packs itself again as cells change | No | `quickdraw-frames` |
 | [`quickdraw-markdown`](packages/quickdraw-markdown) | Markdown cards drawn on the canvas | **Yes** — `registerShapeType` ([katya4oyu/quickdraw#2](https://github.com/katya4oyu/quickdraw/pull/2)) | — |
-| [`quickdraw-agent`](packages/quickdraw-agent) | What agents can do on a board: reading, undoable operations, and the same as tools for any agent runtime | No (Markdown cards need the fork, like `quickdraw-markdown`) | — |
+| [`quickdraw-agent`](packages/quickdraw-agent) | What agents can do on a board: reading, undoable operations, and the same as tools for any agent runtime | No (Markdown cards need the fork, like `quickdraw-markdown`) | `quickdraw-frames`, `quickdraw-layouts`, `quickdraw-markdown`, `quickdraw-embed`, `quickdraw-tickets`, `quickdraw-boards` |
 | [`quickdraw-toolbar`](packages/quickdraw-toolbar) | Icon toolbar: a rail for adding things, a bar over the selection; the packages ship their items | No | — |
 | [`quickdraw-embed`](packages/quickdraw-embed) | Allowed web pages and sandboxed inline HTML as live iframes; link cards with Open Graph previews | **Yes** — `registerShapeType` | — |
 | [`quickdraw-screenshare`](packages/quickdraw-screenshare) | One person shares a screen, everyone watches it live, and snapshots land on the board to write feedback on | No | `quickdraw-frames` |
@@ -41,7 +41,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-boards`](packages/quickdraw-boards) | A board in a board: a card for another board (its picture, Open), or a live window onto it | **Yes** — `registerShapeType` | — |
 | [`quickdraw-voice`](packages/quickdraw-voice) | Talk with an agent on a board: a microphone, a WebRTC call straight to a voice model, and a bar with what is said while it works | No | — |
 
-"Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown`, `quickdraw-embed` and `quickdraw-tickets` still load: `isMarkdownSupported()` / `isEmbedSupported()` are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.
+"Needs the fork's core" means the package uses an API that only `katya4oyu/quickdraw` has. On the upstream core, `quickdraw-markdown`, `quickdraw-embed`, `quickdraw-tickets`, `quickdraw-boards` and `quickdraw-members` still load: their `is…Supported()` checks are false, their shapes cannot be created or drawn, and their parsing and validation functions keep working.
 
 ## Examples
 
@@ -68,3 +68,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 ## App
 
 `npm run dev` runs `quickdraw serve` from [`apps/quickdraw`](apps/quickdraw): boards with every package, synced across devices, kept in `~/.quickdraw`.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The Quickdraw core in `vendor/quickdraw` has its own MIT license.

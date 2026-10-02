@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-embed",
+  "private": true,
   "version": "0.1.0",
   "description": "Embeds for Quickdraw: allowed web pages and sandboxed inline HTML as live iframes over the board.",
   "type": "module",

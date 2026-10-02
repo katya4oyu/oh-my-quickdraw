@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-screenshare",
+  "private": true,
   "version": "0.1.0",
   "description": "Screen sharing on a Quickdraw board: one person shares a tab or window, everyone sees it live, and snapshots of it land on the board to write feedback on.",
   "type": "module",

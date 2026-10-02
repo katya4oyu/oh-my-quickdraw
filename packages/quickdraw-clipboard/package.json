@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-clipboard",
+  "private": true,
   "version": "0.1.0",
   "description": "Copy and paste on a Quickdraw board through the browser's own clipboard events: no permission, any browser, plain http too.",
   "type": "module",

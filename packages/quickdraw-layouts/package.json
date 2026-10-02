@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-layouts",
+  "private": true,
   "version": "0.1.0",
   "description": "Layouts that keep themselves for Quickdraw: a bento grid of frames that packs itself again as cells change.",
   "type": "module",

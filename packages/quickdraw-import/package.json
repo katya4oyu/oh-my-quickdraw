@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-import",
+  "private": true,
   "version": "0.1.0",
   "description": "Board import for Quickdraw: validated JSON files in the core's clipboard format.",
   "type": "module",
