@@ -324,7 +324,11 @@
         ws.send(pack(UPDATE, Y.encodeStateAsUpdate(ydoc)))
         ws.send(pack(SV, Y.encodeStateVector(ydoc)))
         ws.send(packAgent({ kind: 'hello' })) // the agents here and the threads
-        if (share.sharing) ws.send(packShare({ kind: 'start', name: presence.me().name })) // still sharing, after a reconnect
+        if (share.sharing) { // still sharing, after a reconnect: and still letting agents see it, if so
+          const agents = share.agents
+          ws.send(packShare({ kind: 'start', name: presence.me().name }))
+          if (agents) ws.send(packShare({ kind: 'agents', allow: true }))
+        }
         presence.resend()
       }
       ws.onmessage = ({ data }) => {

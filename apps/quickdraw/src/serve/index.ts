@@ -18,6 +18,7 @@ import { tailnetSelf, type Person } from './tailscale.ts'
 import { detectAgentMention, hasAgentThreadForAnchor, type AgentEvent, type AgentParticipant, type AgentRequest } from 'quickdraw-agent'
 import { randomUUID } from 'node:crypto'
 import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE } from '../protocol.js'
+import { createScreenWatch, type ScreenWatch } from './screen-watch.ts'
 import { handlePreview } from './preview.ts'
 import { parseJSON } from 'quickdraw-import'
 import { validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
@@ -251,36 +252,84 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
 
   // screen sharing (quickdraw-screenshare): one sharer per board; its frames go to
   // the pages, dropped for one that is behind, and never stored
-  const sharers = new Map<string, { socket: Duplex, name: string }>() // board -> who shares
+  const sharers = new Map<string, { socket: Duplex, name: string, agents: boolean }>() // board -> who shares
   const shareMsg = (value: object) => frame(BINARY, Buffer.concat([Buffer.from([SHARE]), Buffer.from(JSON.stringify(value))]))
+  // Agents watching it (./screen-watch.ts), when the sharer lets them (`agents`,
+  // off at each new share): they are told when the screen has changed, and may
+  // take its latest frame (kept in memory only) or ask for a snapshot.
+  const watchers = new Map<string, Set<Duplex>>() // board -> agents watching its shared screen
+  const watches = new Map<string, ScreenWatch>() // board -> its change detector, while agents may watch and some do
+  const latest = new Map<string, { jpeg: Buffer, at: number }>() // board -> the latest frame, while agents may watch
+  const watching = (board: string) => [...watchers.get(board) ?? []].flatMap((s) => agentOf.get(s)?.name ?? [])
   const sharingFor = (board: string, s: Duplex) => {
     const sh = sharers.get(board)
-    return shareMsg({ kind: 'sharing', sharer: sh ? { name: sh.name } : null, mine: sh?.socket === s })
+    return shareMsg({ kind: 'sharing', sharer: sh ? { name: sh.name } : null, mine: sh?.socket === s, agents: !!sh?.agents, watching: sh?.agents ? watching(board) : [] })
   }
   const announceSharing = (board: string, room: Set<Duplex>) => { for (const s of pages(room)) if (s.writable) s.write(sharingFor(board, s)) }
+  const screenState = (board: string) => { const sh = sharers.get(board); return { sharing: !!sh, ...(sh ? { sharer: sh.name, allowed: sh.agents } : {}) } }
+  const tellWatchers = (board: string, event: string, more: object = {}) => { for (const s of watchers.get(board) ?? []) send(s, { kind: 'screen', event, ...screenState(board), ...more }) }
+  // no one may watch, or no one does: no detector, and no frame kept
+  const unwatch = (board: string) => { watches.delete(board); if (!sharers.get(board)?.agents) latest.delete(board) }
   const BEHIND = 1_000_000 // bytes waiting for a peer: past this, it skips frames
 
   function onShareMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
     if (agentOf.has(socket)) return
     const sh = sharers.get(board)
     if (m.kind === 'start') {
-      sharers.set(board, { socket, name: str(m.name, 100) ? m.name : '' }) // takes over from anyone sharing
+      sharers.set(board, { socket, name: str(m.name, 100) ? m.name : '', agents: false }) // takes over from anyone sharing
+      watches.delete(board)
+      latest.delete(board)
       announceSharing(board, room)
+      tellWatchers(board, 'started')
     } else if (m.kind === 'stop' && sh?.socket === socket) {
       sharers.delete(board)
+      unwatch(board)
       announceSharing(board, room)
+      tellWatchers(board, 'stopped')
+    } else if (m.kind === 'agents' && sh?.socket === socket && sh.agents !== (m.allow === true)) {
+      sh.agents = m.allow === true
+      if (!sh.agents) unwatch(board)
+      announceSharing(board, room)
+      tellWatchers(board, sh.agents ? 'allowed' : 'disallowed')
     } else if (m.kind === 'snap' && sh && sh.socket !== socket && sh.socket.writable) {
       sh.socket.write(shareMsg({ kind: 'snap', by: str(m.by, 100) ? m.by : '' }))
     }
   }
   function onLiveFrame(board: string, room: Set<Duplex>, socket: Duplex, payload: Buffer) {
-    if (sharers.get(board)?.socket !== socket || payload.length > 4_000_000) return
+    const sh = sharers.get(board)
+    if (sh?.socket !== socket || payload.length > 4_000_000) return
     const out = frame(BINARY, payload)
     for (const p of pages(room)) if (p !== socket && p.writable && p.writableLength < BEHIND) p.write(out)
+    if (!sh.agents) return
+    const jpeg = Buffer.from(payload.subarray(1))
+    latest.set(board, { jpeg, at: Date.now() })
+    if (!watchers.get(board)?.size) return
+    let watch = watches.get(board)
+    if (!watch) watches.set(board, watch = createScreenWatch((e) => tellWatchers(board, 'changed', e)))
+    watch.feed(jpeg)
+  }
+  // an agent's own: watch it or not, its latest frame, a snapshot on the board
+  function onScreenMessage(board: string, room: Set<Duplex>, socket: Duplex, agent: AgentParticipant, m: Record<string, any>) {
+    const sh = sharers.get(board)
+    const why = !sh ? 'No one is sharing a screen on this board.' : !sh.agents ? `${sh.name || 'The person sharing'} has not let agents see the shared screen.` : null
+    if (m.kind === 'watch-screen') {
+      let set = watchers.get(board)
+      if (m.on === true) { if (!set) watchers.set(board, set = new Set()); set.add(socket) }
+      else if (set?.delete(socket) && !set.size) { watchers.delete(board); watches.delete(board) }
+      send(socket, { kind: 'screen', event: 'state', watching: m.on === true, ...screenState(board) })
+      if (sh?.agents) announceSharing(board, room)
+    } else if (m.kind === 'screen-frame') {
+      const f = latest.get(board)
+      send(socket, { kind: 'screen-frame', id: m.id, ...(why || !f ? { error: why ?? 'No picture of the shared screen yet.' } : { jpeg: f.jpeg.toString('base64'), at: f.at, sharer: sh!.name }) })
+    } else if (m.kind === 'snap') {
+      if (!why && sh!.socket.writable) sh!.socket.write(shareMsg({ kind: 'snap', by: agent.name }))
+      send(socket, { kind: 'snap', id: m.id, ...(why ? { error: why } : { sharer: sh!.name }) })
+    }
   }
 
   function onAgentMessage(board: string, room: Set<Duplex>, socket: Duplex, m: Record<string, any>) {
     const agent = agentOf.get(socket)
+    if (agent && ['watch-screen', 'screen-frame', 'snap'].includes(m.kind)) return onScreenMessage(board, room, socket, agent, m)
     if (m.kind === 'hello' && !agent) { // a page: who is here, and the threads so far
       socket.write(sharingFor(board, socket))
       // who you are, when the server can tell (a tailnet name): the page names you so until you choose a name
@@ -528,7 +577,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
       if (!peers.delete(socket)) return
       presences.delete(socket)
       broadcast(peers, socket, presence(id, { gone: true }))
-      if (sharers.get(board!)?.socket === socket) { sharers.delete(board!); announceSharing(board!, peers) }
+      if (sharers.get(board!)?.socket === socket) { sharers.delete(board!); unwatch(board!); announceSharing(board!, peers); tellWatchers(board!, 'stopped') }
+      const set = watchers.get(board!)
+      if (set?.delete(socket)) {
+        if (!set.size) { watchers.delete(board!); watches.delete(board!) }
+        if (sharers.get(board!)?.agents) announceSharing(board!, peers)
+      }
       // a conversation ends with the page that talks, or the agent it talks with
       for (const [requestId, call] of talking) {
         if (call.page === socket) send(call.agent, { kind: 'voice', requestId, stop: true })

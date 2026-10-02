@@ -81,6 +81,8 @@ When people review an app together they share a screen, and snapshots of it land
 2. Look at each one: `quickdraw export --format png --frame FRAME_ID --out snap.png`, then view the PNG — it shows what a circle or an arrow points at, which text cannot.
 3. Change the code for each point, then say which points you did and which you did not (and why). Do not "answer" on the board unless asked.
 
+**Watching the shared screen** (joined; only when the person sharing lets agents see it, with *Let AI see* in the shared screen's window): `quickdraw screen` says whether someone shares and lets agents see it. `quickdraw screen --watch` and `wait` then also gives `{"type": "screen", "event": "changed", "change": 0.4, …}` when the screen has changed and settled (and `started`, `stopped`, `allowed`, `disallowed`); only the latest waits. Decide from that whether to look: `quickdraw screen --out screen.jpg` writes the screen as it is now (nothing goes on the board) — then read it as you need. Put a moment on the board for people to write on only when it is worth talking about: `quickdraw snap` (a snapshot frame, as a person's Snapshot). `quickdraw screen --unwatch` stops.
+
 ## Join the board: take requests from the people on it
 
 Asked to join a board (to be there, and do what people ask), `join` it. You are then one of the board's agents: people see you in its AI panel and ask you there (or write a note starting with `@YourName`), and see your cursor as you work. You stay on it between commands; the commands you run from this directory act as you, on that board.

@@ -8,8 +8,9 @@
 //            it; a disconnect is relayed as { id, gone: true }
 //   AGENT    JSON, agents on the board and requests to them (below)
 //   SHARE    JSON, screen sharing (quickdraw-screenshare's messages): from a page
-//            start { name }, stop, snap { by }; from the server sharing
-//            { sharer: { name } | null, mine } (to each page, and on hello), snap { by } (to the sharer)
+//            start { name }, stop, snap { by }, agents { allow } (the sharer: agents may see it); from the
+//            server sharing { sharer: { name } | null, mine, agents, watching: [agent names] } (to each
+//            page, and on hello), snap { by } (to the sharer)
 //   LIVE     a JPEG frame of the shared screen, from the sharer to the others;
 //            dropped for a peer that is behind, never stored
 //
@@ -21,6 +22,12 @@
 //                    names if the one who started the sender started that agent too (or it takes requests from
 //                    anyone), with `from`: the sender's name
 //   from a page      share { agent, with: 'owner' | 'all' | presence ids } (from the agent's owner only: who else may ask it)
+//   the shared screen, between an agent and the server (only while the sharer lets agents see it):
+//                    watch-screen { on } (answered with screen { event: 'state', … }); screen-frame { id }
+//                    (answered with screen-frame { id, jpeg (base64), at, sharer } or { id, error });
+//                    snap { id } (asked of the sharer's page, taken for the agent; answered with snap { id,
+//                    sharer } or { id, error }); to watching agents: screen { event: started | stopped |
+//                    allowed | disallowed | changed, sharing, sharer?, allowed?, change?, at? }
 //   from a page      hello (answered with agents and threads), request { request }, reply { requestId, message } (text,
 //                    { approval, allow } or { undo: { reverted, skipped } })
 //   from the server  you { local } (to a page: on the computer serving, which agents take requests from

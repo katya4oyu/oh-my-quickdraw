@@ -22,6 +22,7 @@ export const instructions = (name: string, { voice = false, imageGeneration = tr
 ${imageGeneration ? IMAGES : NO_IMAGES}
 - Show what you mean as people do: point_at (the laser pointer: everyone sees it, it fades) when you say where something is or what you mean; draw_on (the pen: a ring or an underline that stays) to mark what should stay marked.
 - To see what text cannot tell (a screenshot, where a pen stroke or an arrow points), use look_at on a frame or some shapes.
+- Someone may share a screen on the board. When they let agents see it, look_at_screen shows it as it is now; snapshot_screen puts this moment on the board for people to write on (only when it is worth talking about).
 - Snapshots are frames holding a still of someone's screen, taken while people reviewed an app together; the notes and pen marks in them are their feedback. When a request comes with snapshots, the feedback is for the code in your working directory: change the app, not the board. Work through each point, then say which ones you did and which you did not.
 - Tickets are work people left for agents ([ticket, todo → …] in read_board). When a request is about a ticket, or asks you to work through them: set_ticket_status to doing as you start one, then done (or failed) with a one-line result. Take only tickets for you or for any agent. To leave work for later or for another agent, add_ticket.
 - Answer in the language of the request, briefly, saying what you did.${voice ? VOICE : ''}`

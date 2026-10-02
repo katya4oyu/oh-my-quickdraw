@@ -9,6 +9,7 @@ import { importSingleBoard } from '../src/serve/boards.ts'
 import { isLocal, lanAddress } from '../src/serve/local.ts'
 import { networkInterfaces } from 'node:os'
 import { createQuickdrawServer, type ServeOptions } from '../src/serve/index.ts'
+import jpeg from 'jpeg-js'
 import { AGENT, LIVE, PRESENCE, SHARE, SV, UPDATE, pack, packAgent, packPresence, packShare, unpackAgent, unpackShare } from '../src/protocol.js'
 
 let apps: ReturnType<typeof createQuickdrawServer>[] = []
@@ -804,11 +805,11 @@ describe('screen sharing', () => {
     const [a, b, c] = [ann, bo, cy].map(shareInbox)
     for (const ws of [ann, bo]) ws.send(packAgent({ kind: 'hello' }))
     await a.until(() => a.last('sharing'))
-    expect(a.last('sharing')).toEqual({ kind: 'sharing', sharer: null, mine: false })
+    expect(a.last('sharing')).toEqual({ kind: 'sharing', sharer: null, mine: false, agents: false, watching: [] })
 
     ann.send(packShare({ kind: 'start', name: 'Ann' }))
     await b.until(() => b.last('sharing')?.sharer)
-    expect(b.last('sharing')).toEqual({ kind: 'sharing', sharer: { name: 'Ann' }, mine: false })
+    expect(b.last('sharing')).toEqual({ kind: 'sharing', sharer: { name: 'Ann' }, mine: false, agents: false, watching: [] })
     await a.until(() => a.last('sharing')?.mine)
 
     // frames: from the sharer only, to the others (and not back to it)
@@ -833,5 +834,65 @@ describe('screen sharing', () => {
     bo.close()
     await a.until(() => a.last('sharing')?.sharer === null)
     for (const ws of [ann, cy]) ws.close()
+  })
+
+  it('lets agents see it only when the sharer lets them: told when it changes, its latest frame, snapshots', async () => {
+    const url = await start()
+    const [ann, claude] = await Promise.all([open(url), open(url)])
+    const a = shareInbox(ann)
+    const said: any[] = []
+    const wake = new Set<() => void>()
+    claude.addEventListener('message', ({ data }) => {
+      const m = new Uint8Array(data)
+      if (m[0] !== AGENT) return
+      said.push(unpackAgent(m))
+      for (const fn of wake) fn()
+    })
+    const heard = (test: (m: any) => unknown) => new Promise<any>((ok) => {
+      const check = () => { const m = said.find(test); if (m) { wake.delete(check); ok(m) } }
+      wake.add(check)
+      check()
+    })
+    ann.send(packAgent({ kind: 'hello' }))
+    claude.send(packAgent({ kind: 'join', agent: { id: 'claude', name: 'Claude', knows: [] } }))
+    await heard((m) => m.kind === 'joined')
+    ann.send(packShare({ kind: 'start', name: 'Ann' }))
+    await a.until(() => a.last('sharing')?.mine)
+
+    claude.send(packAgent({ kind: 'watch-screen', on: true }))
+    expect(await heard((m) => m.event === 'state')).toEqual({ kind: 'screen', event: 'state', watching: true, sharing: true, sharer: 'Ann', allowed: false })
+    claude.send(packAgent({ kind: 'screen-frame', id: 'f1' }))
+    expect((await heard((m) => m.id === 'f1')).error).toMatch(/Ann has not let agents/)
+
+    // Ann lets agents see it: told; her window says who watches
+    ann.send(packShare({ kind: 'agents', allow: true }))
+    expect(await heard((m) => m.event === 'allowed')).toMatchObject({ sharing: true, sharer: 'Ann', allowed: true })
+    await a.until(() => a.last('sharing')?.agents)
+    expect(a.last('sharing')).toMatchObject({ agents: true, watching: ['Claude'] })
+
+    // the screen goes from black to white and stays: told once it has settled
+    const picture = (grey: number) => { const rgba = new Uint8Array(64 * 40 * 4).fill(grey); return jpeg.encode({ width: 64, height: 40, data: rgba }, 80).data }
+    const black = picture(0), white = picture(255)
+    ann.send(pack(LIVE, black))
+    await new Promise((r) => setTimeout(r, 600))
+    const feeding = setInterval(() => ann.send(pack(LIVE, white)), 150)
+    try { expect(await heard((m) => m.event === 'changed')).toMatchObject({ change: 1, sharer: 'Ann', allowed: true }) } finally { clearInterval(feeding) }
+    claude.send(packAgent({ kind: 'screen-frame', id: 'f2' }))
+    expect(Buffer.from((await heard((m) => m.id === 'f2')).jpeg, 'base64')).toEqual(Buffer.from(white))
+
+    // a snapshot: asked of Ann's page, taken for Claude
+    claude.send(packAgent({ kind: 'snap', id: 's1' }))
+    expect(await heard((m) => m.id === 's1')).toEqual({ kind: 'snap', id: 's1', sharer: 'Ann' })
+    await a.until(() => a.last('snap'))
+    expect(a.last('snap')).toEqual({ kind: 'snap', by: 'Claude' })
+
+    // no longer: told, and nothing to see
+    ann.send(packShare({ kind: 'agents', allow: false }))
+    await heard((m) => m.event === 'disallowed')
+    claude.send(packAgent({ kind: 'screen-frame', id: 'f3' }))
+    expect((await heard((m) => m.id === 'f3')).error).toMatch(/has not let agents/)
+    ann.send(packShare({ kind: 'stop' }))
+    expect(await heard((m) => m.event === 'stopped')).toEqual({ kind: 'screen', event: 'stopped', sharing: false })
+    for (const ws of [ann, claude]) ws.close()
   })
 })

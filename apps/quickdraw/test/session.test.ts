@@ -9,7 +9,10 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 import { startSession } from '../src/session/daemon.ts'
 import { joinBoard } from '../src/agent/board-agent.ts'
 import { sessionFile } from '../src/session/client.ts'
-import { AGENT, PRESENCE, packAgent, packPresence, unpackAgent, unpackPresence } from '../src/protocol.js'
+import { AGENT, LIVE, PRESENCE, SHARE, pack, packAgent, packPresence, packShare, unpackAgent, unpackPresence, unpackShare } from '../src/protocol.js'
+import jpeg from 'jpeg-js'
+import { readFileSync } from 'node:fs'
+import { createFrame } from 'quickdraw-frames'
 
 // a page's side of the AI panel: what the server sends it, taken by kind
 function pageOf(ws: WebSocket) {
@@ -282,6 +285,52 @@ describe('a session: an agent with a shell, on the board', () => {
     await expect(run('next')).rejects.toThrow(/quickdraw join/)
     session = undefined
   }, 20_000)
+
+  it('watches the shared screen when the sharer lets agents: told when it changes, looks, snaps', async () => {
+    const { url, ws, run, dir } = await setup()
+    expect((await run('screen'))[0]).toMatchObject({ sharing: false, watching: false })
+    // the page shares, and lets agents see it
+    ws.send(packShare({ kind: 'start', name: 'Ann' }))
+    ws.send(packShare({ kind: 'agents', allow: true }))
+    await new Promise((r) => setTimeout(r, 100))
+    const [watching] = await run('screen', '--watch')
+    expect(watching).toMatchObject({ sharing: true, sharer: 'Ann', allowed: true, watching: true })
+    expect(watching.note).toMatch(/quickdraw screen --out/)
+
+    const picture = (grey: number) => jpeg.encode({ width: 64, height: 40, data: new Uint8Array(64 * 40 * 4).fill(grey) }, 80).data
+    ws.send(pack(LIVE, picture(0)))
+    await new Promise((r) => setTimeout(r, 600))
+    const white = picture(255)
+    const feeding = setInterval(() => ws.send(pack(LIVE, white)), 150)
+    try {
+      const [told] = await run('wait', '--timeout', '8')
+      expect(told).toMatchObject({ type: 'screen', event: 'changed', change: 1, sharer: 'Ann', board: { title: 'Live' } })
+      expect(told.note).toMatch(/changed \(100% of it/)
+    } finally { clearInterval(feeding) }
+    const [looked] = await run('screen', '--out', join(dir, 'now.jpg'))
+    expect(looked).toMatchObject({ wrote: join(dir, 'now.jpg'), sharer: 'Ann' })
+    expect(readFileSync(join(dir, 'now.jpg'))).toEqual(Buffer.from(white))
+
+    // a snapshot: Ann's page takes it (here, a frame marked as hers is) and it lands for Claude
+    const pageBoard = await openBoard({ url, name: 'Ann' })
+    cleanupLater.push(() => pageBoard.close())
+    ws.addEventListener('message', ({ data }) => {
+      const m = new Uint8Array(data)
+      if (m[0] !== SHARE) return
+      const msg = unpackShare(m)
+      if (msg.kind !== 'snap') return
+      const id = createFrame(pageBoard.store as never, { x: 0, y: 0, title: '12:08 · ' + msg.by })
+      pageBoard.store.update(id, { snapshot: { at: Date.now(), by: msg.by, imageId: 'shape:none' } } as never)
+    })
+    const [snapped] = await run('snap')
+    expect(snapped).toMatchObject({ title: '12:08 · Claude', sharer: 'Ann' })
+    expect(snapped.note).toContain(`--frame ${snapped.snapshot}`)
+
+    ws.send(packShare({ kind: 'stop' }))
+    expect((await run('wait', '--timeout', '5'))[0]).toMatchObject({ type: 'screen', event: 'stopped', sharing: false, note: 'Screen sharing stopped.' })
+    await expect(run('screen', '--out', join(dir, 'gone.jpg'))).rejects.toThrow(/No one is sharing/)
+    ws.close()
+  }, 30_000)
 
   it('leave', async () => {
     const { run, dir } = await setup()
