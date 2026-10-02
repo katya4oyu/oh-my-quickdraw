@@ -6,12 +6,13 @@
 // an inbox until `quickdraw next` takes it.
 import { createServer, type Server, type Socket } from 'node:net'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { pageBounds, type BoardRecord, type Diff, type Store } from '@quickdrawjs/core'
 import { describeBoard, textOf, type AgentRequest } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
 import { teamOf } from '../board/team.ts'
-import { joinBoard, type BoardAgent } from '../agent/board-agent.ts'
+import { joinBoard, type BoardAgent, type ScreenEvent } from '../agent/board-agent.ts'
 import { linkPreview, serverOfBoard } from '../board/link-preview.ts'
 import { parseCommand, runCommand } from '../commands/index.ts'
 import { sessionFile, socketPath, type SessionInfo } from './client.ts'
@@ -40,6 +41,7 @@ type Item =
   | { type: 'reply', requestId: string, text: string }
   | { type: 'stop', requestId: string }
   | { type: 'ticket', id: string }
+  | { type: 'screen', event: ScreenEvent }
 
 const READING = new Set(['read', 'lint', 'export', 'log', 'tickets'])
 const STREAMING = new Set(['next', 'wait', 'watch'])
@@ -60,6 +62,8 @@ interface Joined {
   open: Set<string>
   lastSpot: { x: number, y: number } | null
   drift: number
+  /** it watches the shared screen (quickdraw screen --watch) */
+  watching: boolean
   holding(): boolean
   settle(justDone?: boolean): void
   changes(): object
@@ -102,7 +106,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     const store = board.store
     const boardId = boardIdOf(boardUrl)
     const title = await fetch(`${serverOfBoard(boardUrl)}/api/boards/${boardId}`).then((r) => (r.ok ? r.json() : null)).then((b) => b?.title ?? boardId).catch(() => boardId)
-    const j = { url: boardUrl, id: boardId, title, board, agent, store, requests: new Map(), open: new Set(), lastSpot: null, drift: 0 } as unknown as Joined
+    const j = { url: boardUrl, id: boardId, title, board, agent, store, requests: new Map(), open: new Set(), lastSpot: null, drift: 0, watching: false } as unknown as Joined
     agent.status('idle')
 
     // working while it has a request it took and did not finish, or a ticket it took and did not close
@@ -119,6 +123,11 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     }
     agent.onReply = (requestId, text) => push({ type: 'reply', requestId, text, at: j })
     agent.onStop = (requestId) => push({ type: 'stop', requestId, at: j })
+    // the shared screen: only the latest word of it waits (a change already told is old news)
+    agent.onScreen = (event) => {
+      for (let i = inbox.length - 1; i >= 0; i--) if (inbox[i].type === 'screen' && inbox[i].at === j) inbox.splice(i, 1)
+      push({ type: 'screen', event, at: j })
+    }
     // tickets for it (or any agent) still to do: each once for whom it is for, so one
     // given to it later is news again; not one it left for any agent itself
     const told = new Set<string>()
@@ -291,6 +300,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
       return j.describeRequest(item.request)
     }
     if (item.type === 'reply') return { type: 'reply', request: item.requestId, board: where(j), text: item.text }
+    if (item.type === 'screen') return { type: 'screen', board: where(j), ...item.event, note: screenNote(item.event) }
     if (item.type === 'stop') return { type: 'stop', request: item.requestId, board: where(j), text: 'A person pressed Stop: stop working on it, then quickdraw finish it.' }
     const t = j.store.get(item.id)
     if (!t || (t as { props?: { status?: string } }).props?.status !== 'todo') return next(timeout == null ? undefined : Math.max(0, (until - Date.now()) / 1000), closed) // taken or gone since
@@ -380,6 +390,22 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
         return out(JSON.stringify({ ...j.who(), ...(boards.size > 1 ? { your_boards: [...boards.values()].map(where) } : {}) }, null, 2))
       }
       case 'changes': return out(JSON.stringify(boardFor(o).changes(), null, 2))
+      case 'screen': { // the shared screen: watch it or not, look at it now, or how it is
+        const j = boardFor(o)
+        if (o.out) {
+          const f = await j.agent.screenFrame()
+          await writeFile(o.out, f.jpeg)
+          return out(JSON.stringify({ wrote: o.out, sharer: f.sharer, at: new Date(f.at).toISOString() }))
+        }
+        if (o.watch || o.unwatch) j.watching = !!o.watch
+        const { event: _, ...state } = await j.agent.watchScreen(j.watching)
+        return out(JSON.stringify({ ...state, watching: j.watching, board: where(j), note: screenNote({ event: 'state', ...state }) }))
+      }
+      case 'snap': {
+        const j = boardFor(o)
+        const s = await j.agent.snapScreen()
+        return out(JSON.stringify({ snapshot: s.frame, title: s.title, sharer: s.sharer, board: where(j), note: `Look at it: quickdraw export --format png --frame ${s.frame} --out snap.png` }))
+      }
       case 'leave': { // one board (--board), else all of them
         if (o.board && boards.size > 1) {
           const j = boardFor(o)
@@ -489,6 +515,15 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     return closed
   }
   return { info, closed, close, agent: first.agent as BoardAgent, board: first.board as Board, store: first.store as Store }
+}
+
+// what an agent can do about the shared screen, as it is now
+function screenNote(e: ScreenEvent): string {
+  const who = e.sharer || 'Someone'
+  if (!e.sharing) return e.event === 'stopped' ? 'Screen sharing stopped.' : 'No one is sharing a screen on this board.'
+  if (!e.allowed) return e.event === 'disallowed' ? `${who} no longer lets agents see the shared screen.` : `${who} is sharing a screen but has not let agents see it (they can, in the shared screen's window).`
+  if (e.event === 'changed') return `${who}'s shared screen changed (${Math.round((e.change ?? 0) * 100)}% of it, now settled). To see it: quickdraw screen --out screen.jpg. To put this moment on the board for people: quickdraw snap.`
+  return `${who} lets agents see the shared screen. To see it: quickdraw screen --out screen.jpg${e.watching === false ? '; to be told when it changes: quickdraw screen --watch' : ''}.`
 }
 
 // a result and the `people` line after it become one object

@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { text as readStream } from 'node:stream/consumers'
 
 /** Commands that only a session runs. */
-export const SESSION_COMMANDS = new Set(['next', 'say', 'finish', 'area', 'who', 'changes', 'leave'])
+export const SESSION_COMMANDS = new Set(['next', 'say', 'finish', 'area', 'who', 'changes', 'leave', 'screen', 'snap'])
 
 export interface SessionInfo {
   /** the board's relay URL (the first it joined) */

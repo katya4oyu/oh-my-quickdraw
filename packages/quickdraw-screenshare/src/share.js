@@ -3,11 +3,15 @@
 // and anyone can take a snapshot of it — the sharer's page puts the still, at
 // full size, on the board (placeSnapshot).
 //
+// The sharer may let agents see it too ("Let AI see", off at each share): the
+// host then lets them look at it and take snapshots, and says which agents are
+// watching (`agents`, `watching`), which the window shows everyone.
+//
 // The host carries the messages (a relay, WebRTC data channel, anything):
-//   host.send({ kind: 'start', name } | { kind: 'stop' } | { kind: 'snap', by })
+//   host.send({ kind: 'start', name } | { kind: 'stop' } | { kind: 'snap', by } | { kind: 'agents', allow })
 //   host.sendFrame(jpeg: Uint8Array)   the live picture; the host may drop frames
 //   host.canSend()                     false while the last frame is still on its way
-//   host.onMessage(fn)                 { kind: 'sharing', sharer: { name } | null, mine }
+//   host.onMessage(fn)                 { kind: 'sharing', sharer: { name } | null, mine, agents?, watching? }
 //                                      | { kind: 'frame', data: Uint8Array } | { kind: 'snap', by }
 //   host.me()                          { name }
 import { placeSnapshot, snapshots } from './snapshots.js'
@@ -18,6 +22,7 @@ export const SHARE_ICONS = {
   snap: svg('<path d="M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>'),
   fold: svg('<path d="m6 15 6-6 6 6"/>'),
   unfold: svg('<path d="m6 9 6 6 6-6"/>'),
+  eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
 }
 
 const STYLE = `
@@ -38,6 +43,9 @@ const STYLE = `
 .qss-btn:hover{background:var(--qd-hover)}
 .qss-btn svg{width:16px;height:16px}
 .qss-btn.primary{background:var(--qd-on-bg);color:var(--qd-on-ink)}
+.qss-btn.on{background:var(--qd-active)}
+.qss-ai{display:flex;align-items:center;gap:6px;padding:0 10px 6px;font-size:12px;color:var(--qd-ink-soft)}
+.qss-ai svg{width:14px;height:14px;flex:none}
 .qss-view{position:relative;background:#000;aspect-ratio:16/10}
 .qss-view canvas,.qss-view video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 .qss.folded .qss-view,.qss.folded .qss-grip{display:none}
@@ -74,6 +82,7 @@ export function createScreenShare({ editor, container = editor.container, host, 
   injectStyle()
   let sharer = null // { name } of whoever shares, as the host says
   let mine = false // it is this page
+  let agents = false, watching = [] // the sharer lets agents see it; the agents that watch
   let stream = null, video = null, timer = 0, encoding = false
   const listeners = new Set()
   const changed = () => { render(); for (const fn of listeners) fn() }
@@ -94,7 +103,11 @@ export function createScreenShare({ editor, container = editor.container, host, 
   stopBtn.type = 'button'
   const foldBtn = el('button', 'qss-btn')
   foldBtn.type = 'button'
-  head.append(dot, name, snapBtn, stopBtn, foldBtn)
+  const aiBtn = el('button', 'qss-btn') // the sharer's: let agents see it, or not
+  aiBtn.type = 'button'
+  head.append(dot, name, aiBtn, snapBtn, stopBtn, foldBtn)
+  const ai = el('div', 'qss-ai') // for everyone: agents may see it, and who watches
+  ai.setAttribute('role', 'status')
   const view = el('div', 'qss-view')
   const canvas = el('canvas')
   const wait = el('div', 'qss-wait', 'Waiting for the picture…')
@@ -102,7 +115,7 @@ export function createScreenShare({ editor, container = editor.container, host, 
   note.hidden = true
   const grip = el('div', 'qss-grip')
   view.append(canvas, wait, note)
-  box.append(head, view, grip)
+  box.append(head, ai, view, grip)
   ;(container.querySelector('.qd-ui') || container).append(box)
   // what is done in this window is not for the board (its shortcuts, its paste)
   for (const type of ['keydown', 'keyup', 'paste', 'wheel']) box.addEventListener(type, (e) => e.stopPropagation())
@@ -113,6 +126,14 @@ export function createScreenShare({ editor, container = editor.container, host, 
     if (!sharer) return
     name.textContent = mine ? 'You are sharing' : `${sharer.name || 'Someone'}’s screen`
     stopBtn.hidden = !mine
+    aiBtn.hidden = !mine
+    aiBtn.innerHTML = SHARE_ICONS.eye
+    aiBtn.append(el('span', '', agents ? 'AI can see' : 'Let AI see'))
+    aiBtn.classList.toggle('on', agents)
+    aiBtn.title = agents ? 'Agents on the board can see this screen and are told when it changes. Press to stop.' : 'Let the agents on the board see this screen: they are told when it changes, look at it, and may put snapshots on the board.'
+    ai.hidden = !agents
+    ai.innerHTML = SHARE_ICONS.eye
+    ai.append(el('span', '', watching.length ? `Watched by ${watching.join(', ')}` : 'AI can see this screen'))
     box.classList.toggle('folded', folded)
     foldBtn.innerHTML = folded ? SHARE_ICONS.unfold : SHARE_ICONS.fold
     foldBtn.title = folded ? 'Show' : 'Fold'
@@ -200,6 +221,8 @@ export function createScreenShare({ editor, container = editor.container, host, 
       if (stream && !m.mine) end(false) // someone else took over
       sharer = m.sharer || null
       mine = !!m.mine && !!sharer
+      agents = !!sharer && m.agents === true
+      watching = sharer && Array.isArray(m.watching) ? m.watching.filter((n) => typeof n === 'string') : []
       if (!sharer) { wait.hidden = false; canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height) }
       changed()
     } else if (m?.kind === 'frame' && !mine && m.data) drawFrame(m.data)
@@ -227,6 +250,7 @@ export function createScreenShare({ editor, container = editor.container, host, 
 
   snapBtn.addEventListener('click', () => share.snap())
   stopBtn.addEventListener('click', () => share.stop())
+  aiBtn.addEventListener('click', () => share.letAgents(!agents))
   foldBtn.addEventListener('click', () => { folded = !folded; render() })
 
   const share = {
@@ -247,6 +271,10 @@ export function createScreenShare({ editor, container = editor.container, host, 
       tick()
     },
     stop() { if (stream) end(true) },
+    /** the agents on the board see it, or not (the sharer only; the host says when it is so) */
+    get agents() { return agents },
+    get watching() { return watching },
+    letAgents(allow) { if (mine) host.send({ kind: 'agents', allow: !!allow }) },
     /** A snapshot of the shared screen: taken here when sharing, else asked of the sharer. */
     async snap() {
       if (!sharer) return null

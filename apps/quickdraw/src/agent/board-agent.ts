@@ -14,11 +14,11 @@
 // and its work area), closed when the request is done. Agents keep out of each
 // other's work: a change that reaches into another agent's work area is refused.
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
-import { bindFrames } from 'quickdraw-frames'
+import { bindFrames, frameTitle } from 'quickdraw-frames'
 import { bindLayouts, settled } from 'quickdraw-layouts'
 import { applySteps, BOARD_TOOLS, freeSpot, runOp, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import { isColumn, isTicket, kanbanColumn, setTicketStatus, workInProgress } from 'quickdraw-tickets'
-import { snapshotFeedback } from 'quickdraw-screenshare'
+import { snapshotFeedback, snapshots } from 'quickdraw-screenshare'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,6 +49,20 @@ export interface Participant {
   defaultVoice?: string
 }
 
+/** the shared screen, as the server tells a watching agent (see ../serve/screen-watch.ts) */
+export interface ScreenEvent {
+  /** state: as asked (watchScreen); started, stopped, allowed, disallowed: sharing or letting agents see it; changed: the screen did */
+  event: 'state' | 'started' | 'stopped' | 'allowed' | 'disallowed' | 'changed'
+  sharing: boolean
+  sharer?: string
+  /** the person sharing lets agents see it */
+  allowed?: boolean
+  /** changed: the share of the screen that did (0–1), and when */
+  change?: number
+  at?: number
+  watching?: boolean
+}
+
 export interface BoardAgent {
   /** set by the runtime: a new request */
   onRequest(request: AgentRequest): void
@@ -58,6 +72,14 @@ export interface BoardAgent {
   onVoice?(request: AgentRequest, sdp: string): void
   /** set by the runtime: a person asked it to stop working on a request */
   onStop?(requestId: string): void
+  /** set by a runtime that watches the shared screen (watchScreen): it changed, it stopped… */
+  onScreen?(event: ScreenEvent): void
+  /** starts or stops watching the shared screen: told when it changes (onScreen); resolves with how it is now */
+  watchScreen(on: boolean): Promise<ScreenEvent>
+  /** the shared screen as it is now, a JPEG (only when the person sharing lets agents see it) */
+  screenFrame(): Promise<{ jpeg: Buffer, at: number, sharer: string }>
+  /** a snapshot of the shared screen, put on the board as a person's is; resolves with its frame */
+  snapScreen(): Promise<{ frame: string, title: string, sharer: string }>
   /** set by a runtime that talks: the person hung up */
   onVoiceStop?(requestId: string): void
   /** to the page that asked to talk: the WebRTC answer, or that the conversation ended (and why) */
@@ -166,6 +188,17 @@ const LOOK_AT = {
   } },
 }
 
+const LOOK_AT_SCREEN = {
+  name: 'look_at_screen',
+  description: 'Looks at the screen someone is sharing on the board, as it is now (when the person sharing lets agents see it). Nothing goes on the board; to put this moment on it for people to write on, snapshot_screen.',
+  inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+}
+const SNAPSHOT_SCREEN = {
+  name: 'snapshot_screen',
+  description: 'Puts a snapshot of the shared screen on the board, as a person does with Snapshot (when the person sharing lets agents see it): a frame people can write and draw on. Only for a moment worth talking about; to just see the screen, look_at_screen.',
+  inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+}
+
 const CLAIM_AREA = {
   name: 'claim_area',
   description: 'Marks out where you will work, before you draw anything bigger than a note or two, so people see where it will be: they work around it, or move it, or draw in it with you. '
@@ -250,6 +283,24 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   let renderer: Renderer | undefined // pictures of the board, in a headless Chrome made when first needed
   let files: string | undefined // where pictures for the model are written; removed on close
 
+  // the shared screen: answers to what it asked, by id, and what it is told
+  const asked = new Map<string, (m: any) => void>()
+  let nextAsk = 1
+  const ask = (message: object, kind: string, timeout = 10_000) => new Promise<any>((resolve, reject) => {
+    const id = `${approvalBase}:s${nextAsk++}`
+    const t = setTimeout(() => { asked.delete(id); reject(new Error('the board did not answer')) }, timeout)
+    asked.set(id, (m) => { clearTimeout(t); if (m.kind !== kind) return; asked.delete(id); if (m.error) reject(new Error(m.error)); else resolve(m) })
+    relay.send({ ...message, id })
+  })
+  let stateWaiter: ((e: ScreenEvent) => void) | null = null
+  relay.onMessage((m) => {
+    if ((m.kind === 'screen-frame' || m.kind === 'snap') && typeof m.id === 'string') return asked.get(m.id)?.(m)
+    if (m.kind === 'screen') {
+      const { kind: _, ...e } = m
+      if (e.event === 'state') { stateWaiter?.(e); stateWaiter = null } else agent.onScreen?.(e)
+      return
+    }
+  })
   relay.onMessage((m) => {
     // the server lets only this computer ask, unless `remote`; checked here too
     if ((m.kind === 'request' || m.kind === 'reply') && !me.remote && m.local !== true) {
@@ -386,6 +437,10 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const set = board.members.set(a.name || me.name, { role, ...(a.about !== undefined ? { about: a.about } : role ? {} : { about: '' }) }, me.name)
       return JSON.stringify(set ? { member: set } : { removed: a.name || me.name })
     }
+    if (name === 'snapshot_screen') {
+      const s = await agent.snapScreen()
+      return `A snapshot of ${s.sharer ? s.sharer + '\'s' : 'the shared'} screen is on the board: frame ${s.frame} ("${s.title}").`
+    }
     if (name === 'point_at') {
       const a = (args ?? {}) as { id?: string, x?: number, y?: number, circle?: boolean }
       const s = a.id ? board.store.get(a.id) : null
@@ -501,7 +556,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, POINT_AT, SET_ROLE],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, LOOK_AT_SCREEN, SNAPSHOT_SCREEN, POINT_AT, SET_ROLE],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -543,6 +598,29 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       if (status === 'idle' && !pinned) { clearTimeout(hideTimer); hideTimer = setTimeout(() => board.cursor(null, null), 3000) }
     },
     account: ({ account, limits }) => relay.send({ kind: 'account', account, limits }),
+    watchScreen(on) {
+      return new Promise<ScreenEvent>((resolve, reject) => {
+        const t = setTimeout(() => { stateWaiter = null; reject(new Error('the board did not answer')) }, 10_000)
+        stateWaiter = (e) => { clearTimeout(t); resolve(e) }
+        relay.send({ kind: 'watch-screen', on })
+      })
+    },
+    async screenFrame() {
+      const m = await ask({ kind: 'screen-frame' }, 'screen-frame')
+      return { jpeg: Buffer.from(m.jpeg, 'base64'), at: m.at, sharer: m.sharer ?? '' }
+    },
+    async snapScreen() {
+      // the page of the person sharing takes it and puts it on the board: it lands as theirs does, taken for this agent
+      const before = new Set(snapshots(board.store as never).map((f: { id: string }) => f.id))
+      const landed = () => snapshots(board.store as never).find((f: { id: string, snapshot: { by: string } }) => !before.has(f.id) && f.snapshot.by === me.name) as { id: string } | undefined
+      const m = await ask({ kind: 'snap' }, 'snap')
+      for (let waited = 0; waited < 15_000; waited += 200) {
+        const f = landed()
+        if (f) return { frame: f.id, title: frameTitle(board.store as never, f.id) ?? '', sharer: m.sharer ?? '' }
+        await sleep(200)
+      }
+      throw new Error('the snapshot did not reach the board (the page of the person sharing did not take it)')
+    },
     async picture({ frame, ids }) {
       renderer ??= new Renderer()
       return renderer.render({ records: board.store.all(), ...(frame ? { frame } : { ids: ids?.length ? ids : undefined }), scale: 1.5 })

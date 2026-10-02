@@ -237,6 +237,15 @@ export async function runCodex(server: AppServer, agent: BoardAgent, { cwd, name
         return { success: false, contentItems: [{ type: 'inputText', text: `Could not draw it: ${(e as Error).message}` }] }
       } finally { agent.activity('thinking') }
     }
+    if (method === 'item/tool/call' && p.tool === 'look_at_screen') { // the shared screen as it is now: a picture
+      agent.activity('reading')
+      try {
+        const f = await agent.screenFrame()
+        return { success: true, contentItems: [{ type: 'inputText', text: `${f.sharer ? f.sharer + '\'s' : 'The shared'} screen, now:` }, { type: 'inputImage', imageUrl: `data:image/jpeg;base64,${f.jpeg.toString('base64')}` }] }
+      } catch (e) {
+        return { success: false, contentItems: [{ type: 'inputText', text: (e as Error).message }] }
+      } finally { agent.activity('thinking') }
+    }
     if (method === 'item/tool/call') {
       try {
         const text = await agent.runTool(requestId, p.tool, p.arguments)

@@ -131,6 +131,14 @@ On the board, as a participant (for an agent that has only a shell: see SKILL.md
                                           what they look at
   changes                                 what changed on the board since you last looked
   leave [--board ID]                      leaves the boards (--board: that one only)
+  screen [--watch | --unwatch | --out FILE.jpg]
+                                          the screen someone shares on the board, when they let agents see it:
+                                          --watch: wait gives { type: "screen" } when it has changed (and when
+                                          sharing starts, stops, or agents may see it or not); --out: the screen
+                                          as it is now, to a JPEG (nothing goes on the board); alone: whether
+                                          someone shares and lets agents see it
+  snap                                    puts a snapshot of the shared screen on the board, as a person's
+                                          Snapshot does: a frame for people to write on (only when worth it)
   Results say what waits for you as "inbox": take it with wait.
 
 The team (live boards): agents' roles — a transcriber, a researcher, a reviewer — so each does what it is
@@ -219,12 +227,12 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, live: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
