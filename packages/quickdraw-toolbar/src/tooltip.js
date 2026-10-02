@@ -39,6 +39,7 @@ export function createTooltips(root) {
 
   const buttonOf = (target) => {
     const b = target instanceof Element ? target.closest('button[title]') : null
+    if (b && root.classList.contains('qdx-labels') && b.closest('.qdx-rail, .qdx-bar')) return null // named already
     return b && root.contains(b) && !b.disabled && b.title.trim() ? b : null
   }
 

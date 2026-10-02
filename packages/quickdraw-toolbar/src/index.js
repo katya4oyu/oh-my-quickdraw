@@ -23,6 +23,17 @@ const STYLE = `
 .qd-actions.qdx-rail[hidden], .qd-actions.qdx-bar[hidden] { display: none; }
 .qd-popover.qdx-pop { bottom: auto; transform-origin: 100% 50%; }
 .qdx-pop .qd-menu-item.qdx-checked .qd-mi-ico { color: inherit; }
+/* labels mode: each button's name always shows (no hover on a phone) */
+.qdx-labels .qdx-rail .qd-tool { position: relative; }
+.qdx-labels .qdx-rail .qd-tool::after { content: attr(aria-label); position: absolute; right: calc(100% + 10px); top: 50%;
+  transform: translateY(-50%); padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  font: 500 12px/1.35 system-ui, -apple-system, sans-serif; color: var(--qd-ink-strong);
+  background: var(--qd-pop-bg); border: 1px solid var(--qd-border); box-shadow: var(--qd-bar-shadow); }
+.qdx-labels .qdx-bar { max-width: calc(100% - 16px); flex-wrap: wrap; justify-content: center; border-radius: 22px; }
+.qdx-labels .qdx-bar .qd-tool { flex-direction: column; gap: 3px; width: 58px; height: auto; min-height: 44px; padding: 5px 2px; }
+.qdx-labels .qdx-bar .qd-tool::after { content: attr(aria-label); max-width: 100%; text-align: center; overflow-wrap: anywhere;
+  font: 500 10px/1.2 system-ui, -apple-system, sans-serif; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qdx-labels .qdx-bar .qd-div { height: 30px; }
 `
 function injectStyle() {
   if (document.getElementById('qdx-toolbar-style')) return
@@ -31,6 +42,26 @@ function injectStyle() {
   s.textContent = STYLE
   document.head.append(s)
 }
+
+const LABELS_KEY = 'quickdraw-toolbar-labels'
+const savedLabels = () => { try { return localStorage.getItem(LABELS_KEY) === '1' } catch { return false } }
+
+// Labels mode: the rail's and the selection bar's buttons show their names
+// all the time, for a phone, where nothing hovers. Kept per device.
+export function setLabels(container, on) {
+  container.classList.toggle('qdx-labels', on)
+  try { localStorage.setItem(LABELS_KEY, on ? '1' : '0') } catch {}
+}
+export const hasLabels = (container) => container.classList.contains('qdx-labels')
+
+export const LABELS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h3M4 12h3M4 18h3M11 6h9M11 12h9M11 18h6"/></svg>'
+
+// a menu entry that turns labels mode on and off, for an app's "more" menu
+export const labelsTool = () => ({
+  id: 'toolbar-labels', title: 'Show button names', icon: LABELS_ICON,
+  checked: ({ editor }) => hasLabels(editor.container),
+  run: ({ editor }) => setLabels(editor.container, !hasLabels(editor.container)),
+})
 
 // for an app's own "more" menu of board-wide actions
 export const MORE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>'
@@ -52,6 +83,7 @@ export function createToolbar(editor, { rail = [], context = [] } = {}) {
   let pressing = false // a pointer is down on the board: hide the selection bar
   // every button's title, as a tooltip that comes in a moment (the core's too)
   const offTips = createTooltips(root)
+  if (savedLabels()) root.classList.add('qdx-labels')
 
   const closePop = () => { pop?.el.remove(); pop = null }
 
@@ -152,6 +184,9 @@ export function createToolbar(editor, { rail = [], context = [] } = {}) {
   addEventListener('pointercancel', onUp)
   addEventListener('resize', schedule)
   const offs = ['selection', 'camera', 'change', 'edit', 'theme'].map((ev) => editor.on(ev, schedule))
+  // labels mode on or off: the selection bar changes width
+  const classes = new MutationObserver(schedule)
+  classes.observe(root, { attributes: true, attributeFilter: ['class'] })
 
   function refresh() {
     buildRail()
@@ -166,6 +201,7 @@ export function createToolbar(editor, { rail = [], context = [] } = {}) {
       cancelAnimationFrame(raf)
       offTips()
       offs.forEach((off) => off())
+      classes.disconnect()
       root.removeEventListener('pointerdown', onDown, true)
       removeEventListener('pointerup', onUp)
       removeEventListener('pointercancel', onUp)
