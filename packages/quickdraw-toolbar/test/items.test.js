@@ -48,7 +48,7 @@ describe('toolbar definitions', () => {
     const html = createEmbed(store, { x: 900, y: 500, kind: 'html', html: '' })
     const context = Object.values(sets).flatMap((t) => t.context)
     const ids = (sel) => contextItems(context, editorFor(store, [sel])).map((it) => it.id)
-    expect(ids(frame)).toEqual(['frame-rename', 'frame-aspect', 'frame-export'])
+    expect(ids(frame)).toEqual(['frame-rename', 'frame-aspect', 'frame-title-place', 'frame-export'])
     expect(ids(card)).toEqual(['markdown-edit', 'markdown-save'])
     expect(ids(page)).toEqual(['embed-use', 'embed-thumbnail', 'embed-open'])
     expect(ids(html)).toEqual(['embed-use', 'embed-thumbnail'])
