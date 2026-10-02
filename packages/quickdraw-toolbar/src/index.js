@@ -11,8 +11,10 @@
 // .qd-ui and reuses its classes and theme variables, so it follows the theme
 // and hides with the core's UI. No core change.
 import { railItems, contextItems, placeBar } from './layout.js'
+import { createTooltips } from './tooltip.js'
 
-export { railItems, contextItems, placeBar } from './layout.js'
+export { railItems, contextItems, placeBar, placeTip } from './layout.js'
+export { createTooltips } from './tooltip.js'
 
 const STYLE = `
 .qd-actions.qdx-rail { left: auto; right: var(--qdx-rail-right, 10px); }
@@ -48,6 +50,8 @@ export function createToolbar(editor, { rail = [], context = [] } = {}) {
   const host = root.querySelector('.qd-ui') || root
   let pop = null // { el, id }
   let pressing = false // a pointer is down on the board: hide the selection bar
+  // every button's title, as a tooltip that comes in a moment (the core's too)
+  const offTips = createTooltips(root)
 
   const closePop = () => { pop?.el.remove(); pop = null }
 
@@ -160,6 +164,7 @@ export function createToolbar(editor, { rail = [], context = [] } = {}) {
     refresh,
     destroy() {
       cancelAnimationFrame(raf)
+      offTips()
       offs.forEach((off) => off())
       root.removeEventListener('pointerdown', onDown, true)
       removeEventListener('pointerup', onUp)

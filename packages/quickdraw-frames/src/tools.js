@@ -59,7 +59,7 @@ export function frameTools() {
         })),
       },
       {
-        id: 'frame-title-inside', title: 'Title inside the frame', icon: FRAME_ICONS.titleInside, when: isFrame,
+        id: 'frame-title-place', title: 'Title inside the frame', icon: FRAME_ICONS.titleInside, when: isFrame,
         menu: [[true, 'Title inside'], [false, 'Title above']].map(([inside, label]) => ({
           id: 'frame-title-' + (inside ? 'inside' : 'above'), title: label,
           checked: ({ shape }) => !!shape.titleInside === inside,

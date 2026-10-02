@@ -38,3 +38,23 @@ export function placeBar(sel, bar, frame, { gap = 40, margin = 8 } = {}) {
   const left = Math.max(margin, Math.min(sel.x + sel.w / 2 - bar.w / 2, frame.w - bar.w - margin))
   return { left, top, side }
 }
+
+// Where a button's tooltip goes, in container px: beside a button in a
+// vertical bar (towards the middle of the container: left of the rail, right
+// of the core's tools), else below it (above when there is no room below);
+// always inside the container. btn: its rect; tip and frame: { w, h }.
+export function placeTip(btn, { vertical }, tip, frame, { gap = 8, margin = 4 } = {}) {
+  let left, top, side
+  if (vertical) {
+    side = btn.x + btn.w / 2 > frame.w / 2 ? 'left' : 'right'
+    left = side === 'left' ? btn.x - gap - tip.w : btn.x + btn.w + gap
+    top = btn.y + btn.h / 2 - tip.h / 2
+  } else {
+    side = btn.y + btn.h + gap + tip.h > frame.h - margin ? 'above' : 'below'
+    top = side === 'above' ? btn.y - gap - tip.h : btn.y + btn.h + gap
+    left = btn.x + btn.w / 2 - tip.w / 2
+  }
+  left = Math.max(margin, Math.min(left, frame.w - tip.w - margin))
+  top = Math.max(margin, Math.min(top, frame.h - tip.h - margin))
+  return { left, top, side }
+}
