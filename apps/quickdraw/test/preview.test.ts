@@ -11,7 +11,7 @@ function ask(url?: string) {
 
 describe('isPublicAddress', () => {
   it('refuses loopback, private, link-local, CGNAT/Tailscale and mapped addresses', () => {
-    for (const a of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.80.150.102', '0.0.0.0',
+    for (const a of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.90.1.2', '0.0.0.0',
       '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', 'not an ip']) {
       expect(isPublicAddress(a), a).toBe(false)
     }
@@ -32,7 +32,7 @@ describe('handlePreview refuses before fetching', () => {
     ['IPv6 loopback', 'https://[::1]/', 403],
     ['private network', 'https://192.168.1.1/', 403],
     ['cloud metadata', 'https://169.254.169.254/latest/meta-data/', 403],
-    ['Tailscale address', 'https://100.80.150.102/', 403],
+    ['Tailscale address', 'https://100.90.1.2/', 403],
     ['not a URL', 'nope', 403],
   ])('%s', async (_, url, status) => {
     const [got, body] = await ask(url)

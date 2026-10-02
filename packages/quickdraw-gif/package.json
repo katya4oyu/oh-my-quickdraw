@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-gif",
+  "private": true,
   "version": "0.1.0",
   "description": "Animated GIFs on a Quickdraw board: they move for everyone looking at them.",
   "type": "module",

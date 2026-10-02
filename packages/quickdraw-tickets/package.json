@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-tickets",
+  "private": true,
   "version": "0.1.0",
   "description": "Tickets for agents on a Quickdraw board: a card people write and agents take, and a kanban of frames that follows their status.",
   "type": "module",

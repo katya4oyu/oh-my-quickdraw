@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-frames",
+  "private": true,
   "version": "0.1.0",
   "description": "Excalidraw-style frames for Quickdraw, built from plain records with no core change.",
   "type": "module",

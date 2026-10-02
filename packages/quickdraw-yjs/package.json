@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-yjs",
+  "private": true,
   "version": "0.1.0",
   "description": "Optional Yjs document synchronization for Quickdraw.",
   "type": "module",

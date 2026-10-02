@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-app",
+  "license": "MIT",
   "private": true,
   "version": "0.1.0",
   "description": "The quickdraw command: serves a board with every extension, for people and agents to share.",

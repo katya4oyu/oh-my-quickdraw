@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-export",
+  "private": true,
   "version": "0.1.0",
   "description": "Board export for Quickdraw beyond the core's PNG export.",
   "type": "module",

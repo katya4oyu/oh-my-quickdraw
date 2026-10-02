@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-voice",
+  "private": true,
   "version": "0.1.0",
   "description": "Talk with an agent on a Quickdraw board: a microphone, a call straight to a voice model over WebRTC, and a bar with what is said while the agent works on the board.",
   "type": "module",

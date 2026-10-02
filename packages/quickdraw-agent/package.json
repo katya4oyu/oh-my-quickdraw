@@ -1,5 +1,6 @@
 {
   "name": "quickdraw-agent",
+  "private": true,
   "version": "0.1.0",
   "description": "What agents can do on a Quickdraw board: read it, change it in undoable operations, and the same as tools for any agent runtime.",
   "type": "module",
