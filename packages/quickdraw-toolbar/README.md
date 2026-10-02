@@ -5,6 +5,7 @@ An icon toolbar for Quickdraw extensions, in the core's own look — no core cha
 - **The rail**, a vertical pill on the right edge (mirroring the core's action bar on the left): always there, for putting things on the board, plus a menu for board-wide actions.
 - **The selection bar**, a small pill floating above the selected shape and following it, with actions for that kind of shape only. It hides while you drag, and clears the core's rotate handle.
 - **Tooltips** for every icon button on the board (the core's tools too): its `title`, in a moment with a mouse or pen (the browser's own comes late, or not at all), at once when moving on to the next button, beside a vertical bar and below (or above) a horizontal one. None with touch. `createTooltips(container)` gives them to a board without the toolbar.
+- **Labels mode**, for a phone (nothing hovers there): the rail's and the selection bar's buttons show their names all the time — beside the rail, and under each icon on the selection bar (which wraps to fit). `labelsTool()` is a menu entry that turns it on and off ("Show button names"), kept per device; `setLabels(container, on)` sets it from code.
 
 ```js
 import { createToolbar, MORE_ICON } from 'quickdraw-toolbar'
