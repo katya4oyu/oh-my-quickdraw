@@ -75,8 +75,9 @@
     import { UPDATE, SV, PRESENCE, AGENT, SHARE, LIVE, pack, packPresence, unpackPresence, packAgent, unpackAgent, packShare, unpackShare } from '/protocol.js'
 
     const board = createQuickdraw({ container: document.getElementById('board') })
-    // opening a board does not draw on it: the core starts with the pen
-    board.editor.setTool('select')
+    // opening a board does not draw on it (the core starts with the pen): a
+    // phone or tablet starts on the hand, to move around; a computer on select
+    board.editor.setTool(matchMedia('(pointer: coarse)').matches ? 'hand' : 'select')
     const ydoc = new Y.Doc()
 
     bindYjs(board.editor.store, ydoc)
