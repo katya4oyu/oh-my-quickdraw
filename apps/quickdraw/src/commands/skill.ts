@@ -97,7 +97,7 @@ export function installSkill(o: SkillOptions = {}) {
     installed: done, source: SKILL_SOURCE,
     ...(o.link ? {} : { note: 'A copy: run quickdraw skill install again after updating quickdraw (quickdraw skill status says when it is behind).' }),
     ...(o.project && o.link ? { warning_link: `The skill links to ${SKILL_SOURCE}, on this machine only: do not commit it (install without --link for a copy others can use).` } : {}),
-    ...(onPath() ? {} : { warning: 'quickdraw is not on your PATH, and the skill runs it by that name: npm link -w apps/quickdraw (from the quickdraw-extensions checkout) puts it there.' }),
+    ...(onPath() ? {} : { warning: 'quickdraw is not on your PATH, and the skill runs it by that name: npm link -w apps/quickdraw (from the oh-my-quickdraw checkout) puts it there.' }),
   }
 }
 

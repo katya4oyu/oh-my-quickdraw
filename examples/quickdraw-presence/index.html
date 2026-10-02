@@ -54,7 +54,7 @@
       const agentStatus = step % 5 === 0 ? 'waiting' : step % 5 === 4 ? 'idle' : 'working'
       // what it is doing shows under its name, even when the name is long
       const [agentActivity, agentNote] = { working: [['drawing', s.props.text], ['reading'], ['searching', 'whiteboard patterns']][step % 3], waiting: ['waiting'], idle: [] }[agentStatus]
-      const p = { id: 'codex', name: 'Codex · quickdraw-extensions', color: '#0c8599', agent: true, agentStatus, agentActivity, agentNote, x: s.x + 100, y: s.y + 100 }
+      const p = { id: 'codex', name: 'Codex · oh-my-quickdraw', color: '#0c8599', agent: true, agentStatus, agentActivity, agentNote, x: s.x + 100, y: s.y + 100 }
       for (const fns of Object.values(inbox)) fns.forEach((fn) => fn(p))
     }, 1800)
   </script>
