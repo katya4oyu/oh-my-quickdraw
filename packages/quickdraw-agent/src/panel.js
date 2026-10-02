@@ -564,7 +564,7 @@ export function createAgentPanel({ editor, store = editor.store, container = edi
       const model = agent.models.find((m) => m.id === chosen.model)
       fill(modelPick, agent.models.map((m) => [m.id, m.name]), chosen.model)
       fill(effortPick, model.efforts.map((e) => [e, e]), chosen.effort)
-      effortPick.hidden ||= !model.efforts.length // a model that takes no effort (pi: one that does not reason)
+      effortPick.hidden ||= !model.efforts.length // a model that takes no effort (one that does not reason)
     }
     const top = topLimit(agent)
     usage.hidden = inThread || !top

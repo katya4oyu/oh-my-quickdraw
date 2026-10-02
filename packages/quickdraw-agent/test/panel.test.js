@@ -25,7 +25,7 @@ describe('agent panel request model', () => {
     expect(agentOptions(agent, { model: 'a', effort: 'high' })).toEqual({ model: 'a', effort: 'medium' }) // not offered there
     expect(agentOptions(agent, { model: 'gone', effort: 'low' })).toEqual({ model: 'b', effort: 'low' })
     expect(agentOptions({ ...agent, models: undefined })).toBeUndefined()
-    // a model that takes no effort (pi's that do not reason): none goes with the request
+    // a model that takes no effort (one that does not reason): none goes with the request
     expect(agentOptions({ ...agent, models: [...agent.models, { id: 'c', name: 'C', efforts: [], effort: '' }] }, { model: 'c', effort: 'high' })).toEqual({ model: 'c', effort: '' })
     expect(buildAgentRequest({ id: 'r', to: 'codex', text: 'x', editor, options: { model: 'a', effort: 'low' } }).options).toEqual({ model: 'a', effort: 'low' })
   })

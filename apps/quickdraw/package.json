@@ -37,8 +37,5 @@
   },
   "peerDependencies": {
     "@quickdrawjs/core": "*"
-  },
-  "optionalDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.87.1"
   }
 }

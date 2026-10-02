@@ -36,13 +36,6 @@ const USAGE = `quickdraw <command>
         a voice model (--voice-model, gpt-live-1-codex by default) talks and
         hands the work to Codex; its voice is picked in the panel (--voice: the
         default), --no-voice turns it off
-  agent pi [--board ID|URL] [--server URL] [--name NAME] [--role ROLE] [--id ID] [--model PROVIDER/ID] [--effort LEVEL] [--allow-remote]
-           [--no-approval]
-        pi joins a board the same way, with your pi settings and sign-ins; the
-        panel offers the models pi can use. Its commands and file changes
-        (bash, edit, write) wait for a person's approval in the panel;
-        --no-approval lets them run. It does not talk or make images. Needs
-        pi's SDK: npm i -w apps/quickdraw @earendil-works/pi-coding-agent
   --role ROLE (any agent): its role on the board, as "transcriber" or
         "reviewer" (people and agents can change it: quickdraw role)
   --avatar PET (any agent): its picture, a Codex pet (a name from
@@ -119,15 +112,15 @@ if (command === 'serve') {
     options: {
       board: { type: 'string' }, server: { type: 'string' }, name: { type: 'string' }, id: { type: 'string' },
       model: { type: 'string' }, effort: { type: 'string' }, 'allow-remote': { type: 'boolean' },
-      voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' }, 'no-approval': { type: 'boolean' },
+      voice: { type: 'string' }, 'voice-model': { type: 'string' }, 'no-voice': { type: 'boolean' },
       role: { type: 'string' }, avatar: { type: 'string' },
     },
   })
   const runtime = positionals[0]
-  if (runtime !== 'codex-app-server' && runtime !== 'pi') {
+  if (runtime !== 'codex-app-server') {
     process.stderr.write('usage: quickdraw agent claude|codex [--board ID|URL] [--name NAME] [--allow-remote] [-- ARGS…]\n'
-      + '       quickdraw agent codex-app-server|pi [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
-      + '         codex-app-server: [--voice NAME] [--voice-model M] [--no-voice]   pi: [--no-approval]\n')
+      + '       quickdraw agent codex-app-server [--board ID|URL] [--server URL] [--name NAME] [--id ID] [--model M] [--effort E] [--allow-remote]\n'
+      + '         [--voice NAME] [--voice-model M] [--no-voice]\n')
     process.exit(1)
   }
   const { basename } = await import('node:path')
@@ -138,7 +131,7 @@ if (command === 'serve') {
   const cwd = process.cwd()
   const folder = basename(cwd)
   // "<agent> · <repository>": the board shows who started it beside that
-  const name = values.name ?? `${runtime === 'codex-app-server' ? 'Codex' : 'pi'} · ${(await import('../src/commands/skill.ts')).repoName(cwd)}`
+  const name = values.name ?? `Codex · ${(await import('../src/commands/skill.ts')).repoName(cwd)}`
   const id = values.id ?? (runtime + '-' + folder).toLowerCase().replace(/[^a-z0-9-]+/g, '-')
   const remote = values['allow-remote'] === true
   try {
@@ -155,37 +148,24 @@ if (command === 'serve') {
       await agent?.close()
       process.exit(code)
     }
-    if (runtime === 'codex-app-server') {
-      const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
-      const { runVoice } = await import('../src/agent/voice.ts')
-      const board = await openBoard({ url, name })
-      const codex = startAppServer(cwd)
-      stop = () => codex.close()
-      const offered = await initCodex(codex, { model: values.model, effort: values.effort })
-      const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
-      const voice = values['no-voice'] !== true
-      // the voices it can talk in, for the board's picker; --voice is the one it uses unless a person picks another
-      const { realtimeVoices } = await import('../src/agent/voice.ts')
-      const voices = voice ? await realtimeVoices(codex) : null
-      if (values.voice && voices && !voices.voices.includes(values.voice)) process.stderr.write(`--voice ${values.voice}: not a voice it can talk in (${voices.voices.join(', ')}); using ${voices.default ?? 'the default'}\n`)
-      const talk = voices ? { voices: voices.voices, defaultVoice: values.voice && voices.voices.includes(values.voice) ? values.voice : voices.default } : {}
-      agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice, ...talk, role: values.role, avatar: values.avatar }, { imageRoots: [cwd, generatedImages], preview })
-      codex.onExit(() => leave(1, 'codex app-server stopped'))
-      board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
-      const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
-      if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: voices ? talk.defaultVoice : values.voice, voices: voices?.voices })
-    } else {
-      const { initPi, runPi } = await import('../src/agent/pi.ts')
-      const sdk = await import('@earendil-works/pi-coding-agent').catch(() => {
-        throw new Error("pi's SDK is not installed: npm i -w apps/quickdraw @earendil-works/pi-coding-agent")
-      })
-      const offered = await initPi(sdk, cwd, { model: values.model, effort: values.effort })
-      const board = await openBoard({ url, name })
-      agent = await joinBoard(board, { id, name, knows: [folder], models: offered.models, model: offered.model, effort: offered.effort, remote, role: values.role, avatar: values.avatar }, { imageRoots: [cwd], preview })
-      board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
-      const running = await runPi(sdk, offered.runtime, agent, { cwd, name, model: offered.model, effort: offered.effort, approval: values['no-approval'] !== true })
-      stop = running.close
-    }
+    const { initCodex, startAppServer, runCodex } = await import('../src/agent/codex.ts')
+    const { runVoice } = await import('../src/agent/voice.ts')
+    const board = await openBoard({ url, name })
+    const codex = startAppServer(cwd)
+    stop = () => codex.close()
+    const offered = await initCodex(codex, { model: values.model, effort: values.effort })
+    const generatedImages = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'generated_images')
+    const voice = values['no-voice'] !== true
+    // the voices it can talk in, for the board's picker; --voice is the one it uses unless a person picks another
+    const { realtimeVoices } = await import('../src/agent/voice.ts')
+    const voices = voice ? await realtimeVoices(codex) : null
+    if (values.voice && voices && !voices.voices.includes(values.voice)) process.stderr.write(`--voice ${values.voice}: not a voice it can talk in (${voices.voices.join(', ')}); using ${voices.default ?? 'the default'}\n`)
+    const talk = voices ? { voices: voices.voices, defaultVoice: values.voice && voices.voices.includes(values.voice) ? values.voice : voices.default } : {}
+    agent = await joinBoard(board, { id, name, knows: [folder], ...offered, remote, voice, ...talk, role: values.role, avatar: values.avatar }, { imageRoots: [cwd, generatedImages], preview })
+    codex.onExit(() => leave(1, 'codex app-server stopped'))
+    board.relay!.onClose(() => leave(1, 'lost the connection to the board'))
+    const running = await runCodex(codex, agent, { cwd, name, model: offered.model, effort: offered.effort })
+    if (voice) runVoice(codex, agent, running, { model: values['voice-model'], voice: voices ? talk.defaultVoice : values.voice, voices: voices?.voices })
     process.on('SIGINT', () => leave(0))
     process.on('SIGTERM', () => leave(0))
     console.log(`${name} is on the board (${url}). Ctrl-C leaves it.`)
