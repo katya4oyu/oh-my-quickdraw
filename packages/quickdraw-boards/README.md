@@ -20,4 +20,4 @@ Record: `{ type: 'boardcard', props: { board, title, w, h, live } }` (`title` as
 
 A live window is the host's own read-only page in an iframe (scripts and its own origin, for its connection; no forms, popups or top navigation). Cards inside a live window stay pictures, so boards that show each other never nest windows without end.
 
-`apps/quickdraw` serves that page at `/b/ID/view` (no tools, no presence: it only listens, and keeps the whole board in view until someone pans or zooms in it), and gives agents `quickdraw board-card ID [--live]` and the `board` step.
+`apps/quickdraw` serves that page at `/b/ID/view` (no tools, no presence: it only listens, and keeps the whole board in view until someone pans or zooms in it), and gives agents `omq board-card ID [--live]` and the `board` step.

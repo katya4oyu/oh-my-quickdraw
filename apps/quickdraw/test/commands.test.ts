@@ -209,10 +209,10 @@ describe('which board', () => {
     let shown = ''
     output.on('data', (d) => { shown += d })
     input.end('5\nretro\n2\n')
-    expect(await resolveBoard(undefined, server, (boards) => chooseBoard(boards, 'quickdraw agent codex', input, output))).toMatch(new RegExp(`/ws/${b.id}$`))
+    expect(await resolveBoard(undefined, server, (boards) => chooseBoard(boards, 'omq agent codex', input, output))).toMatch(new RegExp(`/ws/${b.id}$`))
     expect(shown).toContain(`1) Plan  (${a.id})`)
     expect(shown.match(/Number \(1-2\)/g)).toHaveLength(3)
-    expect(shown).toContain(`Next time: quickdraw agent codex --board ${b.id}`)
+    expect(shown).toContain(`Next time: omq agent codex --board ${b.id}`)
     const none = new PassThrough()
     none.end('')
     await expect(chooseBoard([a, b], 'x', none, new PassThrough())).rejects.toThrow(/no board chosen/)

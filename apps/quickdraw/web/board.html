@@ -131,8 +131,8 @@
     // this board for an agent: its id where that is enough (the default
     // server), else its page URL, which says the server too
     const boardRef = () => (/^http:\/\/(localhost|127\.0\.0\.1):8795$/.test(location.origin) ? boardId : location.origin + '/b/' + boardId)
-    // what teaches the agents on a computer the quickdraw command (skills/quickdraw)
-    const SKILL_INSTALL = 'quickdraw skill install'
+    // what teaches the agents on a computer the omq command (skills/quickdraw)
+    const SKILL_INSTALL = 'omq skill install'
     function onAgentMessage(m) {
       if (m.kind === 'you') { if (m.person) presence.suggestName(m.person); toPanel({ type: 'agents' }) } // your name, until you choose one
       else if (m.kind === 'agents') { agents = m.agents; toPanel({ type: 'agents' }); teamBoard.refresh() }
@@ -304,7 +304,7 @@
     async function copySkillInstall() {
       const copied = await copyText(SKILL_INSTALL)
       const then = `then ask your agent (Claude Code, Codex, pi…) to join this board: ${boardRef()}`
-      prompt(copied ? `Copied. Run it once on your computer to teach your agents the quickdraw command; ${then}` : `Run this once on your computer to teach your agents the quickdraw command; ${then}`, SKILL_INSTALL)
+      prompt(copied ? `Copied. Run it once on your computer to teach your agents the omq command; ${then}` : `Run this once on your computer to teach your agents the omq command; ${then}`, SKILL_INSTALL)
     }
     async function renameBoard() {
       const title = prompt('Board title', boardTitle)

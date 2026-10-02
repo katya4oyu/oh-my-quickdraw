@@ -3,7 +3,7 @@
 // agent's commands on it. A second runtime of BoardAgent (../agent/board-agent.ts),
 // beside Codex, whose "model" is the agent on the other end of the
 // commands: what reaches it (requests, people's replies, Stop, tickets) waits in
-// an inbox until `quickdraw next` takes it.
+// an inbox until `omq next` takes it.
 import { createServer, type Server, type Socket } from 'node:net'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
@@ -62,7 +62,7 @@ interface Joined {
   open: Set<string>
   lastSpot: { x: number, y: number } | null
   drift: number
-  /** it watches the shared screen (quickdraw screen --watch) */
+  /** it watches the shared screen (omq screen --watch) */
   watching: boolean
   holding(): boolean
   settle(justDone?: boolean): void
@@ -301,7 +301,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     }
     if (item.type === 'reply') return { type: 'reply', request: item.requestId, board: where(j), text: item.text }
     if (item.type === 'screen') return { type: 'screen', board: where(j), ...item.event, note: screenNote(item.event) }
-    if (item.type === 'stop') return { type: 'stop', request: item.requestId, board: where(j), text: 'A person pressed Stop: stop working on it, then quickdraw finish it.' }
+    if (item.type === 'stop') return { type: 'stop', request: item.requestId, board: where(j), text: 'A person pressed Stop: stop working on it, then omq finish it.' }
     const t = j.store.get(item.id)
     if (!t || (t as { props?: { status?: string } }).props?.status !== 'todo') return next(timeout == null ? undefined : Math.max(0, (until - Date.now()) / 1000), closed) // taken or gone since
     // who wrote it and who changed it last (gave it to this agent, say): the person who started it decides whether to take it
@@ -324,13 +324,13 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     if (!inbox.length) return null
     const kinds: Record<string, number> = {}
     for (const i of inbox) kinds[i.type] = (kinds[i.type] ?? 0) + 1
-    return { ...kinds, note: 'waiting for you: quickdraw next' }
+    return { ...kinds, note: 'waiting for you: omq next' }
   }
   // the board a request is on
   const ofRequest = (requestId: string) => [...boards.values()].find((j) => j.requests.has(requestId)) ?? null
   const which = (o: { request?: string }, arg?: string) => {
     const rid = o.request ?? (arg && ofRequest(arg) ? arg : null) ?? current?.request
-    if (!rid) throw new Error('no request: quickdraw next takes one (or give --request ID)')
+    if (!rid) throw new Error('no request: omq next takes one (or give --request ID)')
     const j = ofRequest(rid)
     if (!j) throw new Error(`no request ${rid} here`)
     return { id: rid, j }
@@ -340,7 +340,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     if (o.board) {
       const want = o.board
       const j = [...boards.values()].find((b) => b.url === want || b.id === want || want.includes(`/b/${b.id}`) || want.endsWith(`/${b.id}`))
-      if (!j) throw new Error(`not on board ${want} (on ${[...boards.values()].map((b) => `${b.title} (${b.id})`).join(', ')}): quickdraw join --board ${want} first`)
+      if (!j) throw new Error(`not on board ${want} (on ${[...boards.values()].map((b) => `${b.title} (${b.id})`).join(', ')}): omq join --board ${want} first`)
       return j
     }
     if (o.request) { const j = ofRequest(o.request); if (j) return j }
@@ -359,7 +359,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
         await run(['take', item.ticket!.id, '--board', item.board!.id], undefined, (l) => took.push(l), signal)
         return out(took.at(-1)!)
       }
-      case 'join-board': { // `quickdraw join` again, for another board: the session goes there too
+      case 'join-board': { // `omq join` again, for another board: the session goes there too
         const target = args[0]
         if (!target) throw new Error('join-board needs a board')
         const had = boards.get(target)
@@ -404,7 +404,7 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
       case 'snap': {
         const j = boardFor(o)
         const s = await j.agent.snapScreen()
-        return out(JSON.stringify({ snapshot: s.frame, title: s.title, sharer: s.sharer, board: where(j), note: `Look at it: quickdraw export --format png --frame ${s.frame} --out snap.png` }))
+        return out(JSON.stringify({ snapshot: s.frame, title: s.title, sharer: s.sharer, board: where(j), note: `Look at it: omq export --format png --frame ${s.frame} --out snap.png` }))
       }
       case 'leave': { // one board (--board), else all of them
         if (o.board && boards.size > 1) {
@@ -522,8 +522,8 @@ function screenNote(e: ScreenEvent): string {
   const who = e.sharer || 'Someone'
   if (!e.sharing) return e.event === 'stopped' ? 'Screen sharing stopped.' : 'No one is sharing a screen on this board.'
   if (!e.allowed) return e.event === 'disallowed' ? `${who} no longer lets agents see the shared screen.` : `${who} is sharing a screen but has not let agents see it (they can, in the shared screen's window).`
-  if (e.event === 'changed') return `${who}'s shared screen changed (${Math.round((e.change ?? 0) * 100)}% of it, now settled). To see it: quickdraw screen --out screen.jpg. To put this moment on the board for people: quickdraw snap.`
-  return `${who} lets agents see the shared screen. To see it: quickdraw screen --out screen.jpg${e.watching === false ? '; to be told when it changes: quickdraw screen --watch' : ''}.`
+  if (e.event === 'changed') return `${who}'s shared screen changed (${Math.round((e.change ?? 0) * 100)}% of it, now settled). To see it: omq screen --out screen.jpg. To put this moment on the board for people: omq snap.`
+  return `${who} lets agents see the shared screen. To see it: omq screen --out screen.jpg${e.watching === false ? '; to be told when it changes: omq screen --watch' : ''}.`
 }
 
 // a result and the `people` line after it become one object

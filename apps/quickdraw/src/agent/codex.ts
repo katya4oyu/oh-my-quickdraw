@@ -1,4 +1,4 @@
-// `quickdraw agent codex-app-server`: Codex on a board, without its TUI. Runs `codex app-server` in the
+// `omq agent codex-app-server`: Codex on a board, without its TUI. Runs `codex app-server` in the
 // working directory (so it has that directory, its AGENTS.md and skills, and
 // the person's own Codex settings: model, sandbox, approvals) and speaks its
 // JSON-RPC over stdio. The board tools go to Codex as client-defined tools

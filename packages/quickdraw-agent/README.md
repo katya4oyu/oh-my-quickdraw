@@ -2,7 +2,7 @@
 
 What agents can do on a Quickdraw board, over a core `Store`: read it, change it in undoable operations, and the same as tools for any agent runtime. It runs in browsers and in Node, and knows nothing about servers, transports or which AI is calling. No core change; no dependencies beyond the other packages here.
 
-The `quickdraw` command ([`apps/quickdraw`](../../apps/quickdraw)) and its [Agent Skill](../../skills/quickdraw/SKILL.md) are built on it.
+The `omq` command ([`apps/quickdraw`](../../apps/quickdraw)) and its [Agent Skill](../../skills/quickdraw/SKILL.md) are built on it.
 
 ```js
 import { BOARD_TOOLS, runOp, undoDiff, installMeasure } from 'quickdraw-agent'

@@ -1,4 +1,4 @@
-// `quickdraw serve`: the boards' home. Serves the list of boards (/), each
+// `omq serve`: the boards' home. Serves the list of boards (/), each
 // board's page (/b/<id>), the packages the page imports (from wherever Node
 // resolves them, so it runs outside this repo), the boards API (/api/boards),
 // a relay per board (/ws/<id>, see ../protocol.js), with the agents on it and

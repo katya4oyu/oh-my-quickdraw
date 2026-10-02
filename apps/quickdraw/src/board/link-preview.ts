@@ -1,5 +1,5 @@
 // A link card's preview, for an embed an agent puts on a live board: the
-// page's Open Graph tags, fetched by the `quickdraw serve` that holds the board
+// page's Open Graph tags, fetched by the `omq serve` that holds the board
 // (its /preview, guarded against SSRF) as the page does, with the picture made
 // small enough to be kept in the card. No preview is not an error: the card
 // then shows the link's host.

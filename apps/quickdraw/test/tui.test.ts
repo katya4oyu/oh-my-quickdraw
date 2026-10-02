@@ -11,7 +11,7 @@ import { createQuickdrawServer } from '../src/serve/index.ts'
 const temp = () => realpathSync(mkdtempSync(join(tmpdir(), 'qd-claude-')))
 const repo = () => { const dir = temp(); execFileSync('git', ['init', '-q'], { cwd: dir }); return dir }
 
-describe('quickdraw agent claude and codex', () => {
+describe('omq agent claude and codex', () => {
   let app: ReturnType<typeof createQuickdrawServer> | undefined
   afterEach(() => app?.close())
 
@@ -29,11 +29,11 @@ describe('quickdraw agent claude and codex', () => {
     expect(ensureSkill({ cwd: repo(), home: temp(), global: true })).toMatch(/installed for you/)
   })
 
-  it('makes quickdraw runnable for Claude when it is not on the PATH', () => {
+  it('makes omq runnable for Claude when it is not on the PATH', () => {
     const cwd = temp()
     const { path, shim } = quickdrawPath(cwd, { PATH: '/usr/bin:/bin' })
-    expect(shim).toBe(join(cwd, '.quickdraw/bin/quickdraw'))
-    expect(execFileSync('quickdraw', ['help'], { env: { PATH: path }, encoding: 'utf8' })).toMatch(/Board commands/)
+    expect(shim).toBe(join(cwd, '.quickdraw/bin/omq'))
+    expect(execFileSync('omq', ['help'], { env: { PATH: path }, encoding: 'utf8' })).toMatch(/Board commands/)
   })
 
   it('gets ready, joins, runs claude with the board to work on, and leaves when it exits', async () => {
@@ -43,13 +43,13 @@ describe('quickdraw agent claude and codex', () => {
     const cwd = repo(), home = temp()
     // a stand-in for claude: says what it was given, and asks the board who is here, as Claude would
     const fake = join(temp(), 'claude')
-    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nquickdraw who > "${cwd}/who.txt"\nexit 3\n`)
+    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nomq who > "${cwd}/who.txt"\nexit 3\n`)
     chmodSync(fake, 0o755)
     const said: string[] = []
     const code = await runTui('claude', { url, name: 'Claude', cwd, home, command: fake, args: ['--model', 'opus'], say: (l: string) => said.push(l) })
     expect(code).toBe(3)
     const args = readFileSync(join(cwd, 'args.txt'), 'utf8').trim().split('\n')
-    expect(args).toEqual([firstPrompt('Claude', url), '--model', 'opus', '--allowedTools', 'Bash(quickdraw:*)'])
+    expect(args).toEqual([firstPrompt('Claude', url), '--model', 'opus', '--allowedTools', 'Bash(omq:*)'])
     expect(JSON.parse(readFileSync(join(cwd, 'who.txt'), 'utf8'))).toMatchObject({ you: 'Claude' }) // through the session
     expect(said[0]).toMatch(/installed in this repository/)
     expect(said).toContain(`the board: Claude is on it (${url})`)
@@ -59,21 +59,21 @@ describe('quickdraw agent claude and codex', () => {
     expect(existsSync(sessionFile(cwd))).toBe(false) // left
   }, 30_000)
 
-  it('for Codex: the Agent Skills copy, and a rule that lets quickdraw out of its sandbox', async () => {
+  it('for Codex: the Agent Skills copy, and a rule that lets omq out of its sandbox', async () => {
     const home = temp(), cwd = repo()
     expect(ensureSkill({ cwd, home, tui: 'codex' })).toMatch(/installed in this repository/)
     expect(existsSync(join(cwd, '.agents/skills/quickdraw/SKILL.md'))).toBe(true)
     const sub = join(cwd, 'app')
     execFileSync('mkdir', ['-p', sub])
     expect(ensureCodexRule(sub)).toMatch(/written to/) // at the repository's root, from any folder in it
-    expect(readFileSync(join(cwd, '.codex/rules/quickdraw.rules'), 'utf8')).toBe(CODEX_RULE)
+    expect(readFileSync(join(cwd, '.codex/rules/omq.rules'), 'utf8')).toBe(CODEX_RULE)
     expect(ensureCodexRule(cwd)).not.toMatch(/written/)
 
     app = createQuickdrawServer()
     const { port } = await app.listen(0)
     const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('CX').id}`
     const fake = join(temp(), 'codex')
-    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nquickdraw who > "${cwd}/who.txt"\n`)
+    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" > "${cwd}/args.txt"\nomq who > "${cwd}/who.txt"\n`)
     chmodSync(fake, 0o755)
     const said: string[] = []
     expect(await runTui('codex', { url, name: 'Codex', cwd, home, command: fake, args: ['-m', 'gpt-6'], say: (l: string) => said.push(l) })).toBe(0)

@@ -1,14 +1,14 @@
-// `quickdraw agent claude` and `quickdraw agent codex`: Claude Code or Codex
+// `omq agent claude` and `omq agent codex`: Claude Code or Codex
 // on a board, in its own TUI. It works the board through the quickdraw skill
 // and the command (a session: ../session), so this only gets everything
 // ready, then hands the terminal to it:
 // - the skill it will read is there and current: yours (~/.claude/skills for
 //   Claude Code, ~/.agents/skills for Codex) when you have one, else the
 //   repository's, at its root
-// - `quickdraw` runs from its shell: a shim in .quickdraw/bin when it is not
-//   on the PATH; for Codex, a rule that lets `quickdraw` out of its sandbox
+// - `omq` runs from its shell: a shim in .quickdraw/bin when it is not
+//   on the PATH; for Codex, a rule that lets `omq` out of its sandbox
 //   (it reaches the board: a local socket and the board's server)
-// - this folder is on the board (quickdraw join), and leaves it when it exits
+// - this folder is on the board (omq join), and leaves it when it exits
 import { spawn, execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { installSkill, projectRoot, skillStatus } from '../commands/skill.ts'
 import { findSession, joinSession, viaSession } from '../session/client.ts'
 
-const BIN = fileURLToPath(new URL('../../bin/quickdraw.ts', import.meta.url))
+const BIN = fileURLToPath(new URL('../../bin/omq.ts', import.meta.url))
 
 export type Tui = 'claude' | 'codex'
 const TUIS = {
@@ -68,54 +68,54 @@ export function ensureSkill({ cwd, global = false, home, tui = 'claude' }: { cwd
   return `the skill: ${repo.installed ? 'updated' : 'installed'} in this repository (${repo.path}; commit it for everyone's agents)`
 }
 
-// Codex runs commands in a sandbox without network by default; quickdraw
+// Codex runs commands in a sandbox without network by default; omq
 // reaches the board (a local socket, the board's server), so it may run
 // outside it, and only it (Codex's rules: developers.openai.com/codex/rules)
-export const CODEX_RULE = `# quickdraw reaches the Quickdraw board this folder joined (a local socket, the board's server):
-# it runs outside Codex's sandbox, without asking. Written by quickdraw agent codex.
+export const CODEX_RULE = `# omq reaches the Quickdraw board this folder joined (a local socket, the board's server):
+# it runs outside Codex's sandbox, without asking. Written by omq agent codex.
 prefix_rule(
-    pattern = ["quickdraw"],
+    pattern = ["omq"],
     decision = "allow",
-    justification = "quickdraw talks to the Quickdraw board this folder joined",
-    match = ["quickdraw wait --timeout 100", "quickdraw note hi"],
-    not_match = ["quickdraw-other", "sh quickdraw"],
+    justification = "omq talks to the Quickdraw board this folder joined",
+    match = ["omq wait --timeout 100", "omq note hi"],
+    not_match = ["omq-other", "sh omq"],
 )
 `
 /** The rule in the repository's .codex/rules (Codex reads a project's rules once you trust the project). */
 export function ensureCodexRule(cwd: string): string {
-  const file = join(projectRoot(cwd), '.codex', 'rules', 'quickdraw.rules')
-  if (existsSync(file) && readFileSync(file, 'utf8') === CODEX_RULE) return `the rule: quickdraw may leave Codex's sandbox (${file})`
+  const file = join(projectRoot(cwd), '.codex', 'rules', 'omq.rules')
+  if (existsSync(file) && readFileSync(file, 'utf8') === CODEX_RULE) return `the rule: omq may leave Codex's sandbox (${file})`
   mkdirSync(join(file, '..'), { recursive: true })
   writeFileSync(file, CODEX_RULE)
-  return `the rule: quickdraw may leave Codex's sandbox, written to ${file} (Codex reads it once you trust this project; else it asks to run quickdraw outside the sandbox: allow it)`
+  return `the rule: omq may leave Codex's sandbox, written to ${file} (Codex reads it once you trust this project; else it asks to run omq outside the sandbox: allow it)`
 }
 
-/** A PATH on which `quickdraw` runs: as it is, or with a shim for this checkout in .quickdraw/bin. */
+/** A PATH on which `omq` runs: as it is, or with a shim for this checkout in .quickdraw/bin. */
 export function quickdrawPath(cwd: string, env = process.env): { path: string, shim?: string } {
   const path = env.PATH ?? ''
-  if (onPath('quickdraw', env)) return { path }
+  if (onPath('omq', env)) return { path }
   const dir = join(cwd, '.quickdraw', 'bin')
   mkdirSync(dir, { recursive: true })
-  const shim = join(dir, process.platform === 'win32' ? 'quickdraw.cmd' : 'quickdraw')
+  const shim = join(dir, process.platform === 'win32' ? 'omq.cmd' : 'omq')
   if (process.platform === 'win32') writeFileSync(shim, `@"${process.execPath}" "${BIN}" %*\r\n`)
   else { writeFileSync(shim, `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`); chmodSync(shim, 0o755) }
   return { path: dir + delimiter + path, shim }
 }
 
 export const firstPrompt = (name: string, url: string, tui: Tui = 'claude') =>
-  `You are "${name}" on a Quickdraw whiteboard (${url}): this folder already joined it (quickdraw join). `
-  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `quickdraw wait`, '
-  + 'do it (on the board, in this folder, or both), answer with `quickdraw say` and `quickdraw finish`, then wait again. '
+  `You are "${name}" on a Quickdraw whiteboard (${url}): this folder already joined it (omq join). `
+  + 'People on the board ask you things in its AI panel. Use the quickdraw skill: take what is for you (requests, mentions, tickets) with `omq wait`, '
+  + 'do it (on the board, in this folder, or both), answer with `omq say` and `omq finish`, then wait again. '
   + (tui === 'claude'
-    ? 'Wait in the background (`quickdraw wait --timeout 540`, run in the background): you are woken when it ends, and meanwhile you can talk with me. '
-    : 'Wait in short spells (`quickdraw wait --timeout 100`). ')
+    ? 'Wait in the background (`omq wait --timeout 540`, run in the background): you are woken when it ends, and meanwhile you can talk with me. '
+    : 'Wait in short spells (`omq wait --timeout 100`). ')
   + 'Before you take a ticket, ask me once whether to (say who wrote it and what it asks), unless I told you to take tickets without asking. '
   + 'Keep going until I tell you to stop. I may also talk to you here, typing or by voice: that comes first — stop waiting, do what I say, then go back to waiting.'
 
-// what the TUI is started with: the first prompt, and what lets it run quickdraw
+// what the TUI is started with: the first prompt, and what lets it run omq
 function argsFor(tui: Tui, prompt: string, args: string[]) {
   // Claude Code: the prompt first (--allowedTools takes every value after it)
-  if (tui === 'claude') return [prompt, ...args, '--allowedTools', 'Bash(quickdraw:*)']
+  if (tui === 'claude') return [prompt, ...args, '--allowedTools', 'Bash(omq:*)']
   return [...args, prompt] // Codex: the rule does it
 }
 
@@ -128,7 +128,7 @@ export async function runTui(tui: Tui, o: TuiOptions): Promise<number> {
   if (!o.command && !onPath(command, { ...process.env, PATH: path })) throw new Error(`${t.name} (${command}) is not installed: ${t.install}`)
   say(ensureSkill({ cwd: o.cwd, global: o.global, home: o.home, tui }))
   if (tui === 'codex') say(ensureCodexRule(o.cwd))
-  if (shim) say(`quickdraw: not on your PATH, so ${t.name} runs it through ${shim} (npm link -w apps/quickdraw puts it on your PATH)`)
+  if (shim) say(`omq: not on your PATH, so ${t.name} runs it through ${shim} (npm link -w apps/quickdraw puts it on your PATH)`)
   const joined = await joinSession(o.url, { name: o.name, idle: o.idle, remote: o.remote, role: o.role, avatar: o.avatar, cwd: o.cwd })
   say(`the board: ${o.name} is on it (${o.url})${joined.already ? ', as before' : ''}`)
   say(`Starting ${t.name}…`)

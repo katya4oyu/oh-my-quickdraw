@@ -1,4 +1,4 @@
-// The relay protocol spoken by `quickdraw serve`, the web page and the CLI.
+// The relay protocol spoken by `omq serve`, the web page and the CLI.
 // A binary WebSocket message is one type byte + payload:
 //   UPDATE   a Yjs update
 //   SV       a Yjs state vector: "send me what I am missing"; answered with an UPDATE
