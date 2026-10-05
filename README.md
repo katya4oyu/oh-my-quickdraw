@@ -10,7 +10,7 @@ omq skill install           # teaches the agents on this machine the command
 omq serve                   # http://127.0.0.1:8795/
 ```
 
-See [`apps/quickdraw`](apps/quickdraw) for the app, and below for the packages. The packages are not published to npm; use them from a checkout (npm workspaces).
+See [`apps/quickdraw`](apps/quickdraw) for the app, and below for the packages. The packages are not published to npm. To use the extensions in your own app, follow [the local package guide](docs/local-packages.md).
 
 ## Design boundaries
 
