@@ -208,7 +208,7 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 ## Good habits
 
 - Read, then write; re-read after bigger changes to check the result.
-- **What you write is checked as you write it**: each drawing command (and `apply`) fixes, in the same operation, what needs no judgement on what agents made — labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge — and its result says so (`"fixed": […]`); what is left comes as `"problems": […]` (an arrow across a shape, a label spilling out). No result fields: nothing to fix. Fix the problems with `move`, `arrange`, `update` or `fit`; you need not run `lint` after each step (`--no-fix`: only said). Leave what people made where it is.
+- **What you write is checked as you write it**: each drawing command (and `apply`) fixes, in the same operation, what needs no judgement on what agents made — labels too big for their shapes (or only just fitting), shapes or frames on top of each other, what hangs over a frame's edge, an arrow across a shape (bent round it) — and its result says so (`"fixed": […]`); what is left comes as `"problems": […]` (an arrow no bend clears, people's shapes in the way). No result fields: nothing to fix. Fix the problems with `move`, `arrange`, `update` or `fit`; you need not run `lint` after each step (`--no-fix`: only said). Leave what people made where it is.
 - Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
 - Prefer one `apply` for anything with several parts, so the person can undo it at once.
 - Keep notes short (a line or two); put longer text in a Markdown card.

@@ -591,7 +591,7 @@ describe('fixing the layout', () => {
     const { result: [n] } = applySteps(store, 'C', [{ do: 'note', text: 'Agent', at: { x: 50, y: 50 } }])
     applySteps(store, 'C', [
       { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
-      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 1400, at: { x: 300, y: -60 } }, // too tall to bend round
       { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
       { do: 'arrow', from: '@a', to: '@c' },
     ])
@@ -827,5 +827,29 @@ describe('checked as written', () => {
     expect(venn.check).toBeUndefined() // nothing said, nothing moved
     expect(store.get(venn.result[1]).x).toBe(1200)
     expect(one.op).toBeTruthy()
+  })
+})
+
+describe('laid out as written: room for labels, labels clear, arrows round', () => {
+  it('gives a label that only just fits some room, puts an arrow\'s label where nothing is, and bends an arrow round a shape', () => {
+    const store = board()
+    const [box] = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'One line', w: 160, h: 30, at: { x: 0, y: 0 } }])).result
+    expect(store.get(box).props.h).toBeGreaterThanOrEqual(46) // a line (26) and room above and below it
+    const done = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
+      { do: 'arrow', from: '@a', to: '@c', label: 'causes', ref: 'ar' },
+    ]))
+    const ar = done.result[3]
+    expect(done.check.fixed.join()).toMatch(/bent arrow/)
+    expect(store.get(ar).props.bend).not.toBe(0)
+    expect(lintBoard(store)).toEqual([])
+    // the label sits where nothing else is
+    const label = store.shapes().find((l) => l.labelOf === ar), lb = pageBounds(label)
+    for (const s of store.shapes().filter((s) => s.type === 'geo')) {
+      const b = pageBounds(s)
+      expect(lb.x + lb.w <= b.x || b.x + b.w <= lb.x || lb.y + lb.h <= b.y || b.y + b.h <= lb.y).toBe(true)
+    }
   })
 })

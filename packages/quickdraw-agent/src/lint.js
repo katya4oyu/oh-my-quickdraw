@@ -5,7 +5,7 @@
 // to what was just made (what else is there still counts, as what it runs into).
 import { pageBounds, FONT_SIZES } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
-import { runOp, textOf, isLabel } from './ops.js'
+import { runOp, textOf, isLabel, arrowPath } from './ops.js'
 import { estimateWidth } from './measure.js'
 
 const MIN = 6 // overlaps thinner than this are touching, not covering
@@ -72,21 +72,26 @@ const labelHeight = (s) => { const { widths, lh } = labelLines(s); return widths
 // that is wider than the shape where it sits spills out at the sides, however
 // tall the shape is. Does the label fit a w × h shape of s's kind?
 const NARROWS = { diamond: (k) => 1 - k, ellipse: (k) => Math.sqrt(Math.max(0, 1 - k * k)) } // width at k (0 middle, 1 top or bottom)
-function sidesFit(s, w = s.props.w, h = s.props.h) {
+function sidesFit(s, w = s.props.w, h = s.props.h, margin = 8) {
   const at = NARROWS[s.props.geo]
   if (!at) return true
   const { widths, lh } = labelLines(s, w)
   const top = -(widths.length * lh) / 2
   return widths.every((lw, i) => {
     const edge = Math.max(Math.abs(top + i * lh), Math.abs(top + (i + 1) * lh)) // the line's edge farther from the middle
-    return lw + 8 <= w * at(Math.min(1, (2 * edge) / h))
+    return lw + margin <= w * at(Math.min(1, (2 * edge) / h))
   })
 }
-// how much bigger (both ways) the shape must be for its label to fit at the sides
-function sidesGrow(s) {
-  for (let k = 1.1; k <= 3; k += 0.1) if (sidesFit(s, s.props.w * k, s.props.h * k)) return k
+// how much bigger (both ways) the shape must be for its label to fit at the sides (with room to spare: `margin`)
+function sidesGrow(s, margin = 8) {
+  for (let k = 1.1; k <= 3; k += 0.1) if (sidesFit(s, s.props.w * k, s.props.h * k, margin)) return k
   return 3
 }
+// A label that fits, but only just: it touches the edges, and reads cramped.
+// Comfortable: some room above and below it (ROOM), and at the sides of a
+// diamond or an ellipse (SIDE_ROOM).
+const ROOM = 20, SIDE_ROOM = 28
+const cramped = (s) => labelHeight(s) + ROOM > s.props.h * roomFor(s) || !sidesFit(s, s.props.w, s.props.h, SIDE_ROOM)
 // what of a shape's box its label may use: all of a rectangle's, less of the others'
 const roomFor = (s) => (['rectangle', 'cloud', 'rhombus'].includes(s.props.geo) || !s.props.geo ? 1 : 0.8)
 
@@ -182,6 +187,7 @@ export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
     const need = labelHeight(s), has = s.props.h * roomFor(s)
     if (need > has + 4) add('text-overflow', [s], `${name(s)}: its label needs about ${Math.ceil(need / roomFor(s))} of height, it is ${Math.round(s.props.h)}: make it taller or wider (${say.resize(s.id)}), or shorten the label`)
     else if (!sidesFit(s)) { const k = sidesGrow(s); add('text-overflow', [s], `${name(s)}: its label spills out at the sides (a ${s.props.geo} narrows away from its middle): make it about ${Math.ceil(s.props.w * k)} × ${Math.ceil(s.props.h * k)} (${say.resize(s.id)}), or shorten the label`) }
+    else if (cramped(s)) add('text-cramped', [s], `${name(s)}: its label only just fits (it touches the edges): make it a little bigger (${say.resize(s.id)}), or shorten the label`)
   }
 
   // right against a frame's edge, neither in it nor clear of it
@@ -201,14 +207,15 @@ export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
   // an arrow across a shape it does not connect
   for (const a of shapes.filter(isLine)) {
     const p = { x: a.x, y: a.y }, q = { x: a.x + (a.props.dx ?? 0), y: a.y + (a.props.dy ?? 0) }
+    const path = arrowPath(a) // its curve, when bent
     const ends = new Set([a.link?.from, a.link?.to].filter(Boolean))
     for (const s of solid) {
       if (ends.has(s.id) || isTitle(s) || s.labelOf === a.id || !concerns(a, s)) continue
       const r = shrink(pageBounds(s), 6)
       // an end on it: it points at it, connected or not
       const on = (pt) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h
-      if (on(p) || on(q) || !crosses(p, q, r)) continue
-      add('arrow-crosses', [a, s], `${name(a)} runs across ${name(s)}, which it does not connect: move that shape out of its way, or the shapes it connects`)
+      if (on(p) || on(q) || !path.some((pt, i) => i > 0 && crosses(path[i - 1], pt, r))) continue
+      add('arrow-crosses', [a, s], `${name(a)} runs across ${name(s)}, which it does not connect: bend it round (${say.bend(a.id)}), or move that shape out of its way`)
     }
   }
   return issues
@@ -224,7 +231,7 @@ export function lintText(issues) {
 // ---- fixing ----------------------------------------------------------------------
 
 const GAP = 16
-const FIXABLE = new Set(['text-overflow', 'frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame'])
+const FIXABLE = new Set(['text-overflow', 'text-cramped', 'arrow-crosses', 'frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame'])
 const centre = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
 // mostly in r: three quarters of it or more
 const mostlyIn = (b, r) => { const m = meet(b, r); return m.w > 0 && m.h > 0 && m.w * m.h >= 0.75 * b.w * b.h }
@@ -277,15 +284,16 @@ export function fixLayout(store, name, scope = {}) {
   const op = runOp(store, name, (ops) => {
     const issues = () => lintBoard(store, scope)
     // labels: the shape grows to hold its label
-    for (const i of issues().filter((i) => i.kind === 'text-overflow')) {
+    // (and a little more when it only just fits, so it does not read cramped)
+    for (const i of issues().filter((i) => i.kind === 'text-overflow' || i.kind === 'text-cramped')) {
       const s = mine(i.ids[0])
       if (!s) continue
-      if (labelHeight(s) > s.props.h * roomFor(s) + 4) {
-        ops.update(s.id, { h: Math.ceil(labelHeight(s) / roomFor(s)) + 8 })
+      if (labelHeight(s) + ROOM > s.props.h * roomFor(s)) {
+        ops.update(s.id, { h: Math.ceil((labelHeight(s) + ROOM) / roomFor(s)) })
         fixed.push(`made ${short(s)} taller for its label`)
       }
       const now = store.get(s.id)
-      if (!sidesFit(now)) { const k = sidesGrow(now); ops.update(s.id, { w: Math.ceil(now.props.w * k), h: Math.ceil(now.props.h * k) }); fixed.push(`made ${short(s)} bigger for its label`) }
+      if (!sidesFit(now, now.props.w, now.props.h, SIDE_ROOM)) { const k = sidesGrow(now, SIDE_ROOM); ops.update(s.id, { w: Math.ceil(now.props.w * k), h: Math.ceil(now.props.h * k) }); fixed.push(`made ${short(s)} bigger for its label`) }
     }
     // frames on top of each other: the later one moves, with what is in it
     for (const i of issues().filter((i) => i.kind === 'frames-overlap')) {
@@ -353,7 +361,20 @@ export function fixLayout(store, name, scope = {}) {
         fixed.push(`fitted ${ids.map((id) => short(store.get(id))).join(', ')} into ${short(store.get(f))}`)
       } catch { /* it would take shrinking too far: left for the agent (a bigger frame, or several) */ }
     }
+    // an arrow across a shape: bent round it, the least bend that crosses nothing it does not connect
+    for (const id of new Set(issues().filter((i) => i.kind === 'arrow-crosses').map((i) => i.ids[0]))) {
+      const a = mine(id)
+      if (!a?.link) continue
+      const solid = store.shapes().filter((s) => s.typeName === 'shape' && !isLine(s) && !isFrame(s) && !isFree(s) && !isTitle(s) && !s.isLayout && !isLabel(s) && s.id !== a.link.from && s.id !== a.link.to).map((s) => shrink(pageBounds(s), 6))
+      const len = Math.hypot(a.props.dx, a.props.dy)
+      const clear = (bend) => { const path = arrowPath({ ...a, props: { ...a.props, bend } }); return !solid.some((r) => path.some((pt, i) => i > 0 && crosses(path[i - 1], pt, r))) }
+      const bend = [0.15, -0.15, 0.3, -0.3, 0.45, -0.45].map((k) => Math.round(k * len)).find(clear)
+      if (bend == null) continue // nothing clears it: left for the agent (move a shape)
+      ops.update(a.id, { bend })
+      fixed.push(`bent ${short(a)} round what it ran across`)
+    }
   })
+  if (!fixed.length) return null // it tried, and nothing could be fixed without a judgement (an arrow no bend clears)
   return { ...op, fixed, left: lintBoard(store, scope) }
 }
 
