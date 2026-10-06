@@ -66,4 +66,6 @@ Example: [`examples/quickdraw-agent`](../../examples/quickdraw-agent).
 
 ## Arrows that follow
 
+An arrow may have a **label**: a text by its middle with `labelOf: <arrow id>` (`add_arrow`'s `label`, `update_shape`'s `label`), just clear of the line — on the side a bent arrow bows to, else above it (right of one going up or down). It follows its arrow wherever the arrow goes (an agent's operations and `bindArrows` both put it back by the middle), and goes when the arrow is deleted; `describeBoard` gives it with the arrow (`label`), not as a loose text, and lint does not count the arrow running across it. `labelSpot` and `labelsFollow` are the pieces.
+
 An arrow between two shapes keeps them as `link: { from, to }` (an agent's always does) and is drawn again, edge to edge, when either moves or changes size; an agent's operations do it for their own. On a page, `bindArrows(editor)` does it for people too: a shape dragged or resized takes its arrows along at once; an arrow drawn (or its end dragged) so that both ends land on shapes is linked to them once let go, and dragged off one is linked no more; a shape removed leaves its arrows, unlinked. Each page handles its own people's edits. `arrowEnds(store, arrow)` and `arrowRoute(store, arrow)` are the pieces.

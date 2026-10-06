@@ -684,3 +684,78 @@ describe('bento grids', () => {
     expect(store.get(a).layoutId).toBe(g)
   })
 })
+
+describe('styles and arrow labels', () => {
+  it('sets how big the words are, line style, fill and bend, and checks them', () => {
+    const store = board()
+    const [h, n, s, a] = applySteps(store, 'Claude', [
+      { do: 'text', text: 'Heading', text_size: 'xl', ref: 'h' },
+      { do: 'note', text: 'Note', text_size: 's' },
+      { do: 'shape', shape: 'rectangle', text: 'Box', text_size: 'l', dash: 'dashed', fill: 'solid', ref: 's' },
+      { do: 'arrow', from: '@h', to: '@s', bend: 30, dash: 'dotted' },
+    ]).result
+    expect(store.get(h).props.size).toBe('xl')
+    expect(pageBounds(store.get(h)).h).toBeGreaterThan(50) // 48px words: a taller box than a medium line
+    expect(store.get(n).props.size).toBe('s')
+    expect(store.get(s).props).toMatchObject({ labelSize: 'l', dash: 'dashed', fill: 'solid' })
+    expect(store.get(a).props).toMatchObject({ bend: 30, dash: 'dotted' })
+    expect(() => applySteps(store, 'Claude', [{ do: 'text', text: 'x', text_size: 'huge' }])).toThrow(/text size "huge"/)
+    expect(() => applySteps(store, 'Claude', [{ do: 'shape', shape: 'rectangle', fill: 'red' }])).toThrow(/fill "red"/)
+    applySteps(store, 'Claude', [{ do: 'update', id: s, text_size: 's', dash: 'solid', fill: 'none' }, { do: 'update', id: a, bend: 0 }])
+    expect(store.get(s).props).toMatchObject({ labelSize: 's', dash: 'solid', fill: 'none' })
+    expect(store.get(a).props.bend).toBe(0)
+    expect(() => applySteps(store, 'Claude', [{ do: 'update', id: n, fill: 'solid' }])).toThrow(/has no fill/)
+    expect(() => applySteps(store, 'Claude', [{ do: 'update', id: n, bend: 10 }])).toThrow(/not an arrow/)
+  })
+
+  it('puts a label by an arrow, above it, and keeps it there when the arrow moves', () => {
+    const store = board()
+    const [p, q, a] = applySteps(store, 'Claude', [
+      { do: 'shape', shape: 'rectangle', text: 'A', at: { x: 0, y: 0 }, ref: 'p' },
+      { do: 'shape', shape: 'rectangle', text: 'B', at: { x: 500, y: 0 }, ref: 'q' },
+      { do: 'arrow', from: '@p', to: '@q', label: 'causes' },
+    ]).result
+    const label = () => store.shapes().find((l) => l.labelOf === a)
+    const by = () => { const l = pageBounds(label()), ar = store.get(a); return { l, mid: { x: ar.x + ar.props.dx / 2, y: ar.y + ar.props.dy / 2 } } }
+    let { l, mid } = by()
+    expect(label().props).toMatchObject({ text: 'causes', size: 's' })
+    expect(l.y + l.h).toBeLessThanOrEqual(mid.y) // above the line…
+    expect(Math.abs(l.x + l.w / 2 - mid.x)).toBeLessThan(2) // …by its middle
+    // the shapes move: the arrow, and its label with it
+    runOp(store, 'Claude', (ops) => ops.move(q, { y: 600 }))
+    ;({ l, mid } = by())
+    expect(Math.hypot(l.x + l.w / 2 - mid.x, l.y + l.h / 2 - mid.y)).toBeLessThan(l.w) // still by its middle
+    // read shows it with the connection, not as a loose text
+    const d = describeBoard(store)
+    expect(d.arrows[0]).toMatchObject({ from: p, to: q, label: 'causes' })
+    expect(d.items.some((i) => i.text === 'causes')).toBe(false)
+    expect(boardToMarkdown(store)).toMatch(/A → B \("causes", arrow /)
+    // the arrow across its own label is no problem
+    expect(lintBoard(store).filter((i) => i.kind === 'arrow-crosses')).toEqual([])
+    // changed, then taken off; deleting an arrow takes its label
+    applySteps(store, 'Claude', [{ do: 'update', id: a, label: 'leads to' }])
+    expect(label().props.text).toBe('leads to')
+    applySteps(store, 'Claude', [{ do: 'update', id: a, label: '' }])
+    expect(label()).toBeUndefined()
+    applySteps(store, 'Claude', [{ do: 'update', id: a, label: 'again' }])
+    runOp(store, 'Claude', (ops) => ops.delete([a]))
+    expect(label()).toBeUndefined()
+  })
+
+  it('puts a bent arrow\'s label on the side it bows to, and a vertical one\'s to its right', () => {
+    const store = board()
+    const [, , down, , , side] = applySteps(store, 'Claude', [
+      { do: 'shape', shape: 'rectangle', text: 'A', at: { x: 0, y: 0 }, ref: 'p' },
+      { do: 'shape', shape: 'rectangle', text: 'B', at: { x: 0, y: 500 }, ref: 'q' },
+      { do: 'arrow', from: '@p', to: '@q', label: 'then' },
+      { do: 'shape', shape: 'rectangle', text: 'C', at: { x: 800, y: 0 }, ref: 'r' },
+      { do: 'shape', shape: 'rectangle', text: 'D', at: { x: 1400, y: 0 }, ref: 's' },
+      { do: 'arrow', from: '@r', to: '@s', label: 'bows', bend: 60 },
+    ]).result
+    const lab = (id) => pageBounds(store.shapes().find((l) => l.labelOf === id))
+    const d = store.get(down)
+    expect(lab(down).x).toBeGreaterThanOrEqual(d.x) // right of a line going down
+    const s = store.get(side)
+    expect(lab(side).y).toBeGreaterThan(s.y + 60) // a rightward arrow bent +60 bows down: its label below the curve
+  })
+})

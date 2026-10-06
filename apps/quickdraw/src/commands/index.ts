@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
-import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, spanOf, undoDiff, type Operation, type Operations } from 'quickdraw-agent'
+import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, spanOf, undoDiff, type Dash, type Fill, type Operation, type Operations, type TextSize } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
@@ -48,9 +48,12 @@ Reading
                                           --frame all writes one PNG per frame into the PATH directory
 
 Writing (each command is one operation, undoable as a whole)
-  note TEXT [--color C] [--in FRAME] [--at X,Y]
-  text TEXT [--color C] [--in FRAME] [--at X,Y]
-  shape KIND [LABEL] [--color C] [--size WxH] [--in FRAME] [--at X,Y]   KIND: rectangle, ellipse, …
+  note TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
+  text TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
+                                          --text-size: how big the words are, s m l xl (a heading: l, xl)
+  shape KIND [LABEL] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--in FRAME] [--at X,Y]
+                                          KIND: rectangle, ellipse, …; --dash: draw solid dashed dotted;
+                                          --fill: none semi solid (a light tint) pattern (hatched)
   markdown TEXT | --md-file PATH [--in FRAME] [--at X,Y]
   board-card BOARD [--live] [--size WxH] [--in FRAME] [--at X,Y]
                                           a card for another board (its id: omq boards): its picture and an
@@ -77,8 +80,12 @@ Writing (each command is one operation, undoable as a whole)
   span CELL COLSxROWS | --auto            a cell's size in units, or rows following its contents
                                           (--auto again: off); the other cells move along
   columns BENTO N                         a bento grid's columns; its cells pack again
-  arrow FROM TO [--color C] [--line]
-  update ID [--text TEXT] [--color C] [--size WxH]   --size: a shape's size (not a frame's; a cell: span)
+  arrow FROM TO [--color C] [--line] [--label TEXT] [--bend N] [--dash D] [--text-size S]
+                                          --label: a word or two by its middle, which follows the arrow;
+                                          --bend: how far the middle bows out (+ right as it goes, - left)
+  update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--bend N] [--label TEXT]
+                                          --size: a shape's size (not a frame's; a cell: span);
+                                          --label "": takes an arrow's label off
   move ID (--to X,Y | --by DX,DY)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
@@ -227,7 +234,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
@@ -325,7 +332,10 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     const size = pair(o.size, 'size')
     // strings from the command line: the operations check them
     const color = o.color as ColorId | undefined
-    const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}) }
+    const textSize = o['text-size'] as TextSize | undefined, dash = o.dash as Dash | undefined
+    const style = { textSize, dash, fill: o.fill as Fill | undefined } // the operations check them
+    const bend = o.bend == null ? undefined : Number(o.bend)
+    const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}), ...style }
     let done: Operation<unknown>
     // the operations of a command, in a work area when it has one
     // where what has no place goes: a work area, else near where people look (in a session), else right of everything
@@ -441,9 +451,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'columns':
         done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
       case 'arrow':
-        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line })); break
+        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label, bend, dash, textSize })); break
       case 'update':
-        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}) })); break
+        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break

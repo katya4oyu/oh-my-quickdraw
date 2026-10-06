@@ -3,7 +3,7 @@
 // store transaction whose diff is returned, so it can be logged and undone.
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
-import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS } from '@quickdrawjs/core'
+import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS, SIZE_IDS, DASH_IDS, FILL_IDS, FONT_SIZES } from '@quickdrawjs/core'
 import { createFrame, frameTitle, freeSpot, inFrame, isFrame, renameFrame } from 'quickdraw-frames'
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
@@ -20,6 +20,8 @@ const round = (n) => Math.round(n)
 const emptyDiff = () => ({ added: {}, removed: {}, updated: {} })
 const isTitle = (s) => s.isFrameTitle === true || s.id === s.frameId + '-title'
 const isLine = (s) => s.type === 'arrow' || s.type === 'line'
+/** A text that is an arrow's label (`labelOf`: the arrow's id): it sits by the arrow's middle and follows it. */
+export const isLabel = (s) => typeof s?.labelOf === 'string'
 
 // ---- reading -------------------------------------------------------------------
 
@@ -78,7 +80,7 @@ export function describeBoard(store) {
     id: a.id, type: a.layout.type, cols: a.layout.cols, ...box(a), ...(a.frameId && isFrame(store.get(a.frameId)) ? { frame: a.frameId } : {}),
     cells: shapes.filter((f) => isCell(f) && f.layoutId === a.id).sort((p, q) => p.order - q.order).map((f) => f.id),
   })).sort(byPosition)
-  const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s) && !isLayout(s)).map((s) => ({
+  const items = shapes.filter((s) => !isFrame(s) && !isTitle(s) && !isLine(s) && !isLayout(s) && !isLabel(s)).map((s) => ({
     id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
@@ -87,9 +89,12 @@ export function describeBoard(store) {
     ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
     ...(s.type === TICKET ? { ticket: { status: s.props.status, to: s.props.to ?? null, by: s.props.by ?? null, ...(s.props.result ? { result: s.props.result } : {}), ...(s.props.work?.area ? { area: s.props.work.area } : {}) } } : {}),
   })).sort(byPosition)
+  const ends = solid.filter((s) => !isLabel(s))
+  const labels = new Map(shapes.filter(isLabel).map((l) => [l.labelOf, l]))
   const arrows = shapes.filter(isLine).map((s) => {
-    const from = shapeAt(solid, s.x, s.y), to = shapeAt(solid, s.x + s.props.dx, s.y + s.props.dy)
-    return { id: s.id, type: s.type, ...(from ? { from: from.id } : {}), ...(to ? { to: to.id } : {}) }
+    const from = shapeAt(ends, s.x, s.y), to = shapeAt(ends, s.x + s.props.dx, s.y + s.props.dy)
+    const label = labels.get(s.id)
+    return { id: s.id, type: s.type, ...(from ? { from: from.id } : {}), ...(to ? { to: to.id } : {}), ...(label ? { label: label.props.text, label_id: label.id } : {}) }
   })
   return { ...(layouts.length ? { layouts } : {}), frames, items, arrows }
 }
@@ -137,7 +142,7 @@ export function boardToMarkdown(store) {
   const links = arrows.filter((a) => a.from && a.to)
   if (links.length) {
     const name = (id) => (String(byId.get(id)?.text ?? '').split('\n')[0].slice(0, 40) || id)
-    out.push('## Connections', '', ...links.map((a) => `- ${name(a.from)} → ${name(a.to)}`), '')
+    out.push('## Connections', '', ...links.map((a) => `- ${name(a.from)} → ${name(a.to)}${a.label ? ` ("${a.label.replace(/\s*\n\s*/g, ' / ')}", arrow ${a.id})` : ''}`), '')
   }
   if (!frames.length && !items.length) out.push('(empty board)', '')
   return out.join('\n')
@@ -160,6 +165,50 @@ const intersects = (a, b, pad = 0) => a.x < b.x + b.w + pad && a.x + a.w + pad >
 function checkColor(color) {
   if (color != null && !COLOR_IDS.includes(color)) throw new Error(`unknown color "${color}" (one of ${COLOR_IDS.join(', ')})`)
   return color
+}
+const oneOf = (what, all) => (v) => {
+  if (v != null && !all.includes(v)) throw new Error(`unknown ${what} "${v}" (one of ${all.join(', ')})`)
+  return v
+}
+const checkSize = oneOf('text size', SIZE_IDS), checkDash = oneOf('line style', DASH_IDS), checkFill = oneOf('fill', FILL_IDS)
+function checkBend(bend) {
+  if (bend != null && !Number.isFinite(Number(bend))) throw new Error(`a bend is a number (how far the middle bows out), not "${bend}"`)
+  return bend == null ? bend : Number(bend)
+}
+// a text's size on the page, estimated: its widest line, and a line's height per line
+function textBox(text, size = 'm') {
+  const fs = FONT_SIZES[size], lines = String(text).split('\n')
+  return { w: Math.max(...lines.map((l) => estimateWidth(`${fs}px sans-serif`, l))), h: Math.round(fs * 1.4) * lines.length }
+}
+
+/**
+ * Where an arrow's label goes (its top-left corner), for a label `w` × `h`: by
+ * the arrow's middle (the curve's, when bent), just clear of the line — on the
+ * side it bows to, else above it (right of it, when it runs up or down).
+ */
+export function labelSpot(arrow, w, h) {
+  const { dx, dy } = arrow.props, bend = arrow.props.bend || 0
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len, ny = dx / len // the core's normal: a bend bows that way
+  const side = bend ? Math.sign(bend) : Math.abs(ny) >= 0.5 ? -Math.sign(ny) : (nx >= 0 ? 1 : -1)
+  const ox = nx * side, oy = ny * side
+  const reach = Math.abs(ox) * w / 2 + Math.abs(oy) * h / 2 + 8
+  const cx = arrow.x + dx / 2 + nx * bend + ox * reach, cy = arrow.y + dy / 2 + ny * bend + oy * reach
+  return { x: round(cx - w / 2), y: round(cy - h / 2) }
+}
+
+/** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`); returns the records that moved. */
+export function labelsFollow(store, arrowIds) {
+  const out = []
+  for (const l of store.shapes()) {
+    if (!isLabel(l) || (arrowIds && !arrowIds.has(l.labelOf))) continue
+    const a = store.get(l.labelOf)
+    if (!a || !isLine(a)) continue
+    const b = pageBounds(l)
+    const at = labelSpot(a, b.w, b.h)
+    if (Math.abs(at.x - b.x) + Math.abs(at.y - b.y) > 0.5) out.push({ ...l, x: l.x + at.x - b.x, y: l.y + at.y - b.y })
+  }
+  return out
 }
 
 // The operations, bound to one op: what it adds is marked with it. `area`: a
@@ -270,16 +319,17 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
 
   const ops = {
     note(text, opts = {}) {
-      return add('note', { text: String(text), color: checkColor(opts.color) ?? 'yellow', size: 'm', font: 'draw', scale: 1 }, 200, 200, opts)
+      return add('note', { text: String(text), color: checkColor(opts.color) ?? 'yellow', size: checkSize(opts.textSize) ?? 'm', font: 'draw', scale: 1 }, 200, 200, opts)
     },
     text(text, opts = {}) {
-      const w = Math.max(...String(text).split('\n').map((l) => estimateWidth('26px sans-serif', l))), h = 36 * String(text).split('\n').length
-      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size: 'm', font: 'draw', autosize: true, scale: 1 }, w, h, opts)
+      const size = checkSize(opts.textSize) ?? 'm', { w, h } = textBox(text, size)
+      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, opts)
     },
     shape(geo, label = '', opts = {}) {
       if (!GEO_IDS.includes(geo)) throw new Error(`unknown shape "${geo}" (one of ${GEO_IDS.join(', ')})`)
       const w = opts.w ?? 180, h = opts.h ?? 100
-      return add('geo', { geo, w, h, color: checkColor(opts.color) ?? 'blue', size: 'm', dash: 'draw', fill: opts.fill ?? 'none', font: 'draw', ...(label ? { label: String(label) } : {}) }, w, h, opts)
+      const labelSize = checkSize(opts.textSize)
+      return add('geo', { geo, w, h, color: checkColor(opts.color) ?? 'blue', size: 'm', dash: checkDash(opts.dash) ?? 'draw', fill: checkFill(opts.fill) ?? 'none', font: 'draw', ...(labelSize ? { labelSize } : {}), ...(label ? { label: String(label) } : {}) }, w, h, opts)
     },
     // an image from a data URL of `natural` size; shown `w` wide (400 at most by default)
     image(src, natural, opts = {}) {
@@ -402,17 +452,42 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       return id
     },
     // an arrow between two shapes' edges (or from/to points { x, y }); between
-    // shapes it keeps `link` and is re-routed when they move in an operation
+    // shapes it keeps `link` and is re-routed when they move in an operation.
+    // `bend`: how far its middle bows out (+ to the right as it goes, - to the
+    // left); `dash`; `label`: a word or two by its middle, which follows it
     arrow(from, to, opts = {}) {
       const g = route(store, [from, to].map((e) => (typeof e === 'string' ? pageBounds(need(e)) : { x: e.x, y: e.y, w: 0, h: 0 })))
       const id = newId()
       const link = typeof from === 'string' && typeof to === 'string' ? { link: { from, to } } : {}
-      put({ id, type: opts.line ? 'line' : 'arrow', x: g.x, y: g.y, ...link, props: { dx: g.dx, dy: g.dy, bend: 0, color: checkColor(opts.color) ?? 'black', size: 'm', dash: 'solid' } })
+      put({ id, type: opts.line ? 'line' : 'arrow', x: g.x, y: g.y, ...link, props: { dx: g.dx, dy: g.dy, bend: checkBend(opts.bend) ?? 0, color: checkColor(opts.color) ?? 'black', size: 'm', dash: checkDash(opts.dash) ?? 'solid' } })
+      if (opts.label) setLabel(id, opts.label, opts)
       return id
     },
-    // text / label / markdown / frame title, and color
-    update(id, { text, color, w, h } = {}) {
+    // text / label / markdown / frame title, and color; a text's size (textSize),
+    // a shape's line style and fill, an arrow's line style, bend and label
+    // (label: '' takes it off)
+    update(id, { text, color, w, h, textSize, dash, fill, bend, label } = {}) {
       const s = need(id)
+      if (textSize != null) {
+        checkSize(textSize)
+        if (s.type === 'geo' && !isFrame(s) && !isLayout(s)) store.update(id, { props: { labelSize: textSize } })
+        else if (s.type === 'text' || s.type === 'note') store.update(id, { props: { size: textSize } })
+        else if (isLine(s)) { for (const l of store.shapes()) if (l.labelOf === id) store.update(l.id, { props: { size: textSize } }) }
+        else throw new Error(`${id} (${s.type}) has no text size: only texts, notes, shapes' labels and arrows' labels do`)
+      }
+      if (dash != null) {
+        if (!(isLine(s) || (s.type === 'geo' && !isFrame(s) && !isLayout(s)))) throw new Error(`${id} (${s.type}) has no line style: only shapes and arrows do`)
+        store.update(id, { props: { dash: checkDash(dash) } })
+      }
+      if (fill != null) {
+        if (s.type !== 'geo' || isFrame(s) || isLayout(s)) throw new Error(`${id} (${s.type}) has no fill: only shapes (rectangle, ellipse, …) do`)
+        store.update(id, { props: { fill: checkFill(fill) } })
+      }
+      if (bend != null || label != null) {
+        if (!isLine(s)) throw new Error(`${id} (${s.type}) is not an arrow: only arrows bend and have labels`)
+        if (bend != null) store.update(id, { props: { bend: checkBend(bend) } })
+        if (label != null) setLabel(id, label, { textSize })
+      }
       // a shape's size: boxes only (a frame keeps its size; fit_frame shrinks what is in it)
       if (w != null || h != null) {
         if (isCell(s)) throw new Error(`${id} is a bento cell: change its size with span (units), and the others move along`)
@@ -560,9 +635,20 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         const s = need(id)
         if (!s.agent) throw new Error(`refused: ${id} was not added by an agent`)
       }
-      store.remove(ids)
+      const labels = store.shapes().filter((l) => isLabel(l) && ids.includes(l.labelOf) && !ids.includes(l.id)).map((l) => l.id) // an arrow's label goes with it
+      store.remove([...ids, ...labels])
       return ids
     },
+  }
+  // an arrow's label: put, changed, or taken off ('')
+  function setLabel(arrowId, text, { color, textSize } = {}) {
+    const was = store.shapes().find((l) => l.labelOf === arrowId)
+    if (!String(text).trim()) { if (was) store.remove([was.id]); return null }
+    if (was) { store.update(was.id, { props: { text: String(text), ...(textSize ? { size: checkSize(textSize) } : {}) } }); return was.id }
+    const a = store.get(arrowId), size = checkSize(textSize) ?? 's', { w, h } = textBox(text, size)
+    const id = add('text', { text: String(text), color: checkColor(color) ?? a.props.color ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, { at: labelSpot(a, w, h) })
+    store.update(id, { labelOf: arrowId })
+    return id
   }
   // after the steps: linked arrows follow their shapes
   function reroute() {
@@ -575,6 +661,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         store.update(s.id, { x: g.x, y: g.y, props: { dx: g.dx, dy: g.dy } })
       }
     }
+    for (const l of labelsFollow(store)) store.put(l) // and labels their arrows
   }
   return { ops, focus: () => focus, reroute, area: () => area }
 }
@@ -652,7 +739,7 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
   return runOp(store, name, (ops) => {
     const refs = {}
     const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
-    const opts = (s) => ({ color: s.color, at: s.at, w: s.w, h: s.h, fill: s.fill, inFrame: r(s.in) })
+    const opts = (s) => ({ color: s.color, at: s.at, w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
     return steps.map((s, i) => {
       let out
       switch (s.do) {
@@ -669,8 +756,8 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: s.at }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
-        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line }); break
-        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h }); break
+        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
+        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': out = ops.move(r(s.id), s); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break

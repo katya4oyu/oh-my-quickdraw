@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { Store } from '@quickdrawjs/core'
 import { bindArrows, arrowEnds } from '../src/arrows.js'
+import { installMeasure } from '../src/measure.js'
+
+installMeasure() // Node has no canvas to measure a label with
 
 const box = (id, x, y) => ({ id, typeName: 'shape', type: 'geo', x, y, rot: 0, z: 1, props: { geo: 'rectangle', w: 100, h: 60, color: 'black' } })
 const arrow = (id, x, y, dx, dy, extra = {}) => ({ id, typeName: 'shape', type: 'arrow', x, y, rot: 0, z: 5, ...extra, props: { dx, dy, bend: 0, color: 'black', size: 'm', dash: 'solid' } })
@@ -62,5 +65,23 @@ describe('arrows that follow what they connect', () => {
     store.put(arrow('shape:ar', 50, 30, 300, 0), 'remote')
     await letGo()
     expect(store.get('shape:ar').link).toBeUndefined() // another page's: it links its own
+  })
+})
+
+describe('arrow labels, for what people do', () => {
+  const label = (id, arrowId, x, y) => ({ id, typeName: 'shape', type: 'text', x, y, rot: 0, z: 6, labelOf: arrowId, props: { text: 'causes', color: 'black', size: 's', font: 'draw', autosize: true, scale: 1 } })
+  it('follows its arrow when a person moves a shape or bends the arrow, and goes with it', async () => {
+    const { store, letGo } = board()
+    store.put(arrow('shape:ar', 50, 30, 300, 0))
+    await letGo()
+    store.put(label('shape:l', 'shape:ar', 0, 0))
+    store.update('shape:b', { y: 400 }) // the arrow follows B, and the label the arrow
+    const ar = store.get('shape:ar'), l = store.get('shape:l')
+    expect(Math.abs(l.y - (ar.y + ar.props.dy / 2))).toBeLessThan(80)
+    const y = store.get('shape:l').y
+    store.update('shape:ar', { props: { bend: 120 } })
+    expect(store.get('shape:l').y).not.toBe(y)
+    store.remove(['shape:ar'])
+    expect(store.get('shape:l')).toBeUndefined()
   })
 })

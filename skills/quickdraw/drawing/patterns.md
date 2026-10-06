@@ -15,12 +15,12 @@ Steps in order; a diamond for a choice. No coordinates needed: `arrange` lays th
   { "do": "arrange", "ids": ["@a", "@b", "@c", "@d"], "layout": "row", "gap": 80 },
   { "do": "arrow", "from": "@a", "to": "@b" },
   { "do": "arrow", "from": "@b", "to": "@c" },
-  { "do": "arrow", "from": "@c", "to": "@d" },
+  { "do": "arrow", "from": "@c", "to": "@d", "label": "yes" },
   { "do": "frame", "title": "Onboarding flow", "around": ["@a", "@b", "@c", "@d"] }
 ]
 ```
 
-The word on a branch ("yes"): a second line in the label of the shape it leads to ("Dashboard\n(yes)"). More than 5 steps: two rows, or a column.
+The word on a branch ("yes"): the arrow's `"label": "yes"`. More than 5 steps: two rows, or a column.
 
 ## Timeline
 
@@ -99,7 +99,7 @@ Two axes, four quadrants: sort items by two qualities at once.
   { "do": "shape", "shape": "rectangle", "text": "Big bets", "color": "blue", "w": 320, "h": 200, "at": { "x": 340, "y": 0 } },
   { "do": "shape", "shape": "rectangle", "text": "Fill-ins", "color": "grey", "w": 320, "h": 200, "at": { "x": 0, "y": 220 } },
   { "do": "shape", "shape": "rectangle", "text": "Money pits", "color": "red", "w": 320, "h": 200, "at": { "x": 340, "y": 220 } },
-  { "do": "text", "text": "← low effort · high effort →", "at": { "x": 180, "y": 440 } },
+  { "do": "text", "text": "← low effort · high effort →", "text_size": "s", "at": { "x": 200, "y": 440 } },
   { "do": "text", "text": "high impact ↑", "at": { "x": -200, "y": 80 } },
   { "do": "text", "text": "low impact ↓", "at": { "x": -200, "y": 300 } }
 ]
