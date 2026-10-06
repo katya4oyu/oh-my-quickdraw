@@ -4,7 +4,7 @@ import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { bindKanban, createKanban, createTicket } from 'quickdraw-tickets'
 import { bindLayouts } from 'quickdraw-layouts'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText, checkWritten } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -807,5 +807,25 @@ describe('labels at the sides of a diamond or an ellipse', () => {
     expect(store.get(wide).props.w).toBeGreaterThan(240)
     expect(store.get(ok).props.w).toBe(180)
     expect(lintBoard(store)).toEqual([])
+  })
+})
+
+describe('checked as written', () => {
+  it('fixes what needs no judgement in the same operation and says the rest; leaves a Venn alone', () => {
+    const store = board()
+    const one = applySteps(store, 'Claude', [{ do: 'note', text: 'one', at: { x: 0, y: 0 } }])
+    const two = checkWritten(store, 'Claude', applySteps(store, 'Claude', [{ do: 'note', text: 'two', at: { x: 20, y: 20 } }]))
+    expect(two.check.fixed.join()).toMatch(/moved note "two"/)
+    expect(Object.keys(two.diff.added)).toHaveLength(1) // the note, where it ended up: one diff, one undo
+    expect(lintBoard(store)).toEqual([])
+    undoDiff(store, two.diff)
+    expect(store.shapes().map((s) => s.props.text)).toEqual(['one'])
+    const venn = checkWritten(store, 'Claude', applySteps(store, 'Claude', [
+      { do: 'shape', shape: 'ellipse', w: 320, h: 320, at: { x: 1000, y: 0 } },
+      { do: 'shape', shape: 'ellipse', w: 320, h: 320, at: { x: 1200, y: 0 } },
+    ]))
+    expect(venn.check).toBeUndefined() // nothing said, nothing moved
+    expect(store.get(venn.result[1]).x).toBe(1200)
+    expect(one.op).toBeTruthy()
   })
 })

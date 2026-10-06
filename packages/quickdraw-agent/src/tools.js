@@ -4,7 +4,7 @@
 // the same step in a list of steps.
 import { COLOR_IDS, GEO_IDS, SIZE_IDS, DASH_IDS, FILL_IDS } from '@quickdrawjs/core'
 import { applySteps, boardToMarkdown, describeBoard } from './ops.js'
-import { fixLayout, fixText, lintBoard, lintText } from './lint.js'
+import { checkWritten, fixLayout, fixText, lintBoard, lintText } from './lint.js'
 
 const str = (description) => ({ type: 'string', ...(description ? { description } : {}) })
 const num = { type: 'number' }
@@ -32,8 +32,9 @@ function step(name, verb, description, properties, required) {
     description,
     inputSchema: object(properties, required),
     run(store, args, { name: who = 'Agent', area, prefer } = {}) {
-      const { op, diff, result, focus, area: grown } = applySteps(store, who, [{ ...args, do: verb }], { area, prefer })
-      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
+      // checked as written: what needs no judgement fixed in the same step, the rest said (`check`)
+      const { op, diff, result, focus, area: grown, check } = checkWritten(store, who, applySteps(store, who, [{ ...args, do: verb }], { area, prefer }))
+      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}), ...(check ? { check } : {}) }
     },
   }
 }
@@ -107,8 +108,8 @@ export const BOARD_TOOLS = [
       + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
     inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
     run(store, { steps }, { name: who = 'Agent', area, prefer } = {}) {
-      const { op, diff, result, focus, area: grown } = applySteps(store, who, steps, { area, prefer })
-      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
+      const { op, diff, result, focus, area: grown, check } = checkWritten(store, who, applySteps(store, who, steps, { area, prefer }))
+      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}), ...(check ? { check } : {}) }
     },
   },
 ]

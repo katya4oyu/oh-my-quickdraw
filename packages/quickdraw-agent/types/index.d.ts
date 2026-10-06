@@ -66,6 +66,8 @@ export interface Operation<T = unknown> {
   focus: Point | null
   /** The work area it was given, grown if what it added did not fit. */
   area?: Rect
+  /** Set by checkWritten: what it fixed as written, and the problems left (texts). */
+  check?: { fixed?: string[], problems?: string[] }
 }
 /** A work area: where what is added without a place goes (it grows downwards when full). */
 export interface Rect { x: number, y: number, w: number, h: number }
@@ -120,6 +122,8 @@ export function lintBoard(store: Store, scope?: LintScope): LintIssue[]
 /** Issues as a model or a person reads them. */
 export function lintText(issues: LintIssue[]): string
 /** Fixes, as one operation on what agents made, what needs no judgement: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Null when there is nothing it can fix. */
+/** What an operation touched, checked as written: fixes that need no judgement join it (one undo), the rest is said in `check`. */
+export function checkWritten<T>(store: Store, name: string, done: Operation<T>, opts?: { words?: 'tools' | 'cli', fix?: boolean }): Operation<T>
 export function fixLayout(store: Store, name: string, scope?: LintScope): (Operation<unknown> & { fixed: string[], left: LintIssue[] }) | null
 /** What fixLayout did and what is left, as text. */
 export function fixText(result: { fixed: string[], left: LintIssue[] }): string

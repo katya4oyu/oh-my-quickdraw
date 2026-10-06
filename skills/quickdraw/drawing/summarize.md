@@ -19,7 +19,7 @@ Decide where each part goes before filling any of them:
 
 ## 3. Fill
 
-Fill one part at a time, each with its pattern, as one `apply`. Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). Check each part (`lint`, `export`, look) before the next.
+Fill one part at a time, each with its pattern, as one `apply`. Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). Fix the `problems` a command's result lists before the next part; look at the whole once at the end.
 
 ## 4. Finish
 
