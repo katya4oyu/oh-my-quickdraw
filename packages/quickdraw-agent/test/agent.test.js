@@ -861,3 +861,19 @@ describe('said as written, with what to do', () => {
     expect(said).toMatch(/\d+ words — a sentence/)
   })
 })
+
+describe('an arrow label between shapes close together', () => {
+  it('wraps to the length of the line, so it does not lie on the shapes at its ends', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'Relay', w: 160, h: 90, at: { x: 0, y: 0 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'SQLite', w: 160, h: 90, at: { x: 260, y: 0 }, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'persist, compact every 500 updates' },
+    ]))
+    const label = store.shapes().find((l) => l.labelOf === r.result[2])
+    expect(label.props).toMatchObject({ autosize: false, text: 'persist, compact every 500 updates' }) // words as they are
+    expect(r.check?.problems ?? []).toEqual([]) // not on the boxes
+    runOp(store, 'C', (ops) => ops.move(r.result[1], { x: 900 })) // room again: one line
+    expect(store.shapes().find((l) => l.labelOf === r.result[2]).props.autosize).toBe(true)
+  })
+})

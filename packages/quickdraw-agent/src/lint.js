@@ -170,7 +170,11 @@ export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
     if (s.type === 'geo' && t.type === 'geo' && s.props.geo === 'ellipse' && t.props.geo === 'ellipse') continue
     const label = isLabel(s) ? s : isLabel(t) ? t : null // it sits by its arrow: bend that, or move the shapes
     add('overlap', [s, t], label
-      ? `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): ${name(label)} is the label of arrow ${label.labelOf} and stays by it — bend that arrow (${say.bend(label.labelOf)}), or move the other shape`
+      ? (() => { // what it takes: a longer line (its shapes further apart), or fewer words
+        const ar = byId.get(label.labelOf), len = ar ? Math.round(Math.hypot(ar.props.dx, ar.props.dy)) : 0
+        const other = label === s ? t : s, lb = pageBounds(label)
+        return `${name(label)}, the label of arrow ${label.labelOf} (${len} long), lies on ${name(other)} (${Math.round(m.w)} × ${Math.round(m.h)}): move the shapes it joins about ${Math.ceil(Math.max(m.w, m.h)) + 24} further apart, or shorten the label`
+      })()
       : `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): move one clear, or ${say.arrange(`${s.id},${t.id}`)}`)
   }
 

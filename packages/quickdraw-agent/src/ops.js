@@ -208,16 +208,24 @@ export function labelSpot(arrow, w, h) {
   return { x: round(p.x + ox * reach - w / 2), y: round(p.y + oy * reach - h / 2) }
 }
 
-/** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`); returns the records that moved. */
+/** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`), wrapped to fit beside them; returns the records that changed. */
 export function labelsFollow(store, arrowIds) {
   const out = []
   for (const l of store.shapes()) {
     if (!isLabel(l) || (arrowIds && !arrowIds.has(l.labelOf))) continue
     const a = store.get(l.labelOf)
     if (!a || !isLine(a)) continue
-    const b = pageBounds(l)
+    // beside a line that runs across, it may be no wider than the line is long (else it lies on the shapes
+    // at its ends): wrapped to that width, words as they are; beside one that runs up or down, one line
+    const { dx, dy } = a.props
+    const across = Math.abs(dx) >= Math.abs(dy), room = Math.max(60, Math.hypot(dx, dy) - 16)
+    const natural = textBox(l.props.text, l.props.size).w + 2
+    const wrap = across && natural > room
+    const props = wrap ? { ...l.props, autosize: false, w: Math.round(room) } : { ...l.props, autosize: true }
+    const fitted = wrap === (l.props.autosize === false) && (!wrap || l.props.w === props.w) ? l : { ...l, props }
+    const b = pageBounds(fitted)
     const at = labelSpot(a, b.w, b.h)
-    if (Math.abs(at.x - b.x) + Math.abs(at.y - b.y) > 0.5) out.push({ ...l, x: l.x + at.x - b.x, y: l.y + at.y - b.y })
+    if (fitted !== l || Math.abs(at.x - b.x) + Math.abs(at.y - b.y) > 0.5) out.push({ ...fitted, x: fitted.x + at.x - b.x, y: fitted.y + at.y - b.y })
   }
   return out
 }
