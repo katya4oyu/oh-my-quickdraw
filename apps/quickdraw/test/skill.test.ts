@@ -19,9 +19,14 @@ describe('omq skill', () => {
     expect(lstatSync(claude).isSymbolicLink()).toBe(true)
     expect(readFileSync(join(claude, 'SKILL.md'), 'utf8')).toBe(skill) // through the link
     // the files SKILL.md points to come along
-    const pointed = [...new Set(skill.match(/drawing\/[\w-]+\.md/g))]
+    const pointed = [...new Set(skill.match(/(?:drawing|reference)\/[\w-]+\.md/g))]
     expect(pointed.length).toBeGreaterThan(0)
     for (const f of pointed) expect(existsSync(join(agents, f)), f).toBe(true)
+    // and the pattern files the drawing guides' index points to
+    const index = readFileSync(join(SKILL_SOURCE, 'drawing/patterns.md'), 'utf8')
+    const patterns = [...new Set(index.match(/patterns\/[\w-]+\.md/g))]
+    expect(patterns.length).toBeGreaterThan(5)
+    for (const f of patterns) expect(existsSync(join(agents, 'drawing', f)), f).toBe(true)
     expect(skillStatus({ home }).skills.every((s) => s.installed && s.ours && s.current)).toBe(true)
 
     writeFileSync(join(agents, 'SKILL.md'), skill.replace('# Quickdraw board', '# Old')) // an older copy

@@ -42,5 +42,5 @@ When the meeting ends, or when asked:
 
 1. Fill the title band: the theme in one line, and the **three points** to remember.
 2. Check that every decision and action is in the right column, with who and when.
-3. `lint` the area, `export --format png` it and look (`visual-thinking.md`, Check).
+3. `omq lint` the area for what is left, `omq look` at it (`visual-thinking.md`, Check).
 4. `finish` with what is on the board, and say where the decisions and actions are.

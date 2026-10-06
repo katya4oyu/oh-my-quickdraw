@@ -61,9 +61,9 @@ describe('the CLI on a file board', () => {
     const run = async (...args: string[]) => { let s = ''; await main([...args, '--file', file, '--name', 'Claude'], (o) => { s += o }); return JSON.parse(s) }
     const { ids: [frame] } = await run('frame', 'Keep', '--at', '0,0', '--size', '600x400')
     await run('note', 'one', '--at', '30,30')
-    await run('note', 'two', '--at', '30,130') // on top of one
+    await run('note', 'two', '--at', '30,130', '--no-fix') // on top of one (left as it is: said, not fixed)
     await run('note', 'three', '--at', '1000,0')
-    await run('note', 'four', '--at', '1000,100') // on top of three, outside the frame
+    expect(await run('note', 'four', '--at', '1000,100', '--no-fix')).toMatchObject({ problems: [expect.stringMatching(/note "three".*note "four"|note "four".*note "three"/)] }) // on top of three: said as it is written
     expect(await run('lint')).toMatchObject({ problems: 2 })
     const inFrame = await run('lint', '--frame', frame)
     expect(inFrame).toMatchObject({ problems: 1, issues: [{ kind: 'overlap' }] })
@@ -77,6 +77,20 @@ describe('the CLI on a file board', () => {
     expect(await run('lint')).toMatchObject({ problems: 0 })
     expect(await run('undo')).toMatchObject({ undone: fixed.op })
     expect(await run('lint')).toMatchObject({ problems: 2 })
+  })
+
+  it('checks what it writes: fixes what needs no judgement in the same operation, says the rest', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qd-check-'))
+    const file = join(dir, 'board.json')
+    process.env.QUICKDRAW_LOG = join(dir, 'log.jsonl')
+    const run = async (...args: string[]) => { let s = ''; await main([...args, '--file', file, '--name', 'Claude'], (o) => { s += o }); return JSON.parse(s) }
+    expect(await run('note', 'one', '--at', '0,0')).not.toHaveProperty('problems') // nothing to say: nothing said
+    const two = await run('note', 'two', '--at', '20,20') // on top of one: pushed off as it is written
+    expect(two.fixed.join()).toMatch(/moved note "two"/)
+    expect(two).not.toHaveProperty('problems')
+    expect(await run('lint')).toMatchObject({ problems: 0 })
+    expect(await run('undo')).toMatchObject({ undone: two.op }) // one undo: the note and its fix
+    expect(await run('read', '--format', 'json')).toMatchObject({ items: [{ text: 'one' }] })
   })
 })
 

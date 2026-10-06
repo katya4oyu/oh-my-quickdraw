@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { text as readStream } from 'node:stream/consumers'
 import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
-import { applySteps, boardToMarkdown, describeBoard, fixLayout, lintBoard, parseRatio, runOp, spanOf, undoDiff, type Dash, type Fill, type Operation, type Operations, type TextSize } from 'quickdraw-agent'
+import { applySteps, boardToMarkdown, checkWritten, describeBoard, fixLayout, lintBoard, parseRatio, runOp, spanOf, undoDiff, type Dash, type Fill, type Operation, type Operations, type TextSize } from 'quickdraw-agent'
 import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
@@ -43,7 +43,9 @@ Reading
                                           top of each other; check after drawing. --fix fixes what needs
                                           no judgement (on what agents made; one undo) and lists the rest
   export [--format json|md] [--out PATH]  the board as a quickdraw JSON file, or the outline
-  export --format png --out PATH [--frame ID|all] [--ids ID,…] [--scale 2] [--transparent] [--theme dark]
+  look [--frame ID] [--ids ID,…] [--out look.png] [--max 1000]
+                                          a small picture to check what you drew by (no side over --max)
+  export --format png --out PATH [--frame ID|all] [--ids ID,…] [--scale 2] [--max N] [--transparent] [--theme dark]
                                           an image, drawn by a headless Chrome (needs Chrome installed);
                                           --frame all writes one PNG per frame into the PATH directory
 
@@ -211,8 +213,12 @@ async function exportPng(store: Store, o: Options): Promise<string[]> {
       return wrote
     }
     if (o.frame && !isFrame(store.get(o.frame))) throw new Error(`${o.frame} is not a frame`)
-    const png = await renderer.render({ ...opts, records, frame: o.frame, ids: o.ids?.split(',') })
+    const what = { ...opts, records, frame: o.frame, ids: o.ids?.split(',') }
+    let png = await renderer.render(what)
     if (!png) throw new Error('nothing to draw')
+    // --max: no side longer than that, drawn again smaller (what an image costs a model goes with its pixels)
+    const max = o.max ? Number(o.max) : 0, long = () => Math.max(png!.readUInt32BE(16), png!.readUInt32BE(20)) // the PNG's IHDR width, height
+    if (max > 0 && long() > max) png = (await renderer.render({ ...what, scale: (opts.scale * max) / long() })) ?? png
     await writeFile(o.out, png)
     return [o.out]
   } finally {
@@ -228,18 +234,18 @@ const OPTIONS = {
   gap: { type: 'string' }, line: { type: 'boolean' }, 'md-file': { type: 'string' }, help: { type: 'boolean', short: 'h' },
   cols: { type: 'string' }, link: { type: 'boolean' }, title: { type: 'string' }, 'html-file': { type: 'string' },
   width: { type: 'string' }, split: { type: 'string' }, inset: { type: 'string' },
-  frame: { type: 'string' }, ids: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
+  frame: { type: 'string' }, ids: { type: 'string' }, max: { type: 'string' }, fix: { type: 'boolean' }, scale: { type: 'string' }, transparent: { type: 'boolean' }, theme: { type: 'string' },
   circle: { type: 'boolean' }, project: { type: 'boolean' }, for: { type: 'string' }, force: { type: 'boolean' },
   idle: { type: 'string' }, 'allow-remote': { type: 'boolean' }, request: { type: 'string' }, progress: { type: 'boolean' },
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, 'no-fix': { type: 'boolean' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -339,7 +345,12 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     let done: Operation<unknown>
     // the operations of a command, in a work area when it has one
     // where what has no place goes: a work area, else near where people look (in a session), else right of everything
-    const op = <T>(fn: (ops: Operations) => T) => operate((s, where) => runOp(s, o.name, fn, where))
+    // drawing is checked as it is written: what needs no judgement fixed in the same operation, the rest said
+    // (--no-fix: only said); tickets are not drawing
+    const check = !TICKET_COMMANDS.has(cmd)
+    const written = <T>(make: (s: Store, where: Parameters<Parameters<typeof operate>[0]>[1]) => Operation<T>) =>
+      operate((s, where) => (check ? checkWritten(s, o.name, make(s, where), { words: 'cli', fix: !o['no-fix'] }) : make(s, where)))
+    const op = <T>(fn: (ops: Operations) => T) => written((s, where) => runOp(s, o.name, fn, where))
     // takes a ticket; on a live board, null when another agent's take won
     // (the peers agree on one once each has the other's change)
     const take = async (id: string) => {
@@ -350,14 +361,14 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     const needsLive = () => { if (!live) throw new Error(`${cmd} needs a live board (--board), not a file`) }
     switch (cmd) {
       case 'read': {
-        if (o.format === 'json') return out(JSON.stringify(describeBoard(store), null, 2))
+        if (o.format === 'json') return out(JSON.stringify(describeBoard(store)))
         const team = live ? teamText(teamOf(board, o.name)) : '' // who does what
         const linked = live ? await linkedBoardsText(board) : '' // the boards its cards show
         return out(boardToMarkdown(store) + [linked, team].filter(Boolean).map((t) => '\n\n' + t).join(''))
       }
       case 'members':
         needsLive()
-        return out(JSON.stringify(teamOf(board, o.name), null, 2))
+        return out(JSON.stringify(teamOf(board, o.name)))
       case 'avatar': {
         needsLive()
         const who = o.of ?? o.name
@@ -382,12 +393,14 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         const fixedOp = o.fix ? fixLayout(store, o.name, scope) : null
         if (!fixedOp) {
           const issues = lintBoard(store, scope)
-          return out(JSON.stringify({ problems: issues.length, issues }, null, 2))
+          return out(JSON.stringify({ problems: issues.length, issues }))
         }
         // fixed: logged as an operation (undo reverts it), then what it did and what is left
         await log({ board: boardKey, op: fixedOp.op, at: new Date().toISOString(), name: o.name, command: 'lint --fix', diff: fixedOp.diff })
-        return out(JSON.stringify({ op: fixedOp.op, fixed: fixedOp.fixed, problems: fixedOp.left.length, issues: fixedOp.left }, null, 2))
+        return out(JSON.stringify({ op: fixedOp.op, fixed: fixedOp.fixed, problems: fixedOp.left.length, issues: fixedOp.left }))
       }
+      case 'look': // a small picture to check by: no side over 1000 (`--max`), of a frame, some shapes, or all
+        return out(JSON.stringify({ wrote: await exportPng(store, { ...o, out: o.out ?? 'look.png', max: o.max ?? '1000' }) }))
       case 'export': {
         if (o.format === 'png') return out(JSON.stringify({ wrote: await exportPng(store, o) }))
         const { exportJSON } = await import('quickdraw-export')
@@ -396,7 +409,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return out(text)
       }
       case 'log':
-        return out(JSON.stringify((await readLog(boardKey)).map(({ op, at, name, command }) => ({ op, at, name, command })), null, 2))
+        return out(JSON.stringify((await readLog(boardKey)).map(({ op, at, name, command }) => ({ op, at, name, command }))))
       case 'undo': {
         const entries = await readLog(boardKey)
         const entry = args[0] ? entries.find((e) => e.op === args[0]) : entries.filter((e) => !e.undone && e.command !== 'undo').at(-1)
@@ -437,7 +450,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
           w: o.width ? Number(o.width) : undefined, at: point(o.at), in: o.in, frame: o.frame,
           split: grid && { cols: grid[0], rows: grid[1], inset: o.inset ? Number(o.inset) : undefined },
         }, [process.cwd()])
-        done = await operate((s, where) => applySteps(s, o.name, steps as never, where)); break
+        done = await written((s, where) => applySteps(s, o.name, steps as never, where)); break
       }
       case 'frame':
         done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto, titleInside: o['title-inside'] })); break
@@ -482,7 +495,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await op((ops) => ops.delete(args)); break
       case 'tickets': {
         const status = o.status?.split(',').filter(Boolean)
-        return out(JSON.stringify(listTickets(store, { status, for: o.mine ? o.name : o.to }).map(describeTicket), null, 2))
+        return out(JSON.stringify(listTickets(store, { status, for: o.mine ? o.name : o.to }).map(describeTicket)))
       }
       case 'ticket':
         if (!args.length) throw new Error('ticket needs a title')
@@ -517,7 +530,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
       case 'apply': {
         const steps = JSON.parse(args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8'))
-        done = await operate((s, where) => applySteps(s, o.name, steps, where)); break
+        done = await written((s, where) => applySteps(s, o.name, steps, where)); break
       }
       default:
         throw new Error(`unknown command "${cmd}" (see --help)`)
@@ -528,6 +541,6 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     if (live && done.focus && !ctx.session) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
     const ids = [...new Set([done.result].flat(Infinity).filter((v) => typeof v === 'string'))]
     const ticket = TICKET_COMMANDS.has(cmd) && store.get(ids[0]) ? { ticket: describeTicket(store.get(ids[0])) } : {}
-    out(JSON.stringify({ op: done.op, ids, ...ticket }))
+    out(JSON.stringify({ op: done.op, ids, ...ticket, ...(done.check ?? {}) }))
   }
 }

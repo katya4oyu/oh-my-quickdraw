@@ -142,6 +142,8 @@ export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
     if (m.w < MIN || m.h < MIN) continue
     // text inside a box reads as its label
     if ((s.type === 'text' && t.type === 'geo' && within(b(s), b(t), 0)) || (t.type === 'text' && s.type === 'geo' && within(b(t), b(s), 0))) continue
+    // ellipses overlapping each other: a Venn diagram, on purpose
+    if (s.type === 'geo' && t.type === 'geo' && s.props.geo === 'ellipse' && t.props.geo === 'ellipse') continue
     const label = isLabel(s) ? s : isLabel(t) ? t : null // it sits by its arrow: bend that, or move the shapes
     add('overlap', [s, t], label
       ? `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): ${name(label)} is the label of arrow ${label.labelOf} and stays by it — bend that arrow (${say.bend(label.labelOf)}), or move the other shape`
@@ -362,4 +364,43 @@ export function fixText(result) {
   // what is left needs the agent: said first and plainly, so it is not taken for done
   return `NOT DONE: ${result.left.length} problem${result.left.length === 1 ? '' : 's'} left for you to fix, then call check_board again:\n`
     + result.left.map((i) => `- ${i.text}`).join('\n') + '\n\n' + done
+}
+
+// ---- checking as you write -------------------------------------------------------
+
+// one diff for two operations made one after the other (a, then b)
+function mergeDiff(a, b) {
+  const out = { added: { ...a.added }, removed: { ...a.removed }, updated: { ...a.updated } }
+  for (const [id, rec] of Object.entries(b.added)) {
+    if (out.removed[id]) { out.updated[id] = [out.removed[id], rec]; delete out.removed[id] } else out.added[id] = rec
+  }
+  for (const [id, [, now]] of Object.entries(b.updated)) {
+    if (out.added[id]) out.added[id] = now
+    else if (out.updated[id]) out.updated[id] = [out.updated[id][0], now]
+    else out.updated[id] = b.updated[id]
+  }
+  for (const [id, rec] of Object.entries(b.removed)) {
+    if (out.added[id]) delete out.added[id]
+    else if (out.updated[id]) { out.removed[id] = out.updated[id][0]; delete out.updated[id] } else out.removed[id] = rec
+  }
+  return out
+}
+
+/**
+ * What an operation `done` touched, checked as it is written, so a separate
+ * check (and the round trip for it) is not needed: what needs no judgement is
+ * fixed (fixLayout, on agents' shapes) as part of the same operation — its diff
+ * grows by the fixes, so one undo reverts both — and the rest is said.
+ * Returns `done`, with `check: { fixed?, problems? }` (texts) when there is
+ * something to say. `words`: how fixes are named (lintBoard); `fix: false`
+ * only says.
+ */
+export function checkWritten(store, name, done, { words = 'tools', fix = true } = {}) {
+  const ids = [...new Set([...Object.keys(done.diff.added), ...Object.keys(done.diff.updated)])]
+    .filter((id) => { const s = store.get(id); return s?.typeName === 'shape' && !isTitle(s) && !s.isLayout })
+  if (!ids.length) return done
+  const f = fix ? fixLayout(store, name, { ids, words }) : null
+  const left = f ? f.left : lintBoard(store, { ids, words })
+  const check = { ...(f?.fixed.length ? { fixed: f.fixed } : {}), ...(left.length ? { problems: left.map((i) => i.text) } : {}) }
+  return { ...done, ...(f ? { diff: mergeDiff(done.diff, f.diff) } : {}), ...(Object.keys(check).length ? { check } : {}) }
 }
