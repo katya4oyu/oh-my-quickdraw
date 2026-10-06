@@ -4,7 +4,7 @@ import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { bindKanban, createKanban, createTicket } from 'quickdraw-tickets'
 import { bindLayouts } from 'quickdraw-layouts'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText, checkWritten } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, estimateWidth, freeSpot, lintBoard, lintText, fixLayout, fixText, checkWritten } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -873,6 +873,13 @@ describe('an arrow label between shapes close together', () => {
     const label = store.shapes().find((l) => l.labelOf === r.result[2])
     expect(label.props).toMatchObject({ autosize: false, text: 'persist, compact every 500 updates' }) // words as they are
     expect(r.check?.problems ?? []).toEqual([]) // not on the boxes
+    const close = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'P', w: 160, h: 90, at: { x: 0, y: 400 }, ref: 'p' },
+      { do: 'shape', shape: 'rectangle', text: 'Q', w: 160, h: 90, at: { x: 200, y: 400 }, ref: 'q' },
+      { do: 'arrow', from: '@p', to: '@q', label: 'dispatches requests' },
+    ]))
+    const narrow = store.shapes().find((l) => l.labelOf === close.result[2])
+    expect(narrow.props.w).toBeGreaterThanOrEqual(estimateWidth('20px sans-serif', 'dispatches')) // a word is not broken in two
     runOp(store, 'C', (ops) => ops.move(r.result[1], { x: 900 })) // room again: one line
     expect(store.shapes().find((l) => l.labelOf === r.result[2]).props.autosize).toBe(true)
   })

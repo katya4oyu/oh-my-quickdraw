@@ -218,7 +218,8 @@ export function labelsFollow(store, arrowIds) {
     // beside a line that runs across, it may be no wider than the line is long (else it lies on the shapes
     // at its ends): wrapped to that width, words as they are; beside one that runs up or down, one line
     const { dx, dy } = a.props
-    const across = Math.abs(dx) >= Math.abs(dy), room = Math.max(60, Math.hypot(dx, dy) - 16)
+    const word = Math.max(...String(l.props.text).split(/\s+/).map((w) => textBox(w, l.props.size).w)) + 4 // never narrower than a word: no word broken in two
+    const across = Math.abs(dx) >= Math.abs(dy), room = Math.max(60, word, Math.hypot(dx, dy) - 16)
     const natural = textBox(l.props.text, l.props.size).w + 2
     const wrap = across && natural > room
     const props = wrap ? { ...l.props, autosize: false, w: Math.round(room) } : { ...l.props, autosize: true }
