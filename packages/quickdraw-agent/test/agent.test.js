@@ -903,3 +903,18 @@ describe('as written: a little room for a cramped label; arrows may pass labels'
     expect((s.check?.problems ?? []).join()).not.toMatch(/runs across text/)
   })
 })
+
+describe('as written, the drawing keeps its layout', () => {
+  it('does not shrink a frame\'s contents to fit, nor lay it out afresh; it says so', () => {
+    const store = board()
+    const [f] = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', w: 600, h: 300, at: { x: 0, y: 0 } }]).result
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'One', w: 180, h: 100, at: { x: 40, y: 60 } },
+      { do: 'shape', shape: 'rectangle', text: 'Two', w: 180, h: 100, at: { x: 500, y: 60 } }, // over the frame's right edge
+    ]))
+    expect(store.get(r.result[0]).props.w).toBe(180)
+    expect(store.get(r.result[1]).props.w).toBe(180) // not shrunk
+    expect(r.check.problems.join()).toMatch(/sticks out of|lies across|right against/)
+    expect(f).toBeTruthy()
+  })
+})

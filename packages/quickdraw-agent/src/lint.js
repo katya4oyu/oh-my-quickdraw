@@ -354,7 +354,8 @@ export function fixLayout(store, name, scope = {}) {
     // a frame whose contents are on top of each other, all an agent's: laid out
     // afresh, in reading order, as the grid that suits the frame's shape best
     // (a tall frame: a column); fit_frame, below, shrinks it in if need be
-    const crowded = new Set(issues().filter((i) => i.kind === 'overlap' && doing('overlap')).map((i) => i.ids.map((id) => store.get(id)))
+    // (not as written: laying a frame out afresh, or shrinking things to fit it, changes the drawing — said instead)
+    const crowded = new Set(issues().filter((i) => i.kind === 'overlap' && doing('overlap') && !scope.keepLayout).map((i) => i.ids.map((id) => store.get(id)))
       .filter(([a, b]) => mine(a.id) && mine(b.id) && a.frameId && a.frameId === b.frameId).map(([a]) => a.frameId))
     for (const fid of crowded) {
       const f = store.get(fid), fb = pageBounds(f)
@@ -399,6 +400,7 @@ export function fixLayout(store, name, scope = {}) {
       const lined = members.some((m) => meet(m, sb).w > sb.w / 2 || meet(m, sb).h > sb.h / 2)
       // in it by its centre, or lined up with what is in it (a member by position alone may be a heading that strayed)
       const belongs = (c.x > fb.x && c.x < fb.x + fb.w && c.y > fb.y && c.y < fb.y + fb.h) || lined
+      if (belongs && scope.keepLayout) continue // shrinking what is in the frame to fit it: said, not done
       if (belongs) bring.set(f.id, [...(bring.get(f.id) ?? []), s.id])
       else { ops.move(s.id, apart(sb, fb)); fixed.push(`moved ${short(s)} clear of ${short(f)}`) }
     }
@@ -465,7 +467,7 @@ export function checkWritten(store, name, done, { words = 'tools', fix = true } 
   if (!ids.length) return done
   // fixed as written: only what changes nothing anyone would judge (shapes off each other, in their frame, a cramped label given a little room);
   // a label's fit, an arrow's way, are said with what to do — how to fix them is the agent's choice
-  const f = fix ? fixLayout(store, name, { ids, words, only: AS_WRITTEN }) : null
+  const f = fix ? fixLayout(store, name, { ids, words, only: AS_WRITTEN, keepLayout: true }) : null
   const left = f ? f.left : lintBoard(store, { ids, words })
   const check = { ...(f?.fixed.length ? { fixed: f.fixed } : {}), ...(left.length ? { problems: left.map((i) => i.text) } : {}) }
   return { ...done, ...(f ? { diff: mergeDiff(done.diff, f.diff) } : {}), ...(Object.keys(check).length ? { check } : {}) }
