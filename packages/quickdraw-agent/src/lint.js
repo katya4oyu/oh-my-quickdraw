@@ -5,7 +5,7 @@
 // to what was just made (what else is there still counts, as what it runs into).
 import { pageBounds, FONT_SIZES } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
-import { runOp, textOf } from './ops.js'
+import { runOp, textOf, isLabel } from './ops.js'
 import { estimateWidth } from './measure.js'
 
 const MIN = 6 // overlaps thinner than this are touching, not covering
@@ -113,7 +113,10 @@ export function lintBoard(store, { frame, ids, area } = {}) {
     if (m.w < MIN || m.h < MIN) continue
     // text inside a box reads as its label
     if ((s.type === 'text' && t.type === 'geo' && within(b(s), b(t), 0)) || (t.type === 'text' && s.type === 'geo' && within(b(t), b(s), 0))) continue
-    add('overlap', [s, t], `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): move one clear, or arrange_shapes them`)
+    const label = isLabel(s) ? s : isLabel(t) ? t : null // it sits by its arrow: bend that, or move the shapes
+    add('overlap', [s, t], label
+      ? `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): ${name(label)} is the label of arrow ${label.labelOf} and stays by it — bend that arrow (bend), or move the other shape`
+      : `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): move one clear, or arrange_shapes them`)
   }
 
   // frames on top of each other
@@ -168,7 +171,7 @@ export function lintBoard(store, { frame, ids, area } = {}) {
     const p = { x: a.x, y: a.y }, q = { x: a.x + (a.props.dx ?? 0), y: a.y + (a.props.dy ?? 0) }
     const ends = new Set([a.link?.from, a.link?.to].filter(Boolean))
     for (const s of solid) {
-      if (ends.has(s.id) || isTitle(s) || !concerns(a, s)) continue
+      if (ends.has(s.id) || isTitle(s) || s.labelOf === a.id || !concerns(a, s)) continue
       const r = shrink(pageBounds(s), 6)
       // an end on it: it points at it, connected or not
       const on = (pt) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h
@@ -234,7 +237,7 @@ function bestWay(store, s, sb, ob) {
  * `fixed` (what it did, as text) and `left` (the issues still there).
  */
 export function fixLayout(store, name, scope = {}) {
-  const mine = (id) => { const s = store.get(id); return s?.agent && !isTitle(s) ? s : null }
+  const mine = (id) => { const s = store.get(id); return s?.agent && !isTitle(s) && !isLabel(s) ? s : null } // a label stays by its arrow
   const can = (i) => FIXABLE.has(i.kind) && i.ids.some((id) => mine(id) && (i.kind === 'frames-overlap' || !isFrame(store.get(id))))
   if (!lintBoard(store, scope).some(can)) return null
   const fixed = []

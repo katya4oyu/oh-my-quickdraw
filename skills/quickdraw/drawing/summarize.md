@@ -13,7 +13,7 @@ You are given material — meeting notes, a chat log, a document, a codebase, re
 
 Decide where each part goes before filling any of them:
 
-- A title: a Markdown card with `# Theme` and the one message under it (an `apply` step `{ "do": "markdown", "text": "…", "w": 600 }`: the CLI's `markdown` takes no size, and a card cannot be resized later).
+- A title: the theme as a `text` with `text_size: xl`, and the one message under it as a `text` (`m`).
 - The parts: frames in reading order when each part is one diagram (it has its own size); a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists that will grow. Build each part, `frame --around` it, then line the frames up with `tidy FRAME,FRAME,…` (or `arrange`) in an operation of its own.
 - A conclusion at the end of the reading order: decisions, open points and next actions.
 
