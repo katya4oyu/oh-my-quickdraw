@@ -59,13 +59,13 @@ Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin 
 
 ## 4. Check
 
-What you write is checked as you write it: a drawing command's result lists what it fixed by itself (`"fixed"`) and what is left for you (`"problems"`) — fix those before going on. No separate `lint` is needed after each step.
+What you write is checked as you write it. A drawing command's result says what it fixed by itself (`"fixed"`: shapes pushed off each other, into their frame) and what is left for you (`"problems"`), each with what to do: how many characters to cut from a label or the size that holds it, the bend that takes an arrow round a shape, a label lying on a shape, too many colours, a sentence, a "\n" written out. Fix those from the numbers; you need no picture for them, and no `lint` after each step.
 
-Once a drawing is done (not after every step), look at it: `omq look --frame FRAME_ID` (or `--ids`), a small picture. Go through it with these questions, and fix what fails:
+Then look once, when the drawing is done: `omq look --frame FRAME_ID`, a small picture. It is for the two things only a picture answers:
 
 - Can the theme be read in three seconds?
 - Does the eye know where to start and where to go next?
-- Do any arrows cross each other or run across shapes?
-- Is any text a sentence where a keyword would do?
-- Does each colour mean one thing?
-- Is anything drawn as decided that was not decided?
+
+And one only you can answer: is anything drawn as decided that was not decided?
+
+After a fix from `problems`, do not look again — a result without problems is the check. Look again only after moving things around, and only that part (`omq look --ids …`).

@@ -830,26 +830,34 @@ describe('checked as written', () => {
   })
 })
 
-describe('laid out as written: room for labels, labels clear, arrows round', () => {
-  it('gives a label that only just fits some room, puts an arrow\'s label where nothing is, and bends an arrow round a shape', () => {
+describe('said as written, with what to do', () => {
+  it("leaves a label's fit and an arrow's way to the agent, saying how much to cut or what bend clears it", () => {
     const store = board()
-    const [box] = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'One line', w: 160, h: 30, at: { x: 0, y: 0 } }])).result
-    expect(store.get(box).props.h).toBeGreaterThanOrEqual(46) // a line (26) and room above and below it
-    const done = checkWritten(store, 'C', applySteps(store, 'C', [
+    const r1 = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'A label far too long for this small box to hold', w: 160, h: 40, at: { x: 0, y: 0 } }]))
+    expect(store.get(r1.result[0]).props.h).toBe(40) // not grown: shortening may read better
+    expect(r1.check.problems.join()).toMatch(/does not fit — \d+ lines at this width, room for 1: shorten it by about \d+ characters, or make it 160 × \d+/)
+    const r2 = checkWritten(store, 'C', applySteps(store, 'C', [
       { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
       { do: 'shape', shape: 'rectangle', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
       { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
-      { do: 'arrow', from: '@a', to: '@c', label: 'causes', ref: 'ar' },
+      { do: 'arrow', from: '@a', to: '@c' },
     ]))
-    const ar = done.result[3]
-    expect(done.check.fixed.join()).toMatch(/bent arrow/)
-    expect(store.get(ar).props.bend).not.toBe(0)
-    expect(lintBoard(store)).toEqual([])
-    // the label sits where nothing else is
-    const label = store.shapes().find((l) => l.labelOf === ar), lb = pageBounds(label)
-    for (const s of store.shapes().filter((s) => s.type === 'geo')) {
-      const b = pageBounds(s)
-      expect(lb.x + lb.w <= b.x || b.x + b.w <= lb.x || lb.y + lb.h <= b.y || b.y + b.h <= lb.y).toBe(true)
-    }
+    expect(store.get(r2.result[3]).props.bend).toBe(0) // not bent
+    expect(r2.check.problems.join()).toMatch(/bend -?\d+ takes it round/)
+    expect(fixLayout(store, 'C', {}).fixed.join()).toMatch(/bent arrow/) // lint --fix still does both, when asked
+  })
+
+  it('says in words what a picture used to show: colours, sentences, a written-out \\n', () => {
+    const store = board()
+    const colours = ['red', 'green', 'blue', 'orange', 'violet'].map((color, i) => ({ do: 'shape', shape: 'rectangle', text: color, color, at: { x: i * 220, y: 0 } }))
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      ...colours,
+      { do: 'text', text: 'Step 3\\nKey later', at: { x: 0, y: 300 } },
+      { do: 'shape', shape: 'rectangle', text: 'This label is a whole sentence that goes on and on where a few words would do', w: 600, h: 200, at: { x: 0, y: 500 } },
+    ]))
+    const said = r.check.problems.join('\n')
+    expect(said).toMatch(/5 colours/)
+    expect(said).toMatch(/shows "\\n" as two characters/)
+    expect(said).toMatch(/\d+ words — a sentence/)
   })
 })

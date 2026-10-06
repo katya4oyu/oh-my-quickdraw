@@ -65,7 +65,7 @@ omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]
 omq text "Heading" [--text-size xl]            # how big the words are: s m l xl (also notes, shape labels)
 omq shape rectangle "Label" [--size 180x100]   # rectangle ellipse triangle diamond hexagon star cloud
                                                 # --dash draw|solid|dashed|dotted, --fill none|semi|solid|pattern
-omq markdown --md-file notes.md                # a Markdown card (write the file first; "\n" in quotes is not a newline)
+omq markdown --md-file notes.md                # a Markdown card ("\n" in an argument is a line break; for a long card, write a file)
 omq frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses existing shapes
 omq frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
 omq board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
@@ -207,9 +207,9 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 
 ## Good habits
 
-- Read, then write; re-read after bigger changes to check the result.
-- **What you write is checked as you write it**: each drawing command (and `apply`) fixes, in the same operation, what needs no judgement on what agents made — labels too big for their shapes (or only just fitting), shapes or frames on top of each other, what hangs over a frame's edge, an arrow across a shape (bent round it) — and its result says so (`"fixed": […]`); what is left comes as `"problems": […]` (an arrow no bend clears, people's shapes in the way). No result fields: nothing to fix. Fix the problems with `move`, `arrange`, `update` or `fit`; you need not run `lint` after each step (`--no-fix`: only said). Leave what people made where it is.
-- Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
+- Read before you write: it gives the ids and shows where things are.
+- **What you write is checked as you write it**: each drawing command (and `apply`) pushes what an agent made off other shapes and into (or clear of) frames, in the same operation, and its result says so (`"fixed": […]`). Everything else that reads badly comes as `"problems": […]`, with what to do: a label that does not fit (how many characters to cut, or the size that holds it), an arrow across a shape (the bend that takes it round), a label on a shape, more than four colours, a sentence where keywords would do, a "\n" written out. Fix them from the numbers — no picture is needed for those. No result fields: nothing to fix. `--no-fix`: only said.
+- **Look once**, when the drawing is done: `omq look --frame ID` (a small picture), for what only a picture shows — can the theme be read in three seconds, does the eye know where to start and go. After fixing `problems`, do not look again: a result without problems is the check. Look again only after you moved things around, and only at that part (`omq look --ids …`). The full-size `export` is for people.
 - Prefer one `apply` for anything with several parts, so the person can undo it at once.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).

@@ -23,4 +23,4 @@ Fill one part at a time, each with its pattern, as one `apply`. Keywords on the 
 
 ## 4. Finish
 
-Re-read the board as someone who never saw the material: title → parts → conclusion. Fix what the Check questions catch. Then tell the person what you put where, in a few lines.
+Look once (`omq look`) as someone who never saw the material: title → parts → conclusion (`visual-thinking.md`, Check). Then tell the person what you put where, in a few lines.

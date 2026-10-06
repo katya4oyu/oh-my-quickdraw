@@ -91,6 +91,9 @@ describe('the CLI on a file board', () => {
     expect(await run('lint')).toMatchObject({ problems: 0 })
     expect(await run('undo')).toMatchObject({ undone: two.op }) // one undo: the note and its fix
     expect(await run('read', '--format', 'json')).toMatchObject({ items: [{ text: 'one' }] })
+    // "\\n" typed in an argument is a line break
+    await run('text', 'Step 3\\nKey later', '--at', '0,600')
+    expect((await run('read', '--format', 'json')).items.map((i: { text: string }) => i.text)).toContain('Step 3\nKey later')
   })
 })
 

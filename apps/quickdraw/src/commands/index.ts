@@ -191,6 +191,9 @@ async function log(entry: LogEntry) {
   await appendFile(logFile(), JSON.stringify(entry) + '\n')
 }
 
+// "\n" typed in a shell argument is two characters, not a line break: as everyone means it, a line break
+const lines = (s: string) => s.replace(/\\n/g, '\n')
+
 /**
  * JSON for an agent to read: no indentation, but each top-level field, and each
  * element of a top-level list, on a line of its own — one long line gets cut
@@ -433,11 +436,11 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return out(JSON.stringify({ undone: entry.op, ...r }))
       }
       case 'note': case 'text':
-        done = await op((ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
+        done = await op((ops) => ops[cmd as 'note' | 'text'](lines(args.join(' ')), common)); break
       case 'shape':
-        done = await op((ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
+        done = await op((ops) => ops.shape(args[0] as GeoId, lines(args.slice(1).join(' ')), common)); break
       case 'markdown': {
-        const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
+        const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : lines(args.join(' '))
         done = await op((ops) => ops.markdown(md, common)); break
       }
       case 'board-card': {
@@ -477,9 +480,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'columns':
         done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
       case 'arrow':
-        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label, bend, dash, textSize })); break
+        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label && lines(o.label), bend, dash, textSize })); break
       case 'update':
-        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label })); break
+        done = await op((ops) => ops.update(args[0], { text: o.text && lines(o.text), color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label === undefined ? undefined : lines(o.label) })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break

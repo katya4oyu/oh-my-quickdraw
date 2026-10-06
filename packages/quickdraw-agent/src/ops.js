@@ -193,47 +193,19 @@ export function pointOnArrow(arrow, t) {
 export const arrowPath = (arrow, n = 16) => Array.from({ length: n + 1 }, (_, i) => pointOnArrow(arrow, i / n))
 
 /**
- * Where an arrow's label goes (its top-left corner), for a label `w` × `h`:
- * just clear of the line — on the side it bows to, else above it (right of
- * it, when it runs up or down) — by its middle; and when `blocked(rect)` says
- * that spot is taken (another shape, another line), the next free one: the
- * other side, then further along the line. All taken: by the middle.
+ * Where an arrow's label goes (its top-left corner), for a label `w` × `h`: by
+ * the arrow's middle (the curve's, when bent), just clear of the line — on the
+ * side it bows to, else above it (right of it, when it runs up or down).
+ * When it lands on something, lint says so (bend the arrow, or move a shape).
  */
-export function labelSpot(arrow, w, h, blocked = () => false) {
+export function labelSpot(arrow, w, h) {
   const { dx, dy } = arrow.props, bend = arrow.props.bend || 0
   const len = Math.hypot(dx, dy) || 1
   const nx = -dy / len, ny = dx / len // the core's normal: a bend bows that way
   const side = bend ? Math.sign(bend) : Math.abs(ny) >= 0.5 ? -Math.sign(ny) : (nx >= 0 ? 1 : -1)
-  const spot = (t, s) => {
-    const p = pointOnArrow(arrow, t), ox = nx * s, oy = ny * s
-    const reach = Math.abs(ox) * w / 2 + Math.abs(oy) * h / 2 + 8
-    return { x: round(p.x + ox * reach - w / 2), y: round(p.y + oy * reach - h / 2) }
-  }
-  for (const t of [0.5, 0.38, 0.62, 0.26, 0.74]) for (const s of [side, -side]) {
-    const at = spot(t, s)
-    if (!blocked({ ...at, w, h })) return at
-  }
-  return spot(0.5, side)
-}
-
-// does the polyline cross (or touch) rect r?
-const crossesRect = (pts, r) => pts.some((p, i) => i > 0 && segmentHits(pts[i - 1], p, r))
-function segmentHits(p, q, r) {
-  let t0 = 0, t1 = 1
-  const dx = q.x - p.x, dy = q.y - p.y
-  for (const [a, b] of [[-dx, p.x - r.x], [dx, r.x + r.w - p.x], [-dy, p.y - r.y], [dy, r.y + r.h - p.y]]) {
-    if (a === 0) { if (b < 0) return false; continue }
-    const t = b / a
-    if (a < 0) { if (t > t1) return false; if (t > t0) t0 = t } else { if (t < t0) return false; if (t < t1) t1 = t }
-  }
-  return t1 >= t0
-}
-/** What a label of `arrowId` must keep clear of: the shapes (not frames, titles or other labels' own arrows), and the other arrows. */
-export function labelBlocker(store, arrowId, labelId) {
-  const shapes = store.shapes().filter((s) => s.typeName === 'shape' && s.id !== labelId && s.id !== arrowId && !isFrame(s) && !isTitle(s) && !s.isLayout)
-  const boxes = shapes.filter((s) => !isLine(s)).map(pageBounds)
-  const lines = shapes.filter(isLine).map((a) => arrowPath(a))
-  return (r) => boxes.some((b) => intersects(r, b, 4)) || lines.some((pts) => crossesRect(pts, r))
+  const p = pointOnArrow(arrow, 0.5), ox = nx * side, oy = ny * side
+  const reach = Math.abs(ox) * w / 2 + Math.abs(oy) * h / 2 + 8
+  return { x: round(p.x + ox * reach - w / 2), y: round(p.y + oy * reach - h / 2) }
 }
 
 /** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`); returns the records that moved. */
@@ -244,7 +216,7 @@ export function labelsFollow(store, arrowIds) {
     const a = store.get(l.labelOf)
     if (!a || !isLine(a)) continue
     const b = pageBounds(l)
-    const at = labelSpot(a, b.w, b.h, labelBlocker(store, a.id, l.id))
+    const at = labelSpot(a, b.w, b.h)
     if (Math.abs(at.x - b.x) + Math.abs(at.y - b.y) > 0.5) out.push({ ...l, x: l.x + at.x - b.x, y: l.y + at.y - b.y })
   }
   return out
@@ -717,7 +689,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     if (!String(text).trim()) { if (was) store.remove([was.id]); return null }
     if (was) { store.update(was.id, { props: { text: String(text), ...(textSize ? { size: checkSize(textSize) } : {}) } }); return was.id }
     const a = store.get(arrowId), size = checkSize(textSize) ?? 's', { w, h } = textBox(text, size)
-    const id = add('text', { text: String(text), color: checkColor(color) ?? a.props.color ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, { at: labelSpot(a, w, h, labelBlocker(store, arrowId)) })
+    const id = add('text', { text: String(text), color: checkColor(color) ?? a.props.color ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, { at: labelSpot(a, w, h) })
     store.update(id, { labelOf: arrowId })
     return id
   }
