@@ -43,8 +43,8 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
 ## 3. Place
 
 - **Reading order**: left to right, top to bottom; or from the centre outwards (mind map). The theme is where the eye lands first: top-left, or the centre.
-- **Three levels of size**: title (a Markdown card with `# Title`, or a frame title) → headings (shapes, frame titles) → body (text, notes). Notes are big (200 × 200): use them for items people will move, and text or small shapes for the rest.
-- **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. Say the legend once (a small text) when it is not obvious.
+- **Levels of size**: there is no font size to set; the kinds of item have their own sizes. A plain `text` is larger than a shape's label, so use `text` for headings and labels (shapes, notes) for the body — not text for captions. A Markdown card's `# Title` is bold but small at a wide `w`: keep a title card narrow (`"w": 600` in an `apply` step; a card cannot be resized after). Notes are big (200 × 200): use them for items people will move, and small shapes for the rest.
+- **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. A shape with no `color` is **blue**: give `"color": "black"` to neutral shapes, or blue reads as an action. Say the legend once when it is not obvious.
 - **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided. Fill is set in `apply` steps (`shape` only).
 - **Space**: 60–80 between shapes in a drawing, more between drawings. Crowding reads as noise: make room, or split into another frame.
 - **Group** what belongs together: a frame around it (`frame --around`), or a bento cell.
@@ -52,7 +52,7 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
   - a speaker or a role: a small SVG figure (`image person.svg --width 60`), next to what they said
   - emphasis that stays: `pen circle ID`, `pen underline ID`
   - a quote or an idea: a `cloud` shape; a highlight: a `star`
-  - the word on an arrow ("causes", "yes"): a short text just above the arrow's middle
+  - the word on an arrow ("yes", "1 day"): a second line in the label of the shape it points to — a text above the arrow comes out bigger than the labels it joins
   - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
 
 Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin in free space first — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes) — and add it to the offsets in `patterns.md`.

@@ -9,12 +9,12 @@ You are given material — meeting notes, a chat log, a document, a codebase, re
 3. Decide the **one message**: what someone should take away if they look for ten seconds. Write it as a sentence for yourself; it becomes the conclusion.
 4. Pick the main relation and its pattern (`patterns.md`), and the 2–5 parts the picture has. The step is done when you can name each part and the pattern it uses.
 
-## 2. Build the skeleton
+## 2. Lay out the parts
 
-Lay out the parts before filling any of them:
+Decide where each part goes before filling any of them:
 
-- A title: a Markdown card with `# Theme` and the one message under it.
-- The parts: a bento grid (`omq bento`) with one cell per part, the main part with more span; or frames in reading order.
+- A title: a Markdown card with `# Theme` and the one message under it (an `apply` step `{ "do": "markdown", "text": "…", "w": 600 }`: the CLI's `markdown` takes no size, and a card cannot be resized later).
+- The parts: frames in reading order when each part is one diagram (it has its own size); a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists that will grow. Build each part, `frame --around` it, then line the frames up with `tidy FRAME,FRAME,…` (or `arrange`) in an operation of its own.
 - A conclusion at the end of the reading order: decisions, open points and next actions.
 
 ## 3. Fill

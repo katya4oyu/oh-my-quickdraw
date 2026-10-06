@@ -8,9 +8,9 @@ Steps in order; a diamond for a choice. No coordinates needed: `arrange` lays th
 
 ```json
 [
-  { "do": "shape", "shape": "rectangle", "text": "Sign up", "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "Verify email", "ref": "b" },
-  { "do": "shape", "shape": "diamond", "text": "Paid?", "ref": "c" },
+  { "do": "shape", "shape": "rectangle", "text": "Sign up", "color": "black", "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Verify email", "color": "black", "ref": "b" },
+  { "do": "shape", "shape": "diamond", "text": "Paid?", "color": "black", "ref": "c" },
   { "do": "shape", "shape": "rectangle", "text": "Dashboard", "color": "green", "ref": "d" },
   { "do": "arrange", "ids": ["@a", "@b", "@c", "@d"], "layout": "row", "gap": 80 },
   { "do": "arrow", "from": "@a", "to": "@b" },
@@ -20,7 +20,7 @@ Steps in order; a diamond for a choice. No coordinates needed: `arrange` lays th
 ]
 ```
 
-The word on a branch ("yes"): a `text` just above the arrow's middle, added after `arrange` with `at`. More than 5 steps: two rows, or a column.
+The word on a branch ("yes"): a second line in the label of the shape it leads to ("Dashboard\n(yes)"). More than 5 steps: two rows, or a column.
 
 ## Timeline
 
@@ -33,12 +33,13 @@ Events at points in time, left to right: small dots on a line, the date above, t
   { "do": "shape", "shape": "ellipse", "text": "", "color": "red", "fill": "solid", "w": 24, "h": 24, "at": { "x": 600, "y": 60 }, "ref": "t3" },
   { "do": "arrow", "from": "@t1", "to": "@t2", "line": true },
   { "do": "arrow", "from": "@t2", "to": "@t3" },
-  { "do": "text", "text": "Apr", "at": { "x": -10, "y": 0 } },
-  { "do": "text", "text": "Jul", "at": { "x": 290, "y": 0 } },
-  { "do": "text", "text": "Oct", "at": { "x": 590, "y": 0 } },
-  { "do": "text", "text": "Kickoff", "at": { "x": -20, "y": 110 } },
-  { "do": "text", "text": "Beta", "at": { "x": 285, "y": 110 } },
-  { "do": "text", "text": "Launch", "at": { "x": 580, "y": 110 } }
+  { "do": "text", "text": "Apr", "at": { "x": -10, "y": 0 }, "ref": "d1" },
+  { "do": "text", "text": "Jul", "at": { "x": 290, "y": 0 }, "ref": "d2" },
+  { "do": "text", "text": "Oct", "at": { "x": 590, "y": 0 }, "ref": "d3" },
+  { "do": "text", "text": "Kickoff", "at": { "x": -20, "y": 110 }, "ref": "e1" },
+  { "do": "text", "text": "Beta", "at": { "x": 285, "y": 110 }, "ref": "e2" },
+  { "do": "text", "text": "Launch", "at": { "x": 580, "y": 110 }, "ref": "e3" },
+  { "do": "frame", "title": "Roadmap", "around": ["@t1", "@t2", "@t3", "@d1", "@d2", "@d3", "@e1", "@e2", "@e3"] }
 ]
 ```
 
@@ -54,10 +55,10 @@ A timeline with lanes: the stages across, and rows for what the person does, fee
 
 ```json
 [
-  { "do": "shape", "shape": "rectangle", "text": "More users", "w": 180, "h": 80, "at": { "x": 200, "y": 0 }, "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "More data", "w": 180, "h": 80, "at": { "x": 420, "y": 200 }, "ref": "b" },
-  { "do": "shape", "shape": "rectangle", "text": "Better model", "w": 180, "h": 80, "at": { "x": 200, "y": 400 }, "ref": "c" },
-  { "do": "shape", "shape": "rectangle", "text": "Better product", "w": 180, "h": 80, "at": { "x": -20, "y": 200 }, "ref": "d" },
+  { "do": "shape", "shape": "rectangle", "text": "More users", "color": "black", "w": 180, "h": 80, "at": { "x": 200, "y": 0 }, "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "More data", "color": "black", "w": 180, "h": 80, "at": { "x": 420, "y": 200 }, "ref": "b" },
+  { "do": "shape", "shape": "rectangle", "text": "Better model", "color": "black", "w": 180, "h": 80, "at": { "x": 200, "y": 400 }, "ref": "c" },
+  { "do": "shape", "shape": "rectangle", "text": "Better product", "color": "black", "w": 180, "h": 80, "at": { "x": -20, "y": 200 }, "ref": "d" },
   { "do": "arrow", "from": "@a", "to": "@b" },
   { "do": "arrow", "from": "@b", "to": "@c" },
   { "do": "arrow", "from": "@c", "to": "@d" },
@@ -75,9 +76,9 @@ A root on top, its parts below, evidence under the parts. Children 300 apart; th
 ```json
 [
   { "do": "shape", "shape": "rectangle", "text": "Churn is up", "color": "red", "w": 200, "h": 80, "at": { "x": 290, "y": 0 }, "ref": "r" },
-  { "do": "shape", "shape": "rectangle", "text": "Price", "w": 180, "h": 80, "at": { "x": 0, "y": 180 }, "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "Onboarding", "w": 180, "h": 80, "at": { "x": 300, "y": 180 }, "ref": "b" },
-  { "do": "shape", "shape": "rectangle", "text": "Bugs", "w": 180, "h": 80, "at": { "x": 600, "y": 180 }, "ref": "c" },
+  { "do": "shape", "shape": "rectangle", "text": "Price", "color": "black", "w": 180, "h": 80, "at": { "x": 0, "y": 180 }, "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Onboarding", "color": "black", "w": 180, "h": 80, "at": { "x": 300, "y": 180 }, "ref": "b" },
+  { "do": "shape", "shape": "rectangle", "text": "Bugs", "color": "black", "w": 180, "h": 80, "at": { "x": 600, "y": 180 }, "ref": "c" },
   { "do": "note", "text": "Plan B costs 2x A", "color": "light-blue", "at": { "x": 0, "y": 320 }, "ref": "n1" },
   { "do": "arrow", "from": "@r", "to": "@a" },
   { "do": "arrow", "from": "@r", "to": "@b" },
@@ -117,6 +118,23 @@ omq frame "Point" --in GRID --auto        # then one cell per point and option, 
 
 or, for a few rows, a `markdown` card with a table. Pros / cons: two columns (green: for, red: against), one keyword per line, and the conclusion under both. The winner of each row: `pen circle` on it.
 
+## Decision (issue → options → chosen)
+
+The core of most meetings: a question, the options with what each costs, the one chosen. The question on the left, options in a column, the chosen one green, the dropped ones grey, the reason in the label's second line.
+
+```json
+[
+  { "do": "shape", "shape": "diamond", "text": "Onboarding or\nbilling first?", "color": "red", "w": 260, "h": 180, "at": { "x": 0, "y": 60 }, "ref": "q" },
+  { "do": "shape", "shape": "rectangle", "text": "Onboarding first\n(2 weeks, fewer tickets)", "color": "green", "fill": "solid", "w": 260, "h": 90, "at": { "x": 380, "y": 0 }, "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Billing redesign first\n(paying users)", "color": "grey", "w": 260, "h": 90, "at": { "x": 380, "y": 200 }, "ref": "b" },
+  { "do": "arrow", "from": "@q", "to": "@a" },
+  { "do": "arrow", "from": "@q", "to": "@b", "line": true },
+  { "do": "frame", "title": "Decided: onboarding first", "around": ["@q", "@a", "@b"] }
+]
+```
+
+The frame's title says the decision, so it reads even from afar. Still open: the question stays red and no option is green.
+
 ## Venn
 
 What two (or three) things share. The circles overlap on purpose: lint reports it, leave it.
@@ -138,10 +156,10 @@ One topic in the centre, its parts around it; parts of parts further out.
 ```json
 [
   { "do": "shape", "shape": "ellipse", "text": "Offsite", "color": "violet", "fill": "solid", "w": 200, "h": 120, "at": { "x": 300, "y": 200 }, "ref": "c" },
-  { "do": "shape", "shape": "rectangle", "text": "Venue", "w": 160, "h": 70, "at": { "x": 0, "y": 40 }, "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "Agenda", "w": 160, "h": 70, "at": { "x": 640, "y": 40 }, "ref": "b" },
-  { "do": "shape", "shape": "rectangle", "text": "Budget", "w": 160, "h": 70, "at": { "x": 0, "y": 410 }, "ref": "d" },
-  { "do": "shape", "shape": "rectangle", "text": "People", "w": 160, "h": 70, "at": { "x": 640, "y": 410 }, "ref": "e" },
+  { "do": "shape", "shape": "rectangle", "text": "Venue", "color": "black", "w": 160, "h": 70, "at": { "x": 0, "y": 40 }, "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Agenda", "color": "black", "w": 160, "h": 70, "at": { "x": 640, "y": 40 }, "ref": "b" },
+  { "do": "shape", "shape": "rectangle", "text": "Budget", "color": "black", "w": 160, "h": 70, "at": { "x": 0, "y": 410 }, "ref": "d" },
+  { "do": "shape", "shape": "rectangle", "text": "People", "color": "black", "w": 160, "h": 70, "at": { "x": 640, "y": 410 }, "ref": "e" },
   { "do": "arrow", "from": "@c", "to": "@a", "line": true },
   { "do": "arrow", "from": "@c", "to": "@b", "line": true },
   { "do": "arrow", "from": "@c", "to": "@d", "line": true },
