@@ -378,7 +378,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return out(JSON.stringify(set ? { member: set } : { removed: who }))
       }
       case 'lint': {
-        const scope = { frame: o.frame, ids: o.ids?.split(',') }
+        const scope = { frame: o.frame, ids: o.ids?.split(','), words: 'cli' as const } // fixes named as omq commands
         const fixedOp = o.fix ? fixLayout(store, o.name, scope) : null
         if (!fixedOp) {
           const issues = lintBoard(store, scope)

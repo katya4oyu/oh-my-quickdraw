@@ -114,11 +114,13 @@ export function parseRatio(s: string | number | null | undefined): number | null
 /** A problem in how the board is laid out, and the shapes it is about. */
 export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame' | 'straddles-frame' | 'touches-frame' | 'text-overflow' | 'arrow-crosses', ids: string[], text: string }
 /** Layout problems: shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. Narrowed to a frame, some shapes or an area. */
-export function lintBoard(store: Store, scope?: { frame?: string, ids?: string[], area?: Rect }): LintIssue[]
+/** What to check; `words`: how fixes are named, as the board tools (default) or as omq commands ('cli'). */
+export interface LintScope { frame?: string, ids?: string[], area?: Rect, words?: 'tools' | 'cli' }
+export function lintBoard(store: Store, scope?: LintScope): LintIssue[]
 /** Issues as a model or a person reads them. */
 export function lintText(issues: LintIssue[]): string
 /** Fixes, as one operation on what agents made, what needs no judgement: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Null when there is nothing it can fix. */
-export function fixLayout(store: Store, name: string, scope?: { frame?: string, ids?: string[], area?: Rect }): (Operation<unknown> & { fixed: string[], left: LintIssue[] }) | null
+export function fixLayout(store: Store, name: string, scope?: LintScope): (Operation<unknown> & { fixed: string[], left: LintIssue[] }) | null
 /** What fixLayout did and what is left, as text. */
 export function fixText(result: { fixed: string[], left: LintIssue[] }): string
 

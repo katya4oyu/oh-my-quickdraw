@@ -317,6 +317,33 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
   // operation (and moves the cells after it) takes it along
   const member = (opts) => (opts.inFrame && !opts.at ? { frameId: opts.inFrame } : {})
 
+  // Frames and grids made in this operation. What lies in one joins it only
+  // once the operation is done (quickdraw-frames), so moving it in the same
+  // operation takes along by hand what is in it: its members (its title, what
+  // was put `in` or `around`) and what lies in it — as joining would.
+  const made = new Set()
+  const encloses = (fb, m) => { const b = pageBounds(m); if (isFrame(m) || isLayout(m)) return b.x >= fb.x && b.y >= fb.y && b.x + b.w <= fb.x + fb.w && b.y + b.h <= fb.y + fb.h; const cx = b.x + b.w / 2, cy = b.y + b.h / 2; return cx >= fb.x && cx <= fb.x + fb.w && cy >= fb.y && cy <= fb.y + fb.h }
+  function along(id) {
+    const out = new Set(), todo = [id]
+    while (todo.length) {
+      const f = store.get(todo.pop()), fb = pageBounds(f)
+      for (const m of store.shapes()) {
+        if (m.id === id || out.has(m.id) || m.typeName !== 'shape' || isLine(m)) continue // arrows: rerouted
+        const joined = m.frameId === f.id || (isLayout(f) && m.layoutId === f.id)
+        const lies = made.has(f.id) && (!m.frameId || m.frameId === f.frameId) && encloses(fb, m)
+        if (joined || lies) { out.add(m.id); if (isFrame(m) || isLayout(m)) todo.push(m.id) }
+      }
+    }
+    return out
+  }
+  // moves a shape by dx, dy; a frame made in this operation brings what is in
+  // it (one made before: quickdraw-frames brings it); not what `moving` moves itself
+  function shift(id, dx, dy, moving = new Set()) {
+    if (!dx && !dy) return
+    const go = made.has(id) ? [...along(id)].filter((m) => !moving.has(m)) : []
+    for (const m of [id, ...go]) { const s = store.get(m); store.update(m, { x: s.x + dx, y: s.y + dy }) }
+  }
+
   const ops = {
     note(text, opts = {}) {
       return add('note', { text: String(text), color: checkColor(opts.color) ?? 'yellow', size: checkSize(opts.textSize) ?? 'm', font: 'draw', scale: 1 }, 200, 200, opts)
@@ -403,6 +430,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       if (opts.inFrame && isLayout(store.get(opts.inFrame))) {
         const id = addCell(store, opts.inFrame, { title: String(title), c: opts.span?.c, r: opts.span?.r, auto: !!opts.auto })
         store.update(id, { agent })
+        made.add(id)
         store.update(id + '-title', { agent })
         focus = { x: store.get(id).x, y: store.get(id).y }
         return id
@@ -423,6 +451,8 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const id = createFrame(store, { x, y: opts.around?.length || opts.at ? y : y + 40, w, h, aspect, title: String(title), titleInside: !!opts.titleInside })
       store.update(id, { agent })
       store.update(id + '-title', { agent })
+      made.add(id)
+      for (const m of opts.around ?? []) if (!isLine(store.get(m))) store.update(m, { frameId: id }) // what it was put around is in it now
       focus = { x, y }
       return id
     },
@@ -432,6 +462,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const at = opts.at ?? place(w, 400)
       const id = createLayout(store, { x: at.x, y: at.y, w, cols, gap })
       store.update(id, { agent })
+      made.add(id)
       focus = at
       return id
     },
@@ -510,7 +541,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // to { x, y }, or by { dx, dy }; a frame brings its members
     move(id, { x, y, dx = 0, dy = 0 } = {}) {
       const s = need(id)
-      store.update(id, { x: x ?? s.x + dx, y: y ?? s.y + dy })
+      shift(id, (x ?? s.x + dx) - s.x, (y ?? s.y + dy) - s.y)
       focus = { x: x ?? s.x + dx, y: y ?? s.y + dy }
       return id
     },
@@ -525,7 +556,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       shapes.forEach((s, i) => {
         if (i && i % cols === 0) { x = x0; y += rowH + gap; rowH = 0 }
         const b = bs[i]
-        store.update(s.id, { x: s.x + (x - b.x), y: s.y + (y - b.y) })
+        shift(s.id, x - b.x, y - b.y, new Set(ids))
         x += b.w + gap
         rowH = Math.max(rowH, b.h)
       })
@@ -610,6 +641,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         const all = grid ? [grid] : f.kanban?.id ? store.shapes().filter((c) => isFrame(c) && c.kanban?.id === f.kanban.id) : [f]
         if (!units.has(key)) units.set(key, all)
       }
+      const moving = new Set([...units.values()].flat().map((f) => f.id))
       const boxes = [...units.values()].map((fs) => {
         const bs = fs.map((f) => withTitle(store, f))
         const x = Math.min(...bs.map((b) => b.x)), y = Math.min(...bs.map((b) => b.y))
@@ -622,7 +654,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       for (const b of boxes) {
         if (x > x0 && x + b.w > x0 + rowW) { x = x0; y += rowH + gap; rowH = 0 }
         const dx = x - b.x, dy = y - b.y
-        for (const f of b.fs) if (dx || dy) store.update(f.id, { x: f.x + dx, y: f.y + dy })
+        for (const f of b.fs) shift(f.id, dx, dy, moving)
         x += b.w + gap
         rowH = Math.max(rowH, b.h)
       }

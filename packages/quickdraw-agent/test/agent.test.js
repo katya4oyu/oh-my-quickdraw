@@ -759,3 +759,53 @@ describe('styles and arrow labels', () => {
     expect(lab(side).y).toBeGreaterThan(s.y + 60) // a rightward arrow bent +60 bows down: its label below the curve
   })
 })
+
+describe('a frame made and moved in one operation', () => {
+  it('brings what it was put around, what was put in it and its title, when arranged, moved or tidied', () => {
+    const store = board()
+    const notes = ['a', 'b', 'c', 'd'].map((t, i) => human(`shape:${t}`, t, i * 260, 0))
+    for (const n of notes) store.put(n)
+    const [, g1, , g2] = applySteps(store, 'Claude', [
+      { do: 'arrange', ids: ['shape:a', 'shape:b'], layout: 'row' },
+      { do: 'frame', title: 'One', around: ['shape:a', 'shape:b'], ref: 'g1' },
+      { do: 'arrange', ids: ['shape:c', 'shape:d'], layout: 'row' },
+      { do: 'frame', title: 'Two', around: ['shape:c', 'shape:d'], ref: 'g2' },
+      { do: 'text', text: 'inside', at: { x: 560, y: 80 }, ref: 'n' }, // lies in it, not yet a member
+      { do: 'arrange', ids: ['@g1', '@g2'], layout: 'column', gap: 80 },
+      { do: 'move', id: '@g2', dx: 500 },
+    ]).result
+    const inside = (id, f) => { const b = pageBounds(store.get(id)), fb = pageBounds(store.get(f)); return b.x >= fb.x && b.y >= fb.y && b.x + b.w <= fb.x + fb.w && b.y + b.h <= fb.y + fb.h }
+    for (const id of ['shape:a', 'shape:b']) expect(inside(id, g1)).toBe(true)
+    for (const id of ['shape:c', 'shape:d']) expect(inside(id, g2)).toBe(true)
+    const label = store.shapes().find((s) => s.type === 'text' && s.props.text === 'inside')
+    expect(inside(label.id, g2)).toBe(true) // and what lay in it
+    expect(lintBoard(store).filter((i) => ['outside-frame', 'straddles-frame'].includes(i.kind))).toEqual([])
+    // tidied in the same operation as well
+    const [f] = applySteps(store, 'Claude', [
+      { do: 'note', text: 'e', at: { x: 3000, y: 0 }, ref: 'e' },
+      { do: 'frame', title: 'Three', around: ['@e'], ref: 'f' },
+      { do: 'tidy', ids: ['@f'], at: { x: 0, y: 2000 } },
+    ]).result.slice(1)
+    expect(store.get(f).y).toBeGreaterThan(1900)
+    expect(lintBoard(store).filter((i) => ['outside-frame', 'straddles-frame'].includes(i.kind))).toEqual([])
+  })
+})
+
+describe('labels at the sides of a diamond or an ellipse', () => {
+  it('finds a label wider than a diamond where it sits, and --fix makes the diamond bigger', () => {
+    const store = board()
+    const [wide, ok] = applySteps(store, 'Claude', [
+      { do: 'shape', shape: 'diamond', text: 'Onboarding or billing first?', w: 240, h: 160, at: { x: 0, y: 0 } },
+      { do: 'shape', shape: 'diamond', text: 'Paid?', w: 180, h: 100, at: { x: 600, y: 0 } },
+    ]).result
+    const issues = lintBoard(store)
+    expect(issues).toMatchObject([{ kind: 'text-overflow', ids: [wide] }])
+    expect(issues[0].text).toMatch(/spills out at the sides.*update_shape w, h/)
+    expect(lintBoard(store, { words: 'cli' })[0].text).toMatch(new RegExp(`omq update ${wide} --size WxH`))
+    const r = fixLayout(store, 'Claude')
+    expect(r.fixed.join()).toMatch(/bigger for its label/)
+    expect(store.get(wide).props.w).toBeGreaterThan(240)
+    expect(store.get(ok).props.w).toBe(180)
+    expect(lintBoard(store)).toEqual([])
+  })
+})

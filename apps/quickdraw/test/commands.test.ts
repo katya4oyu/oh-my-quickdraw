@@ -68,6 +68,8 @@ describe('the CLI on a file board', () => {
     const inFrame = await run('lint', '--frame', frame)
     expect(inFrame).toMatchObject({ problems: 1, issues: [{ kind: 'overlap' }] })
     expect(inFrame.issues[0].text).toMatch(/note "one".*note "two"/)
+    expect(inFrame.issues[0].text).toMatch(/omq arrange shape:\S+,shape:\S+/) // fixes named as commands, not board tools
+    expect(inFrame.issues[0].text).not.toMatch(/arrange_shapes/)
     // --fix: one operation, logged (undo reverts it), and what is left
     const fixed = await run('lint', '--fix')
     expect(fixed).toMatchObject({ op: expect.stringMatching(/^op:/), problems: 0 })
