@@ -11,10 +11,17 @@ export interface Span { c: number, r: number }
 /** A span from { c, r } or "2x1". */
 export function spanOf(v: Span | string | null | undefined): Span | undefined
 
+/** How big the words are (the core's sizes). */
+export type TextSize = 's' | 'm' | 'l' | 'xl'
+/** A line's style: hand-drawn, or not. */
+export type Dash = 'draw' | 'solid' | 'dashed' | 'dotted'
+export type Fill = 'none' | 'semi' | 'solid' | 'pattern'
+
 export interface Operations {
-  note(text: string, opts?: Placement): string
-  text(text: string, opts?: Placement): string
-  shape(geo: GeoId, label?: string, opts?: Placement & { fill?: string }): string
+  note(text: string, opts?: Placement & { textSize?: TextSize }): string
+  text(text: string, opts?: Placement & { textSize?: TextSize }): string
+  /** `textSize`: its label's */
+  shape(geo: GeoId, label?: string, opts?: Placement & { fill?: Fill, dash?: Dash, textSize?: TextSize }): string
   markdown(md: string, opts?: Placement): string
   /** An image from a data URL of its natural size; `w`: shown width (400 at most by default). */
   image(src: string, natural: { w: number, h: number }, opts?: Placement): string
@@ -34,9 +41,10 @@ export interface Operations {
   span(id: string, opts: Partial<Span> & { auto?: boolean }): string
   /** A bento grid's columns; its cells pack again. */
   columns(id: string, cols: number): string
-  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean }): string
-  /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames) */
-  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number }): string
+  /** `bend`: how far its middle bows out (+ right as it goes, - left); `label`: a text by its middle that follows it (its `textSize`, s by default) */
+  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
+  /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
+  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', cols?: number, gap?: number, at?: Point }): string[]
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
@@ -87,7 +95,8 @@ export interface BoardDescription {
   items: { id: string, type: string, text: string, color?: string, frame?: string, by?: string, edited_by?: string, x: number, y: number, w: number, h: number,
     /** a ticket's state: who it is for (null: any agent), who has it, and how it went */
     ticket?: { status: TicketStatus, to: string | null, by: string | null, result?: string } }[]
-  arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string }[]
+  /** `label`: the text by its middle (`label_id`: that text) */
+  arrows: { id: string, type: 'arrow' | 'line', from?: string, to?: string, label?: string, label_id?: string }[]
 }
 
 export function describeBoard(store: Store): BoardDescription
