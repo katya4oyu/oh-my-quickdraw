@@ -45,26 +45,47 @@ function crosses(p, q, r) {
 // padding aside (widths vary some ten per cent with the letters).
 const LABEL_PAD = 12
 const width = (font, t) => estimateWidth(font, t) * 0.9
-function labelHeight(s) {
+// the label's lines as the core wraps them at the box's width: their widths, and a line's height
+function labelLines(s, w = s.props.w) {
   const fs = FONT_SIZES[s.props.labelSize || 's'] ?? 20
   const font = `500 ${fs}px sans-serif`
-  const maxW = Math.max(24, s.props.w - LABEL_PAD * 2)
+  const maxW = Math.max(24, w - LABEL_PAD * 2)
   const estimateWidth = width
-  let lines = 0
+  const lines = []
   for (const para of String(s.props.label).split('\n')) {
     let line = ''
-    lines++
     for (const word of para.split(/(\s+)/)) {
       const test = line + word
-      if (line.trim() && estimateWidth(font, test) > maxW) { lines++; line = word.trimStart() } else line = test
+      if (line.trim() && estimateWidth(font, test) > maxW) { lines.push(line); line = word.trimStart() } else line = test
       while (estimateWidth(font, line) > maxW && line.length > 1) { // too wide alone: broken anywhere
         let cut = line.length - 1
         while (cut > 1 && estimateWidth(font, line.slice(0, cut)) > maxW) cut--
-        lines++; line = line.slice(cut)
+        lines.push(line.slice(0, cut)); line = line.slice(cut)
       }
     }
+    lines.push(line)
   }
-  return lines * fs * 1.3
+  return { widths: lines.map((l) => estimateWidth(font, l.trim())), lh: fs * 1.3 }
+}
+const labelHeight = (s) => { const { widths, lh } = labelLines(s); return widths.length * lh }
+// A diamond or an ellipse narrows away from its middle: a line of its label
+// that is wider than the shape where it sits spills out at the sides, however
+// tall the shape is. Does the label fit a w × h shape of s's kind?
+const NARROWS = { diamond: (k) => 1 - k, ellipse: (k) => Math.sqrt(Math.max(0, 1 - k * k)) } // width at k (0 middle, 1 top or bottom)
+function sidesFit(s, w = s.props.w, h = s.props.h) {
+  const at = NARROWS[s.props.geo]
+  if (!at) return true
+  const { widths, lh } = labelLines(s, w)
+  const top = -(widths.length * lh) / 2
+  return widths.every((lw, i) => {
+    const edge = Math.max(Math.abs(top + i * lh), Math.abs(top + (i + 1) * lh)) // the line's edge farther from the middle
+    return lw + 8 <= w * at(Math.min(1, (2 * edge) / h))
+  })
+}
+// how much bigger (both ways) the shape must be for its label to fit at the sides
+function sidesGrow(s) {
+  for (let k = 1.1; k <= 3; k += 0.1) if (sidesFit(s, s.props.w * k, s.props.h * k)) return k
+  return 3
 }
 // what of a shape's box its label may use: all of a rectangle's, less of the others'
 const roomFor = (s) => (['rectangle', 'cloud', 'rhombus'].includes(s.props.geo) || !s.props.geo ? 1 : 0.8)
@@ -76,7 +97,15 @@ const shrink = (r, d) => ({ x: r.x + d, y: r.y + d, w: Math.max(0, r.w - d * 2),
  * `frame` (a frame id: its title, what is in it or on it), `ids`, or `area`
  * ({ x, y, w, h }); a problem is reported when one of those shapes is in it.
  */
-export function lintBoard(store, { frame, ids, area } = {}) {
+// how a fix is named: as the board tools call it (agents on the board), or as
+// the omq command does (agents with a shell)
+const WORDS = {
+  tools: { arrange: () => 'arrange_shapes them', fit: (f, s) => `fit_frame ${f} ${s}`, resize: () => 'update_shape w, h', bend: () => 'bend' },
+  cli: { arrange: (ids) => `omq arrange ${ids}`, fit: (f, s) => `omq fit ${f} ${s}`, resize: (id) => `omq update ${id} --size WxH`, bend: (id) => `omq update ${id} --bend N` },
+}
+
+export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
+  const say = WORDS[words] ?? WORDS.tools
   // a bento grid's area is the ground its cells (frames) stand on, not a shape among them
   const shapes = store.shapes().filter((s) => s.typeName === 'shape' && !s.isLayout)
   const byId = new Map(shapes.map((s) => [s.id, s]))
@@ -115,8 +144,8 @@ export function lintBoard(store, { frame, ids, area } = {}) {
     if ((s.type === 'text' && t.type === 'geo' && within(b(s), b(t), 0)) || (t.type === 'text' && s.type === 'geo' && within(b(t), b(s), 0))) continue
     const label = isLabel(s) ? s : isLabel(t) ? t : null // it sits by its arrow: bend that, or move the shapes
     add('overlap', [s, t], label
-      ? `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): ${name(label)} is the label of arrow ${label.labelOf} and stays by it — bend that arrow (bend), or move the other shape`
-      : `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): move one clear, or arrange_shapes them`)
+      ? `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): ${name(label)} is the label of arrow ${label.labelOf} and stays by it — bend that arrow (${say.bend(label.labelOf)}), or move the other shape`
+      : `${name(s)} and ${name(t)} overlap (${Math.round(m.w)} × ${Math.round(m.h)}): move one clear, or ${say.arrange(`${s.id},${t.id}`)}`)
   }
 
   // frames on top of each other
@@ -134,14 +163,14 @@ export function lintBoard(store, { frame, ids, area } = {}) {
     const f = s.frameId && byId.get(s.frameId)
     const own = f && pageBounds(f)
     if (own && !within(pageBounds(s), own)) {
-      if (concerns(s, f)) add('outside-frame', [s, f], `${name(s)} sticks out of ${name(f)}: move it inside; if there is no room, fit_frame ${f.id} ${s.id} shrinks what is in it to fit`)
+      if (concerns(s, f)) add('outside-frame', [s, f], `${name(s)} sticks out of ${name(f)}: move it inside; if there is no room, ${say.fit(f.id, s.id)} shrinks what is in it to fit`)
       continue
     }
     for (const g of frames) {
       if (g.id === s.frameId || !concerns(s, g)) continue
       const gb = pageBounds(g), sb = pageBounds(s)
       const m = meet(sb, gb)
-      if (m.w >= MIN && m.h >= MIN && !within(sb, gb) && !within(gb, sb)) add('straddles-frame', [s, g], `${name(s)} lies across the edge of ${name(g)}: if it belongs there, fit_frame ${g.id} ${s.id} brings it in (shrinking what is in it to fit); else move it clear`)
+      if (m.w >= MIN && m.h >= MIN && !within(sb, gb) && !within(gb, sb)) add('straddles-frame', [s, g], `${name(s)} lies across the edge of ${name(g)}: if it belongs there, ${say.fit(g.id, s.id)} brings it in (shrinking what is in it to fit); else move it clear`)
     }
   }
 
@@ -149,7 +178,8 @@ export function lintBoard(store, { frame, ids, area } = {}) {
   for (const s of solid) {
     if (s.type !== 'geo' || !s.props.label || !concerns(s)) continue
     const need = labelHeight(s), has = s.props.h * roomFor(s)
-    if (need > has + 4) add('text-overflow', [s], `${name(s)}: its label needs about ${Math.ceil(need / roomFor(s))} of height, it is ${Math.round(s.props.h)}: make it taller or wider (update_shape w, h), or shorten the label`)
+    if (need > has + 4) add('text-overflow', [s], `${name(s)}: its label needs about ${Math.ceil(need / roomFor(s))} of height, it is ${Math.round(s.props.h)}: make it taller or wider (${say.resize(s.id)}), or shorten the label`)
+    else if (!sidesFit(s)) { const k = sidesGrow(s); add('text-overflow', [s], `${name(s)}: its label spills out at the sides (a ${s.props.geo} narrows away from its middle): make it about ${Math.ceil(s.props.w * k)} × ${Math.ceil(s.props.h * k)} (${say.resize(s.id)}), or shorten the label`) }
   }
 
   // right against a frame's edge, neither in it nor clear of it
@@ -162,7 +192,7 @@ export function lintBoard(store, { frame, ids, area } = {}) {
       if (within(sb, gb) || within(gb, sb)) continue
       const m = meet(sb, gb), near = meet(sb, { x: gb.x - 8, y: gb.y - 8, w: gb.w + 16, h: gb.h + 16 })
       const across = m.w >= MIN && m.h >= MIN // reported above, as lying across the edge
-      if (!across && ((near.w > MIN && near.h > 0) || (near.h > MIN && near.w > 0))) add('touches-frame', [s, g], `${name(s)} is right against the edge of ${name(g)}: if it belongs there, fit_frame ${g.id} ${s.id} brings it in (shrinking what is in it to fit); else leave a gap`)
+      if (!across && ((near.w > MIN && near.h > 0) || (near.h > MIN && near.w > 0))) add('touches-frame', [s, g], `${name(s)} is right against the edge of ${name(g)}: if it belongs there, ${say.fit(g.id, s.id)} brings it in (shrinking what is in it to fit); else leave a gap`)
     }
   }
 
@@ -248,8 +278,12 @@ export function fixLayout(store, name, scope = {}) {
     for (const i of issues().filter((i) => i.kind === 'text-overflow')) {
       const s = mine(i.ids[0])
       if (!s) continue
-      ops.update(s.id, { h: Math.ceil(labelHeight(s) / roomFor(s)) + 8 })
-      fixed.push(`made ${short(s)} taller for its label`)
+      if (labelHeight(s) > s.props.h * roomFor(s) + 4) {
+        ops.update(s.id, { h: Math.ceil(labelHeight(s) / roomFor(s)) + 8 })
+        fixed.push(`made ${short(s)} taller for its label`)
+      }
+      const now = store.get(s.id)
+      if (!sidesFit(now)) { const k = sidesGrow(now); ops.update(s.id, { w: Math.ceil(now.props.w * k), h: Math.ceil(now.props.h * k) }); fixed.push(`made ${short(s)} bigger for its label`) }
     }
     // frames on top of each other: the later one moves, with what is in it
     for (const i of issues().filter((i) => i.kind === 'frames-overlap')) {
