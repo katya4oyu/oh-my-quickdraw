@@ -286,7 +286,14 @@ export interface CommandContext {
 }
 
 export const parseCommand = (argv: string[]) => {
-  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
+  // an option's value may be a negative number (--bend -60, --by -20,0): joined to it, as --bend=-60
+  const joined: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const name = argv[i].startsWith('--') && !argv[i].includes('=') ? argv[i].slice(2) : null
+    if (name && (OPTIONS as Record<string, { type: string }>)[name]?.type === 'string' && /^-\d/.test(argv[i + 1] ?? '')) joined.push(`${argv[i]}=${argv[++i]}`)
+    else joined.push(argv[i])
+  }
+  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: joined, allowPositionals: true, options: OPTIONS })
   return { o, cmd, args }
 }
 

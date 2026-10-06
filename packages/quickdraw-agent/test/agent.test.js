@@ -918,3 +918,18 @@ describe('as written, the drawing keeps its layout', () => {
     expect(f).toBeTruthy()
   })
 })
+
+describe('there and back', () => {
+  it('puts the labels of two arrows between the same shapes on either side', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'Page', w: 160, h: 90, at: { x: 0, y: 0 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'Relay', w: 160, h: 90, at: { x: 500, y: 0 }, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'Yjs updates' },
+      { do: 'arrow', from: '@b', to: '@a', label: 'broadcast' },
+    ]))
+    expect(r.check?.problems ?? []).toEqual([])
+    const ys = [r.result[2], r.result[3]].map((id) => pageBounds(store.shapes().find((l) => l.labelOf === id)).y)
+    expect(Math.abs(ys[0] - ys[1])).toBeGreaterThan(20)
+  })
+})

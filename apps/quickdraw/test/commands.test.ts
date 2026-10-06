@@ -94,6 +94,9 @@ describe('the CLI on a file board', () => {
     // "\\n" typed in an argument is a line break
     await run('text', 'Step 3\\nKey later', '--at', '0,600')
     expect((await run('read', '--format', 'json')).items.map((i: { text: string }) => i.text)).toContain('Step 3\nKey later')
+    // a negative number after an option is its value
+    const [one] = (await run('read', '--format', 'json')).items
+    expect(await run('move', one.id, '--by', '-20,0')).toMatchObject({ op: expect.stringMatching(/^op:/) })
   })
 })
 

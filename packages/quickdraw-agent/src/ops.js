@@ -198,15 +198,18 @@ export const arrowPath = (arrow, n = 16) => Array.from({ length: n + 1 }, (_, i)
  * side it bows to, else above it (right of it, when it runs up or down).
  * When it lands on something, lint says so (bend the arrow, or move a shape).
  */
-export function labelSpot(arrow, w, h) {
+export function labelSpot(arrow, w, h, { other = false } = {}) {
   const { dx, dy } = arrow.props, bend = arrow.props.bend || 0
   const len = Math.hypot(dx, dy) || 1
   const nx = -dy / len, ny = dx / len // the core's normal: a bend bows that way
-  const side = bend ? Math.sign(bend) : Math.abs(ny) >= 0.5 ? -Math.sign(ny) : (nx >= 0 ? 1 : -1)
+  const usual = bend ? Math.sign(bend) : Math.abs(ny) >= 0.5 ? -Math.sign(ny) : (nx >= 0 ? 1 : -1)
+  const side = other && !bend ? -usual : usual // the second of two arrows between the same shapes: the other side
   const p = pointOnArrow(arrow, 0.5), ox = nx * side, oy = ny * side
   const reach = Math.abs(ox) * w / 2 + Math.abs(oy) * h / 2 + 8
   return { x: round(p.x + ox * reach - w / 2), y: round(p.y + oy * reach - h / 2) }
 }
+
+const isLabelled = (store, arrowId) => store.shapes().some((l) => l.labelOf === arrowId)
 
 /** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`), wrapped to fit beside them; returns the records that changed. */
 export function labelsFollow(store, arrowIds) {
@@ -225,7 +228,9 @@ export function labelsFollow(store, arrowIds) {
     const props = wrap ? { ...l.props, autosize: false, w: Math.round(room) } : { ...l.props, autosize: true }
     const fitted = wrap === (l.props.autosize === false) && (!wrap || l.props.w === props.w) ? l : { ...l, props }
     const b = pageBounds(fitted)
-    const at = labelSpot(a, b.w, b.h)
+    // two arrows between the same two shapes (there and back): the later one's label on the other side
+    const pair = a.link && store.shapes().some((o) => o.id < a.id && isLine(o) && o.link && isLabelled(store, o.id) && ((o.link.from === a.link.from && o.link.to === a.link.to) || (o.link.from === a.link.to && o.link.to === a.link.from)))
+    const at = labelSpot(a, b.w, b.h, { other: pair })
     if (fitted !== l || Math.abs(at.x - b.x) + Math.abs(at.y - b.y) > 0.5) out.push({ ...fitted, x: fitted.x + at.x - b.x, y: fitted.y + at.y - b.y })
   }
   return out
