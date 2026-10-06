@@ -59,7 +59,7 @@ Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin 
 
 ## 4. Check
 
-What you write is checked as you write it. A drawing command's result says what it fixed by itself (`"fixed"`: shapes pushed off each other, into their frame) and what is left for you (`"problems"`), each with what to do: how many characters to cut from a label or the size that holds it, the bend that takes an arrow round a shape, a label lying on a shape, too many colours, a sentence, a "\n" written out. Fix those from the numbers; you need no picture for them, and no `lint` after each step.
+What you write is checked as you write it. A drawing command's result says what it fixed by itself (`"fixed"`: shapes pushed off each other, into their frame, a cramped label given room) and what is left for you (`"problems"`), each with what to do: how many characters to cut from a label or the size that holds it, the bend that takes an arrow round a shape, a label lying on a shape, too many colours, a sentence, a "\n" written out. Fix those from the numbers; you need no picture for them, and no `lint` after each step.
 
 Then look once, when the drawing is done: `omq look --frame FRAME_ID`, a small picture. It is for the two things only a picture answers:
 

@@ -233,7 +233,7 @@ export function lintBoard(store, { frame, ids, area, words = 'tools' } = {}) {
     const path = arrowPath(a) // its curve, when bent
     const ends = new Set([a.link?.from, a.link?.to].filter(Boolean))
     for (const s of solid) {
-      if (ends.has(s.id) || isTitle(s) || s.labelOf === a.id || !concerns(a, s)) continue
+      if (ends.has(s.id) || isTitle(s) || isLabel(s) || !concerns(a, s)) continue // across a label: where arrows meet it cannot always be helped, and it is not a shape the arrow is wrongly drawn through
       const r = shrink(pageBounds(s), 6)
       // an end on it: it points at it, connected or not
       const on = (pt) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h
@@ -276,7 +276,7 @@ export function lintText(issues) {
 // ---- fixing ----------------------------------------------------------------------
 
 const GAP = 16
-const AS_WRITTEN = new Set(['frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame'])
+const AS_WRITTEN = new Set(['text-cramped', 'frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame']) // a cramped label: a little room, nothing anyone would judge
 const FIXABLE = new Set(['text-overflow', 'text-cramped', 'arrow-crosses', 'frames-overlap', 'overlap', 'outside-frame', 'straddles-frame', 'touches-frame'])
 const centre = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })
 // mostly in r: three quarters of it or more
@@ -463,7 +463,7 @@ export function checkWritten(store, name, done, { words = 'tools', fix = true } 
   const ids = [...new Set([...Object.keys(done.diff.added), ...Object.keys(done.diff.updated)])]
     .filter((id) => { const s = store.get(id); return s?.typeName === 'shape' && !isTitle(s) && !s.isLayout })
   if (!ids.length) return done
-  // fixed as written: only what changes nothing anyone would judge (shapes off each other, in their frame);
+  // fixed as written: only what changes nothing anyone would judge (shapes off each other, in their frame, a cramped label given a little room);
   // a label's fit, an arrow's way, are said with what to do — how to fix them is the agent's choice
   const f = fix ? fixLayout(store, name, { ids, words, only: AS_WRITTEN }) : null
   const left = f ? f.left : lintBoard(store, { ids, words })

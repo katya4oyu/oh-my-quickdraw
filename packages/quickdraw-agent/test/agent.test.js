@@ -884,3 +884,22 @@ describe('an arrow label between shapes close together', () => {
     expect(store.shapes().find((l) => l.labelOf === r.result[2]).props.autosize).toBe(true)
   })
 })
+
+describe('as written: a little room for a cramped label; arrows may pass labels', () => {
+  it('gives a label that only just fits room without saying so, and does not count an arrow across another arrow\'s label', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'One line', w: 160, h: 30, at: { x: 0, y: 0 } }]))
+    expect(store.get(r.result[0]).props.h).toBeGreaterThan(30)
+    expect(r.check.fixed.join()).toMatch(/taller for its label/)
+    expect(r.check.problems).toBeUndefined()
+    const s = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 400 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'B', w: 120, h: 80, at: { x: 600, y: 400 }, ref: 'b' },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 300, y: 200 }, ref: 'c' },
+      { do: 'shape', shape: 'rectangle', text: 'D', w: 120, h: 80, at: { x: 300, y: 650 }, ref: 'd' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'crossing here' },
+      { do: 'arrow', from: '@c', to: '@d' },
+    ]))
+    expect((s.check?.problems ?? []).join()).not.toMatch(/runs across text/)
+  })
+})
