@@ -61,8 +61,8 @@ describe('for agents', () => {
 describe('threadSpot', () => {
   const view = { w: 1200, h: 800 }
   it('puts the thread beside its marker, kept on the screen; a sheet when narrow', () => {
-    expect(threadSpot({ x: 400, y: 100 }, view)).toEqual({ side: 'right', x: 414, y: 76 })
-    expect(threadSpot({ x: 1000, y: 100 }, view)).toEqual({ side: 'left', x: 666, y: 76 })
+    expect(threadSpot({ x: 400, y: 100 }, view)).toEqual({ side: 'right', x: 434, y: 76 })
+    expect(threadSpot({ x: 1000, y: 100 }, view)).toEqual({ side: 'left', x: 646, y: 76 })
     expect(threadSpot({ x: 400, y: 790 }, view, { w: 320, h: 360 }).y).toBe(428)
     expect(threadSpot({ x: 200, y: 100 }, { w: 400, h: 800 })).toEqual({ side: 'sheet' })
   })

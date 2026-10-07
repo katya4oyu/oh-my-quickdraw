@@ -13,7 +13,7 @@ const NARROW = 560 // narrower boards get the thread as a sheet along the bottom
  * Where a thread goes: beside its marker (to the right, else the left), kept
  * on the screen; on a narrow board, a sheet along the bottom.
  */
-export function threadSpot(marker, view, size = { w: W, h: 360 }, gap = 14) {
+export function threadSpot(marker, view, size = { w: W, h: 360 }, gap = 34) {
   if (view.w < NARROW) return { side: 'sheet' }
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
   const y = clamp(marker.y - 24, 12, Math.max(12, view.h - size.h - 12))
@@ -23,38 +23,39 @@ export function threadSpot(marker, view, size = { w: W, h: 360 }, gap = 14) {
 }
 
 const STYLE = `
-.qdc-layer{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:34;font:13px/1.45 system-ui,-apple-system,sans-serif}
-.qdc-layer [hidden]{display:none!important}
-.qdc-marker{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;display:inline-flex;align-items:center;gap:4px;
+.qdcm-layer{position:absolute;inset:0;pointer-events:none;overflow:clip;z-index:34;font:13px/1.45 system-ui,-apple-system,sans-serif}
+.qdcm-layer.qdcm-front{z-index:41} /* the bottom sheet goes over the board's bars (z-index 40) */
+.qdcm-layer [hidden]{display:none!important}
+.qdcm-marker{all:unset;position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;display:inline-flex;align-items:center;gap:4px;
   padding:3px 8px 3px 6px;border-radius:999px;background:var(--qd-pop-bg);border:1px solid var(--qd-border);box-shadow:var(--qd-pop-shadow);
   color:var(--qd-ink-strong);font-size:12px;font-variant-numeric:tabular-nums;transform:translate(-50%,-50%)}
-.qdc-marker svg{width:15px;height:15px}
-.qdc-marker[aria-expanded=true]{border-color:var(--qdc-accent)}
-.qdc-marker:focus-visible,.qdc-thread button:focus-visible{outline:2px solid var(--qdc-accent);outline-offset:2px}
-.qdc-thread{position:absolute;left:0;top:0;width:${W}px;max-height:min(440px,calc(100% - 24px));box-sizing:border-box;pointer-events:auto;
+.qdcm-marker svg{width:15px;height:15px}
+.qdcm-marker[aria-expanded=true]{border-color:var(--qdcm-accent)}
+.qdcm-marker:focus-visible,.qdcm-thread button:focus-visible{outline:2px solid var(--qdcm-accent);outline-offset:2px}
+.qdcm-thread{position:absolute;left:0;top:0;width:${W}px;max-height:min(440px,calc(100% - 24px));box-sizing:border-box;pointer-events:auto;
   display:grid;grid-template-rows:auto minmax(0,1fr) auto;border-radius:16px;background:var(--qd-pop-bg);border:1px solid var(--qd-border);
   box-shadow:var(--qd-pop-shadow);color:var(--qd-ink-strong);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4)}
-.qdc-thread.qdc-sheet{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:60%}
-.qdc-head{display:flex;align-items:center;gap:8px;padding:10px 10px 8px 14px;border-bottom:1px solid var(--qd-border)}
-.qdc-head span{color:var(--qd-ink-soft);font-size:12px}
-.qdc-head b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
-.qdc-x{all:unset;cursor:pointer;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;color:var(--qd-ink-soft);flex:none}
-.qdc-x:hover{background:var(--qd-hover)}.qdc-x svg{width:15px;height:15px}
-.qdc-list{overflow-y:auto;padding:10px 14px;display:grid;gap:12px;align-content:start}
-.qdc-empty{color:var(--qd-ink-soft);font-size:12px}
-.qdc-c{display:grid;gap:2px}
-.qdc-who{display:flex;gap:6px;align-items:baseline;font-size:12px}
-.qdc-who b{font-weight:600}.qdc-who time{color:var(--qd-ink-soft);font-variant-numeric:tabular-nums}
-.qdc-text{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--qd-ink)}
-.qdc-del{all:unset;cursor:pointer;margin-left:auto;color:var(--qd-ink-soft);font-size:11px;opacity:0}
-.qdc-c:hover .qdc-del,.qdc-del:focus-visible{opacity:1}
-.qdc-reply{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;padding:10px 12px;border-top:1px solid var(--qd-border)}
-.qdc-reply textarea{font:16px/1.4 system-ui,-apple-system,sans-serif;resize:none;border:1px solid var(--qd-border);border-radius:12px;padding:7px 10px;
-  background:transparent;color:var(--qd-ink-strong);outline:0;min-height:22px;max-height:120px}
-.qdc-reply textarea:focus{border-color:var(--qd-ink-soft)}
-.qdc-send{all:unset;cursor:pointer;font-size:12.5px;padding:7px 14px;border-radius:999px;background:var(--qdc-accent);color:#fff}
-.qdc-send[disabled]{opacity:.4;cursor:default}
-:root{--qdc-accent:#5b5bd6}
+.qdcm-thread.qdcm-sheet{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:60%}
+.qdcm-head{display:flex;align-items:center;gap:8px;padding:10px 10px 8px 14px;border-bottom:1px solid var(--qd-border)}
+.qdcm-head span{color:var(--qd-ink-soft);font-size:12px}
+.qdcm-head b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.qdcm-x{all:unset;cursor:pointer;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;color:var(--qd-ink-soft);flex:none}
+.qdcm-x:hover{background:var(--qd-hover)}.qdcm-x svg{width:15px;height:15px}
+.qdcm-list{overflow-y:auto;padding:10px 14px;display:grid;gap:12px;align-content:start}
+.qdcm-empty{color:var(--qd-ink-soft);font-size:12px}
+.qdcm-c{display:grid;gap:2px}
+.qdcm-who{display:flex;gap:6px;align-items:baseline;font-size:12px}
+.qdcm-who b{font-weight:600}.qdcm-who time{color:var(--qd-ink-soft);font-variant-numeric:tabular-nums}
+.qdcm-text{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--qd-ink)}
+.qdcm-del{all:unset;cursor:pointer;margin-left:auto;color:var(--qd-ink-soft);font-size:11px;opacity:0}
+.qdcm-c:hover .qdcm-del,.qdcm-del:focus-visible{opacity:1}
+.qdcm-reply{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;padding:10px 12px;border-top:1px solid var(--qd-border)}
+.qdcm-reply textarea{font:16px/1.4 system-ui,-apple-system,sans-serif;resize:none;border:1px solid var(--qd-border);border-radius:12px;padding:7px 10px;
+  background:transparent;color:var(--qd-ink-strong);outline:0;box-sizing:border-box;min-height:38px;max-height:120px}
+.qdcm-reply textarea:focus{border-color:var(--qd-ink-soft)}
+.qdcm-send{all:unset;cursor:pointer;font-size:12.5px;padding:7px 14px;border-radius:999px;background:var(--qdcm-accent);color:#fff}
+.qdcm-send[disabled]{opacity:.4;cursor:default}
+:root{--qdcm-accent:#5b5bd6}
 `
 
 function injectStyle() {
@@ -72,30 +73,31 @@ const clock = (at) => new Date(at).toLocaleString([], { month: 'numeric', day: '
  */
 export function createComments({ editor, comments, me = () => null, container = editor.container }) {
   injectStyle()
-  const layer = el('div', 'qdc-layer')
+  const layer = el('div', 'qdcm-layer')
   container.append(layer)
   const markers = new Map() // frame id -> button
   let openId = null
 
   // the thread
-  const thread = el('section', 'qdc-thread')
+  const thread = el('section', 'qdcm-thread')
   thread.hidden = true
   thread.setAttribute('aria-label', 'Comments')
-  const head = el('div', 'qdc-head')
+  const head = el('div', 'qdcm-head')
   const where = el('span', '', 'Frame'), title = el('b')
-  const x = el('button', 'qdc-x'); x.innerHTML = CLOSE_ICON; x.title = 'Close'; x.setAttribute('aria-label', 'Close')
+  const x = el('button', 'qdcm-x'); x.innerHTML = CLOSE_ICON; x.title = 'Close'; x.setAttribute('aria-label', 'Close')
   x.onclick = () => close()
   head.append(where, title, x)
-  const list = el('div', 'qdc-list')
-  const form = el('form', 'qdc-reply')
+  const list = el('div', 'qdcm-list')
+  const form = el('form', 'qdcm-reply')
   const input = el('textarea'); input.rows = 1; input.setAttribute('aria-label', 'Comment')
-  const send = el('button', 'qdc-send', 'Send'); send.type = 'submit'; send.disabled = true
+  const send = el('button', 'qdcm-send', 'Send'); send.type = 'submit'; send.disabled = true
   form.append(input, send)
   thread.append(head, list, form)
   layer.append(thread)
-  for (const type of ['pointerdown', 'wheel', 'keydown']) thread.addEventListener(type, (e) => e.stopPropagation()) // the board keeps its hands off
+  layer.addEventListener('pointerdown', (e) => e.stopPropagation()) // the markers and the thread are not board gestures
+  for (const type of ['wheel', 'keydown']) thread.addEventListener(type, (e) => e.stopPropagation())
 
-  const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(120, input.scrollHeight) + 'px'; send.disabled = !input.value.trim() }
+  const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(120, input.scrollHeight + 2) + 'px'; send.disabled = !input.value.trim() }
   input.addEventListener('input', grow)
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit() }
@@ -115,18 +117,18 @@ export function createComments({ editor, comments, me = () => null, container = 
     title.textContent = editor.store.get(openId + '-title')?.props?.text || 'Untitled'
     const items = comments.list(openId)
     list.replaceChildren(...(items.length ? items.map((c) => {
-      const row = el('article', 'qdc-c')
-      const who = el('div', 'qdc-who')
+      const row = el('article', 'qdcm-c')
+      const who = el('div', 'qdcm-who')
       const t = el('time', '', clock(c.at)); t.dateTime = new Date(c.at).toISOString()
       who.append(el('b', '', c.by || 'Someone'), t)
       if (c.by && c.by === me()?.name) { // your own: you may take it back
-        const del = el('button', 'qdc-del', 'Delete'); del.type = 'button'
+        const del = el('button', 'qdcm-del', 'Delete'); del.type = 'button'
         del.onclick = () => comments.remove(openId, c.id)
         who.append(del)
       }
-      row.append(who, el('div', 'qdc-text', c.text))
+      row.append(who, el('div', 'qdcm-text', c.text))
       return row
-    }) : [el('p', 'qdc-empty', 'No comments yet. What should whoever works on this drawing know?')]))
+    }) : [el('p', 'qdcm-empty', 'No comments yet. What should whoever works on this drawing know?')]))
     input.placeholder = items.length ? 'Reply' : 'Write a comment'
     list.scrollTop = list.scrollHeight
   }
@@ -141,7 +143,7 @@ export function createComments({ editor, comments, me = () => null, container = 
       const s = editor.pageToScreen(f.x + f.props.w, f.y)
       let m = markers.get(id)
       if (!m) {
-        m = el('button', 'qdc-marker')
+        m = el('button', 'qdcm-marker')
         m.type = 'button'
         m.onclick = () => (openId === id ? close() : open(id))
         layer.insertBefore(m, thread)
@@ -157,10 +159,12 @@ export function createComments({ editor, comments, me = () => null, container = 
       shown.add(id)
       if (openId === id) {
         const spot = threadSpot(s, v, { w: W, h: Math.min(440, thread.offsetHeight || 360) })
-        thread.classList.toggle('qdc-sheet', spot.side === 'sheet')
+        thread.classList.toggle('qdcm-sheet', spot.side === 'sheet')
+        layer.classList.toggle('qdcm-front', spot.side === 'sheet')
         thread.style.transform = spot.side === 'sheet' ? '' : `translate(${spot.x}px, ${spot.y}px)`
       }
     }
+    if (!openId) layer.classList.remove('qdcm-front')
     for (const [id, m] of [...markers]) if (!shown.has(id)) { m.remove(); markers.delete(id) }
   }
 
