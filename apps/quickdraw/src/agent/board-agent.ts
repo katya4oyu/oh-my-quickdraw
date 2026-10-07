@@ -29,6 +29,7 @@ import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { commentsText } from 'quickdraw-comments'
 import { linkedBoardsText } from '../board/linked.ts'
 import { setPet } from '../board/avatar.ts'
 
@@ -221,6 +222,17 @@ const SET_ROLE = {
     role: { type: 'string', description: 'a few words; empty to take the role off' },
     about: { type: 'string', description: 'a line on what it does in that role' },
     name: { type: 'string', description: 'another agent\'s name (as read_board\'s team says it), when it is not yours' },
+  } },
+}
+
+const ADD_COMMENT = {
+  name: 'add_comment',
+  description: 'Adds a comment to a frame\'s thread, which people see on the board, by the frame, and answer there. '
+    + 'Write one when you cannot decide on your own what the drawing should say or stress — what to leave out, what to make stand out, what to do when text does not fit — and say what you did meanwhile. '
+    + 'read_board shows the threads: read a drawing\'s before you change it, and follow what was agreed.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['frame', 'text'], properties: {
+    frame: { type: 'string', description: 'the frame\'s id' },
+    text: { type: 'string', description: 'the comment' },
   } },
 }
 
@@ -437,6 +449,13 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const set = board.members.set(a.name || me.name, { role, ...(a.about !== undefined ? { about: a.about } : role ? {} : { about: '' }) }, me.name)
       return JSON.stringify(set ? { member: set } : { removed: a.name || me.name })
     }
+    if (name === 'add_comment') {
+      const a = (args ?? {}) as { frame?: string, text?: string }
+      if (!board.comments) throw new Error('comments need a live board')
+      if ((board.store.get(String(a.frame)) as { isFrame?: boolean } | undefined)?.isFrame !== true) throw new Error(`${a.frame} is not a frame`)
+      const c = board.comments.add(String(a.frame), String(a.text ?? ''), me.name)
+      return JSON.stringify({ comment: c.id, frame: a.frame })
+    }
     if (name === 'snapshot_screen') {
       const s = await agent.snapScreen()
       return `A snapshot of ${s.sharer ? s.sharer + '\'s' : 'the shared'} screen is on the board: frame ${s.frame} ("${s.title}").`
@@ -475,7 +494,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const md = name === 'read_board' && (args as { format?: string } | null)?.format !== 'json'
       const team = md ? teamText(teamOf(board, me.name)) : '' // who does what
       const linked = md ? await linkedBoardsText(board) : '' // the boards its cards show
-      return (typeof result === 'string' ? result : JSON.stringify(result)) + [linked, team].filter(Boolean).map((t) => '\n\n' + t).join('')
+      const said = md && board.comments ? commentsText(board.store as never, board.comments) : '' // the threads on the drawings
+      return (typeof result === 'string' ? result : JSON.stringify(result)) + [linked, team, said].filter(Boolean).map((t) => '\n\n' + t).join('')
     }
     const area = work.get(requestId)?.area
     return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
@@ -556,7 +576,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, LOOK_AT_SCREEN, SNAPSHOT_SCREEN, POINT_AT, SET_ROLE],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, LOOK_AT_SCREEN, SNAPSHOT_SCREEN, POINT_AT, SET_ROLE, ADD_COMMENT],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -565,7 +585,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     },
     async runTool(requestId, name, args) {
       // by its cursor: reading or drawing, then back to thinking
-      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : name === 'set_role' ? 'editing' : 'drawing')
+      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : name === 'set_role' || name === 'add_comment' ? 'editing' : 'drawing')
       try { return await runBoardTool(requestId, name, args) } finally { agent.activity('thinking') }
     },
     lookAt(request) {

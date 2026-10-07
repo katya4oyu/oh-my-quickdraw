@@ -38,6 +38,7 @@
         "quickdraw-layouts": "/_/quickdraw-layouts/src/index.js",
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
+        "quickdraw-comments": "/_/quickdraw-comments/src/index.js",
         "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
         "quickdraw-clipboard": "/_/quickdraw-clipboard/src/index.js",
         "quickdraw-boards": "/_/quickdraw-boards/src/index.js",
@@ -66,6 +67,7 @@
     import { bindGifs } from 'quickdraw-gif'
     import { bindBoardCards, boardCardTools, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
+    import { bindComments, createComments, commentTools } from 'quickdraw-comments'
     import { createToolbar, labelsTool, MORE_ICON } from 'quickdraw-toolbar'
     import { createVersions } from '/versions.js'
     import { createAgentPanel, agentTools, buildAgentRequest, requestId, bindArrows } from 'quickdraw-agent'
@@ -267,6 +269,9 @@
     bindMemberCards(board.editor.store, members) // profile cards on the board show what the table says
     bindMemberCardEditing(board.editor, members, { me: () => presence.me() })
     const cardTools = memberTools({ members, agents: () => [...agents, ...presence.peers().filter((p) => p.agent && p.name)], me: () => presence.me() })
+    // comments: a thread on a frame, by its top-right corner (quickdraw-comments, in the board's doc)
+    const comments = createComments({ editor: board.editor, comments: bindComments(ydoc), me: () => presence.me() })
+    const commenting = commentTools(comments)
     // tickets: work left for agents; one is addressed to an agent here (joined, or waiting from the CLI)
     const tickets = ticketTools({
       agents: () => [...agents, ...presence.peers().filter((p) => p.agent && p.name)],
@@ -293,7 +298,7 @@
           exportTool(),
         ] },
       ],
-      context: [...ai.context, ...clip.context, ...boardCards.context, ...tickets.context, ...cardTools.context, ...frames.context, ...layouts.context, ...cards.context, ...web.context],
+      context: [...ai.context, ...clip.context, ...boardCards.context, ...tickets.context, ...cardTools.context, ...frames.context, ...commenting.context, ...layouts.context, ...cards.context, ...web.context],
     })
 
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it

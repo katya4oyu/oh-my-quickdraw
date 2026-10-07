@@ -121,6 +121,24 @@ describe('a session: an agent with a shell, on the board', () => {
     ws.close()
   }, 20_000)
 
+  it('comments on a frame: asks there, reads the answers, and read shows the threads', async () => {
+    const { url, run } = await setup()
+    const ann = await openBoard({ url, name: 'Ann' })
+    cleanupLater.push(() => ann.close())
+    const [frame] = await run('frame', 'Why the release slipped', '--at', '0,0', '--size', '600x400')
+    const [asked] = await run('comment', frame.ids[0], 'Left the test-env note out: a fourth cause would not fit. Keep it out?')
+    expect(asked).toMatchObject({ frame: frame.ids[0] })
+    await new Promise((r) => setTimeout(r, 200))
+    expect(ann.comments!.list(frame.ids[0])).toMatchObject([{ by: 'Claude', text: /fourth cause/ }])
+    ann.comments!.add(frame.ids[0], 'Keep it out: three causes.', 'Ann') // a person answers on the board
+    await new Promise((r) => setTimeout(r, 200))
+    const text = async (...args: string[]) => { const lines: string[] = []; await main(args, (l) => { lines.push(l) }); return lines.join('\n') }
+    const thread = await text('comments', '--frame', frame.ids[0])
+    expect(thread).toMatch(/### Frame "Why the release slipped" \(shape:\w+\)\n- Claude \([^)]+\): Left the test-env note out[^\n]*\n- Ann \([^)]+\): Keep it out: three causes\./)
+    expect(await text('read')).toContain('## Comments')
+    await expect(run('comment', 'shape:nope', 'hi')).rejects.toThrow(/needs a frame/)
+  }, 20_000)
+
   it('is on several boards at once, and always says which: requests come with their board, commands go to it', async () => {
     const { ws, agents, run, url } = await setup()
     const second = url.replace(/\/ws\/[^/]+$/, '/ws/' + app!.boards.create('Roadmap').id)

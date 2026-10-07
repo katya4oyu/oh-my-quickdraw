@@ -7,6 +7,7 @@ import type { BoardRecord, Store as StoreType } from '@quickdrawjs/core'
 import { installMeasure } from 'quickdraw-agent'
 import type { Relay } from './relay.ts'
 import type { Members } from 'quickdraw-members'
+import type { Comments } from 'quickdraw-comments'
 
 installMeasure() // before the core lays out any text
 
@@ -27,6 +28,8 @@ export interface Board {
   relay?: Relay
   /** a live board's agents and their roles (quickdraw-members) */
   members?: Members
+  /** a live board's comment threads on its frames (quickdraw-comments) */
+  comments?: Comments
   /** a live board's relay URL */
   url?: string
 }
@@ -53,7 +56,9 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     const { bindMembers } = await import('quickdraw-members')
     const members = bindMembers(ydoc)
     bindMemberCards(store, members) // profile cards show what the table says
-    return { store, cursor: relay.cursor, close: relay.close, relay, members, url }
+    const { bindComments } = await import('quickdraw-comments')
+    const comments = bindComments(ydoc)
+    return { store, cursor: relay.cursor, close: relay.close, relay, members, comments, url }
   }
   if (!file) throw new Error('open a board with { url } or { file }')
   let data: { document?: { store: Record<string, BoardRecord> }, shapes?: BoardRecord[], assets?: Record<string, BoardRecord> } | null = null

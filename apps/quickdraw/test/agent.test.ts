@@ -454,6 +454,25 @@ describe('work tickets', () => {
     expect(adaBoard.members!.get('Bo')).toBeNull() // for everyone
   }, 20_000)
 
+  it('asks in a frame\'s thread what it cannot decide; read_board shows the threads with the answers', async () => {
+    const app = createQuickdrawServer()
+    cleanup.push(() => app.close())
+    const { port } = await app.listen(0)
+    const url = `ws://127.0.0.1:${port}/ws/${app.boards.create('Comments').id}`
+    const person = await page(url)
+    const adaBoard = await openBoard({ url, name: 'Ada' })
+    const ada = await joinBoard(adaBoard, { id: 'ada', name: 'Ada', knows: [] })
+    cleanup.push(() => ada.close())
+    await person.until(() => person.agents.at(-1)?.length === 1)
+    person.send(ask('a1', 'ada', 'Draw why the release slipped'))
+    await settle()
+    const frame = JSON.parse(await ada.runTool('a1', 'add_frame', { title: 'Why the release slipped', w: 600, h: 400 })).ids[0]
+    expect(JSON.parse(await ada.runTool('a1', 'add_comment', { frame, text: 'Left the test-env note out. Keep it out?' }))).toMatchObject({ frame })
+    await expect(ada.runTool('a1', 'add_comment', { frame: 'shape:nope', text: 'hi' })).rejects.toThrow(/not a frame/)
+    adaBoard.comments!.add(frame, 'Keep it out.', 'Ann')
+    expect(await ada.runTool('a1', 'read_board', {})).toMatch(/## Comments[\s\S]*- Ada \([^)]+\): Left the test-env note out\. Keep it out\?\n- Ann \([^)]+\): Keep it out\./)
+  }, 20_000)
+
   it('joins with a Codex pet: its sheet goes on the board (smaller), the table points at it, and goes when it is taken off', async () => {
     const app = createQuickdrawServer()
     cleanup.push(() => app.close())
