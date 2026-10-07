@@ -22,7 +22,7 @@ omq area 2400 1400 --title "Meeting · 2026-10-06"
 
 - Title band: the theme as a `text` (`--text-size xl`), the date and the people under it (`s`). Fill in the theme when it is clear (`update --text`); a working title until then.
 - Flow: the conversation in order. A bento grid with a column per topic works well (`omq bento --cols 4`), or frames in a row.
-- The right column: three frames — **Decided** (green), **Open** (red), **Actions** (blue, "who: what, by when"). These are what people look for after the meeting; collect them here as they happen, wherever they were said.
+- The right column: a frame with `arrange: "column"` holding three frames that each line up a column — **Decided** (green), **Open** (red), **Actions** (blue, "who: what, by when"); add to them with `in`. These are what people look for after the meeting; collect them here as they happen, wherever they were said.
 
 ## 2. Add as it happens
 

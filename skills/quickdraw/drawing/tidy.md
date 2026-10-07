@@ -13,7 +13,7 @@ What people made may be moved and edited when asked to tidy, never deleted (ask 
 1. Read the items for what they **mean**, not the words they share.
 2. Put each item in a group; one item per group. Items that fit nowhere go in a small "Other" group — not forced into a group they do not belong to.
 3. Name each group by what it says: a short sentence ("Onboarding is slow"), not a category ("Onboarding").
-4. Lay out with the affinity pattern (`patterns.md`): each group arranged, framed with its name, and the frames lined up. Duplicates sit next to each other in their group.
+4. Lay out with the affinity pattern (`patterns.md`): a frame that lines the groups up in a row, a column frame per group named by its meaning, and each note moved `in` its group (`omq move ID --in GROUP`). Duplicates sit next to each other in their group.
 
 ## 3. Relate and conclude
 
