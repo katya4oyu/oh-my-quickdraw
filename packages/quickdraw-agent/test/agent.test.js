@@ -933,3 +933,54 @@ describe('there and back', () => {
     expect(Math.abs(ys[0] - ys[1])).toBeGreaterThan(20)
   })
 })
+
+describe('placed by what it is joined to, and by the frame it goes in', () => {
+  it('puts a shape next to another, joined by an arrow, further along when the spot is taken; nothing else moves', () => {
+    const store = board()
+    const [b] = applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'B', w: 160, h: 80, at: { x: 0, y: 0 } }]).result
+    const [blocker] = applySteps(store, 'C', [{ do: 'note', text: 'in the way', at: { x: 240, y: -60 } }]).result
+    const before = store.get(blocker)
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 160, h: 80, from: b, side: 'right', label: 'calls', ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 160, h: 80, from: b, side: 'below' },
+    ]))
+    const [a, c] = r.result
+    const ab = pageBounds(store.get(a)), bb = pageBounds(store.get(b)), cb = pageBounds(store.get(c))
+    expect(ab.x).toBeGreaterThan(bb.x + bb.w) // to its right, clear of the note in the way and of the arrow's way to it
+    const nb = pageBounds(before)
+    expect(ab.x >= nb.x + nb.w || ab.y >= nb.y + nb.h || ab.y + ab.h <= nb.y || ab.x + ab.w <= nb.x).toBe(true)
+    expect(cb.y).toBeGreaterThan(bb.y + bb.h)
+    expect(store.get(blocker)).toEqual(before) // nothing else moved
+    expect(describeBoard(store).arrows).toEqual(expect.arrayContaining([expect.objectContaining({ from: b, to: a, label: 'calls' }), expect.objectContaining({ from: b, to: c })]))
+    expect(r.check?.problems ?? []).toEqual([])
+  })
+
+  it('lines up what is put in a frame that arranges, frames in frames too, and the frame grows to hold it', () => {
+    const store = board()
+    const [col] = applySteps(store, 'C', [{ do: 'frame', title: 'Actions', arrange: 'column', w: 300, h: 100, at: { x: 0, y: 0 } }]).result
+    const ids = applySteps(store, 'C', ['Ren', 'Sora', 'Taku'].map((t) => ({ do: 'shape', shape: 'rectangle', text: t, w: 200, h: 60, in: col }))).result
+    const ys = ids.map((id) => store.get(id).y)
+    expect(ys[1]).toBeGreaterThan(ys[0] + 60)
+    expect(ys[2]).toBeGreaterThan(ys[1] + 60)
+    expect(new Set(ids.map((id) => store.get(id).x)).size).toBe(1) // one column
+    const fb = pageBounds(store.get(col))
+    expect(fb.y + fb.h).toBeGreaterThanOrEqual(ys[2] + 60) // grown to hold them
+    // a row of frames, each lining up its own
+    const [row] = applySteps(store, 'C', [{ do: 'frame', title: 'Board', arrange: 'row', w: 200, h: 100, at: { x: 0, y: 600 } }]).result
+    const [p, q] = applySteps(store, 'C', [{ do: 'frame', title: 'Decided', arrange: 'column', w: 220, h: 80, in: row }, { do: 'frame', title: 'Open', arrange: 'column', w: 220, h: 80, in: row }]).result
+    expect(store.get(q).x).toBeGreaterThan(store.get(p).x + 220)
+    expect(store.get(p).frameId).toBe(row)
+    applySteps(store, 'C', [{ do: 'note', text: 'Ship v2', in: p }, { do: 'note', text: 'Drop old API', in: p }])
+    expect(lintBoard(store).map((i) => i.text)).toEqual([])
+    expect(boardToMarkdown(store)).toMatch(/lines up what is put in it: column/)
+  })
+
+  it('as written, moves only what was just written', () => {
+    const store = board()
+    const [old] = applySteps(store, 'C', [{ do: 'note', text: 'old', at: { x: 100, y: 0 } }]).result
+    const before = store.get(old)
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'note', text: 'new', at: { x: 0, y: 0 } }])) // earlier in reading order than old
+    expect(store.get(old)).toEqual(before) // the old one stays
+    expect(r.check.fixed.join()).toMatch(/moved note "new"/)
+  })
+})

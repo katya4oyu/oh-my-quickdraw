@@ -73,6 +73,7 @@ export function describeBoard(store) {
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     ...(f.frameId && isFrame(store.get(f.frameId)) ? { frame: f.frameId } : {}), // in another frame
     ...(f.titleInside ? { title_inside: true } : {}),
+    ...(f.arrange ? { arrange: f.arrange.by } : {}), // lines up what is put in it
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   // bento grids (quickdraw-layouts): their cells are frames, in order
@@ -128,7 +129,7 @@ export function boardToMarkdown(store) {
     const kind = f.snapshot ? 'snapshot of a shared screen; its notes and marks are feedback'
       : f.kanban ? `kanban column: ${f.kanban.status} tickets`
       : f.cell ? `bento cell ${f.cell.c}×${f.cell.r}${f.cell.auto ? ', rows follow its contents' : ''} in ${f.cell.layout}`
-      : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
+      : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}${f.arrange ? `, lines up what is put in it: ${f.arrange}` : ''}`
     const inside = f.frame ? `, in ${titles.get(f.frame)}` : ''
     out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${kind}${inside}; id ${f.id})`, '')
     const members = f.members.map((id) => byId.get(id)).filter(Boolean)
@@ -211,6 +212,18 @@ export function labelSpot(arrow, w, h, { other = false } = {}) {
 
 const isLabelled = (store, arrowId) => store.shapes().some((l) => l.labelOf === arrowId)
 
+// does the segment p→q pass through rect r?
+function segmentHits(p, q, r) {
+  let t0 = 0, t1 = 1
+  const dx = q.x - p.x, dy = q.y - p.y
+  for (const [a, b] of [[-dx, p.x - r.x], [dx, r.x + r.w - p.x], [-dy, p.y - r.y], [dy, r.y + r.h - p.y]]) {
+    if (a === 0) { if (b < 0) return false; continue }
+    const t = b / a
+    if (a < 0) { if (t > t1) return false; if (t > t0) t0 = t } else { if (t < t0) return false; if (t < t1) t1 = t }
+  }
+  return t1 >= t0
+}
+
 /** Puts arrows' labels by their arrows again (all of them, or those of `arrowIds`), wrapped to fit beside them; returns the records that changed. */
 export function labelsFollow(store, arrowIds) {
   const out = []
@@ -264,6 +277,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     if (inFrame) {
       const f = need(inFrame)
       if (!isFrame(f)) throw new Error(`${inFrame} is not a frame`)
+      if (f.arrange) return nextInLine(f, w, h)
       const fb = pageBounds(f)
       // its members, and what lies on it but is not one yet: what this operation
       // put there (membership follows only once the operation is done)
@@ -333,10 +347,76 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     return store.get(rec.id) ?? store.shapes().at(-1)
   }
   function add(type, props, w, h, opts) {
-    const at = opts.at ?? place(w, h, opts)
+    const anchor = opts.from ?? opts.to
+    const at = opts.at ?? (anchor ? beside(anchor, w, h, opts) : place(w, h, opts))
     const id = newId()
     put({ id, type, x: at.x, y: at.y, props, ...member(opts) })
+    // put next to a shape it is joined to: the arrow made with it (from that shape, or `to` it)
+    if (anchor) ops.arrow(opts.from ? anchor : id, opts.from ? id : anchor, { label: opts.label, line: opts.line, textSize: opts.labelSize })
     return id
+  }
+
+  // Where a shape joined to `anchorId` by an arrow goes: on its `side` (right, left, below, above),
+  // `gap` from it, centred on it. When that spot is taken — the shape, or the way the arrow runs to it —
+  // the nearest free one on that side: a little across, then further out. Nothing else moves.
+  function beside(anchorId, w, h, { side = 'right', gap = 80, label } = {}) {
+    if (!['right', 'left', 'below', 'above'].includes(side)) throw new Error(`side is right, left, below or above (not "${side}")`)
+    const a = need(anchorId), b = isFrame(a) ? withTitle(store, a) : pageBounds(a)
+    const [dx, dy] = { right: [1, 0], left: [-1, 0], below: [0, 1], above: [0, -1] }[side]
+    const taken = store.shapes().filter((s) => s.typeName === 'shape' && s.id !== a.id && !isLine(s) && !isFrame(s) && !isLayout(s) && !isLabel(s)).map((s) => withTitle(store, s))
+    const from = { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+    const way = label ? 40 : 8 // the arrow's way, wider for its label
+    const free = (r) => !taken.some((t) => intersects(r, t, 16)) && !taken.some((t) => segmentHits(from, { x: r.x + r.w / 2, y: r.y + r.h / 2 }, { x: t.x - way, y: t.y - way, w: t.w + way * 2, h: t.h + way * 2 }))
+    const step = dx ? h + 24 : w + 24 // across the side
+    for (let out = 0; out < 12; out++) for (const k of [0, 1, -1, 2, -2]) {
+      const far = gap + out * ((dx ? w : h) + gap) / 2
+      const r = {
+        x: dx > 0 ? b.x + b.w + far : dx < 0 ? b.x - far - w : b.x + b.w / 2 - w / 2 + k * step,
+        y: dy > 0 ? b.y + b.h + far : dy < 0 ? b.y - far - h : b.y + b.h / 2 - h / 2 + k * step,
+        w, h,
+      }
+      if (free(r)) return { x: round(r.x), y: round(r.y) }
+    }
+    return { x: round(dx > 0 ? b.x + b.w + gap : dx < 0 ? b.x - gap - w : b.x + b.w / 2 - w / 2), y: round(dy > 0 ? b.y + b.h + gap : dy < 0 ? b.y - gap - h : b.y + b.h / 2 - h / 2) }
+  }
+
+  // The next place in a frame that lines up what is in it (`arrange`: row, column, or grid — rows that
+  // wrap at its width): after its last member. The frame grows to hold it (its own size only).
+  function nextInLine(f, w, h) {
+    const { by, gap = 24 } = f.arrange
+    const PAD_ = 24, top = f.titleInside ? 48 : PAD_
+    const members = store.shapes().filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s) && !isLabel(s)).map((s) => withTitle(store, s))
+    const fb = pageBounds(f)
+    const right = members.length ? Math.max(...members.map((m) => m.x + m.w)) : fb.x + PAD_ - gap
+    const bottom = members.length ? Math.max(...members.map((m) => m.y + m.h)) : fb.y + top - gap
+    let at
+    if (by === 'column') at = { x: fb.x + PAD_, y: bottom + gap }
+    else if (by === 'row' || !members.length) at = { x: right + gap, y: fb.y + top }
+    else { // grid: on along the last row, else a new row under everything
+      const last = members.reduce((p, m) => (m.y > p.y || (m.y === p.y && m.x > p.x) ? m : p))
+      const rowTop = last.y, rowRight = Math.max(...members.filter((m) => Math.abs(m.y - rowTop) < 2).map((m) => m.x + m.w))
+      at = rowRight + gap + w <= fb.x + fb.w - PAD_ ? { x: rowRight + gap, y: rowTop } : { x: fb.x + PAD_, y: bottom + gap }
+    }
+    grow(f, at.x + w + PAD_ - fb.x, at.y + h + PAD_ - fb.y)
+    return at
+  }
+  // An arranged frame grows to `w` × `h` (never shrinks); in an arranged frame itself, what comes after
+  // it in that line moves along by as much, and that frame grows to hold it — the group, and only it.
+  function grow(f, w, h) {
+    const dw = Math.max(0, w - f.props.w), dh = Math.max(0, h - f.props.h)
+    if (!dw && !dh) return
+    if (f.aspect) throw new Error(`frame ${f.id} keeps its shape (${f.aspect}): it cannot grow to hold more`)
+    store.update(f.id, { props: { w: f.props.w + dw, h: f.props.h + dh } })
+    const parent = f.frameId && store.get(f.frameId)
+    if (!parent?.arrange) return
+    const me = pageBounds(store.get(f.id)), by = parent.arrange.by
+    for (const s of store.shapes().filter((s) => s.frameId === parent.id && s.id !== f.id && !isTitle(s) && !isLine(s) && !isLabel(s))) {
+      const b = pageBounds(s)
+      const after = by === 'column' ? b.y >= me.y + me.h - dh - 1 : by === 'row' ? b.x >= me.x + me.w - dw - 1 : b.y > me.y + 1
+      if (after && (by === 'row' ? dw : dh)) shift(s.id, by === 'row' ? dw : 0, by === 'row' ? 0 : dh)
+    }
+    const pb = pageBounds(parent), inside = store.shapes().filter((s) => s.frameId === parent.id && !isTitle(s)).map((s) => withTitle(store, s))
+    grow(store.get(parent.id), Math.max(...inside.map((b) => b.x + b.w)) + 24 - pb.x, Math.max(...inside.map((b) => b.y + b.h)) + 24 - pb.y)
   }
   // put in a frame: a member at once, so a cell that grows later in the same
   // operation (and moves the cells after it) takes it along
@@ -463,7 +543,8 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       if (opts.span || opts.auto) throw new Error('span and auto are for a cell: put the frame in a bento grid (in: its id)')
       const aspect = parseRatio(opts.aspect)
       let { x, y } = opts.at ?? {}
-      let w = opts.w ?? 480, h = opts.h ?? (aspect ? w / aspect : 320)
+      // one that lines up what is put in it starts small and grows with it
+      let w = opts.w ?? (opts.arrange ? 120 : 480), h = opts.h ?? (aspect ? w / aspect : opts.arrange ? 80 : 320)
       if (opts.around?.length) {
         const bs = opts.around.map((id) => pageBounds(need(id)))
         const pad = 32
@@ -474,10 +555,14 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         if (aspect) { if (w / h < aspect) w = h * aspect; else h = w / aspect }
       } else if (x == null) ({ x, y } = place(w, h + 40, { inFrame: opts.inFrame })) // in a frame: a frame in it
       const id = createFrame(store, { x, y: opts.around?.length || opts.at ? y : y + 40, w, h, aspect, title: String(title), titleInside: !!opts.titleInside })
-      store.update(id, { agent })
+      store.update(id, { agent, ...(opts.inFrame && !opts.at && !opts.around?.length ? { frameId: opts.inFrame } : {}) }) // in a frame: a member at once (the next one lines up after it)
       store.update(id + '-title', { agent })
       made.add(id)
       for (const m of opts.around ?? []) if (!isLine(store.get(m))) store.update(m, { frameId: id }) // what it was put around is in it now
+      if (opts.arrange) {
+        if (!['row', 'column', 'grid'].includes(opts.arrange)) throw new Error(`arrange is row, column or grid (not "${opts.arrange}")`)
+        store.update(id, { arrange: { by: opts.arrange, ...(opts.gap != null ? { gap: Number(opts.gap) } : {}) } })
+      }
       focus = { x, y }
       return id
     },
@@ -564,8 +649,16 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       return id
     },
     // to { x, y }, or by { dx, dy }; a frame brings its members
-    move(id, { x, y, dx = 0, dy = 0 } = {}) {
+    move(id, { x, y, dx = 0, dy = 0, inFrame } = {}) {
       const s = need(id)
+      // into a frame: its next place (after the last, in one that lines things up), and a member at once
+      if (inFrame) {
+        const b = pageBounds(s), at = place(b.w, b.h, { inFrame })
+        shift(id, at.x - b.x, at.y - b.y)
+        store.update(id, { frameId: inFrame })
+        focus = at
+        return id
+      }
       shift(id, (x ?? s.x + dx) - s.x, (y ?? s.y + dy) - s.y)
       focus = { x: x ?? s.x + dx, y: y ?? s.y + dy }
       return id
@@ -796,7 +889,9 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
   return runOp(store, name, (ops) => {
     const refs = {}
     const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
-    const opts = (s) => ({ color: s.color, at: s.at, w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
+    const opts = (s) => ({ color: s.color, at: s.at, w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in),
+      // joined to a shape by an arrow, and put next to it: from (or to) it, on a side, a gap away
+      from: r(s.from), to: r(s.to), side: s.side, gap: s.gap, label: s.label, line: s.line, labelSize: s.label_size })
     return steps.map((s, i) => {
       let out
       switch (s.do) {
@@ -809,13 +904,13 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'board': out = ops.board({ board: s.board, title: s.title, live: s.live }, opts(s)); break
         case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
         case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
-        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto, titleInside: s.title_inside ?? s.titleInside }); break
+        case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto, titleInside: s.title_inside ?? s.titleInside, arrange: s.arrange }); break
         case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: s.at }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
-        case 'move': out = ops.move(r(s.id), s); break
+        case 'move': out = ops.move(r(s.id), { ...s, inFrame: r(s.in) }); break
         case 'arrange': out = ops.arrange(s.ids.map(r), s); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
         case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points, color: s.color, size: s.size }); break

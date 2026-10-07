@@ -22,6 +22,14 @@ const dash = { type: 'string', enum: DASH_IDS, description: 'line style: draw (h
 const fill = { type: 'string', enum: FILL_IDS, description: 'none; semi; solid (a light tint: for what matters most); pattern (hatched: undecided, out of scope)' }
 const bend = { type: 'number', description: 'how far the middle bows out, in page units: + to the right as it goes, - to the left; 0 straight' }
 const label = str('a word or two by the arrow\'s middle ("causes", "yes"); it follows the arrow')
+// put next to a shape, joined to it by an arrow: no coordinates to work out
+const joined = {
+  from: str('a shape id: put this next to it, with an arrow from it'),
+  to: str('a shape id: put this next to it, with an arrow to it'),
+  side: { type: 'string', enum: ['right', 'left', 'below', 'above'], description: 'which side of that shape (right by default); a taken spot moves it further that way' },
+  gap: { type: 'number', description: 'how far from it (80)' },
+  label: str('the arrow\'s label'),
+}
 
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
 
@@ -59,9 +67,9 @@ export const BOARD_TOOLS = [
       return { op: r.op, diff: r.diff, focus: r.focus, ids: Object.keys(r.diff.updated), text: fixText(r) }
     },
   },
-  step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), text_size: textSize, ...placement }, ['text']),
-  step('add_text', 'text', 'A line of text, such as a heading (text_size l or xl).', { text: str(), text_size: textSize, ...placement }, ['text']),
-  step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, text_size: textSize, dash, fill, ...placement }, ['shape']),
+  step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), text_size: textSize, ...placement, ...joined }, ['text']),
+  step('add_text', 'text', 'A line of text, such as a heading (text_size l or xl).', { text: str(), text_size: textSize, ...placement, ...joined }, ['text']),
+  step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, text_size: textSize, dash, fill, ...placement, ...joined }, ['shape']),
   step('add_markdown', 'markdown', 'A Markdown card, for longer text.', { text: str('the Markdown'), w: num, ...placement }, ['text']),
   step('add_embed', 'embed', 'A web page, a link card or a small HTML page on the board. A page from an allowed site (YouTube, Vimeo, Figma, CodePen, Google Maps) plays live; any other URL shows as a link card (its title and picture), as does `link: true`. '
     + '`html` is a self-contained page (inline scripts and styles, no network) that runs only when a viewer presses Run: for a small prototype or a demo.', {
@@ -72,6 +80,8 @@ export const BOARD_TOOLS = [
     title: str(), aspect: str('like 16:9'), around: ids('shapes to enclose'), at: point, w: num, h: num,
     in: str('a frame id (a frame in it), or a bento grid id (a cell of it)'), span,
     title_inside: { type: 'boolean', description: 'its title just inside its top-left corner, not above it (handy for a frame in a frame, or with something just above)' }, auto: { type: 'boolean', description: 'a cell whose rows follow what is in it' },
+    arrange: { type: 'string', enum: ['row', 'column', 'grid'], description: 'line up what is put in it (`in`): each after the last, in a row, a column, or rows that wrap at its width; it grows to hold them' },
+    gap: { type: 'number', description: 'with arrange: the space between them (24)' },
   }, ['title']),
   step('add_bento', 'layout', 'A bento grid: an area whose frames (cells) pack themselves with no gaps, in `cols` columns. Make one when a piece of work will grow: '
     + 'add cells with add_frame (in: its id, span: 2x1…), fill them with in: a cell, and when one gets crowded give it more span (or it grows a row by itself when full) — the cells after it move along, and the grid grows. Its height follows its cells.', {

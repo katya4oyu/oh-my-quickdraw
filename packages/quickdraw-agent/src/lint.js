@@ -322,7 +322,8 @@ function bestWay(store, s, sb, ob) {
  * `fixed` (what it did, as text) and `left` (the issues still there).
  */
 export function fixLayout(store, name, scope = {}) {
-  const mine = (id) => { const s = store.get(id); return s?.agent && !isTitle(s) && !isLabel(s) ? s : null } // a label stays by its arrow
+  // what it may move: agents' shapes (a label stays by its arrow); as written, only what was just written, and no frame
+  const mine = (id) => { const s = store.get(id); return s?.agent && !isTitle(s) && !isLabel(s) && (!scope.movable || (scope.movable.has(id) && !isFrame(s))) ? s : null }
   const doing = (kind) => (scope.only ? scope.only.has(kind) : FIXABLE.has(kind)) // `only`: just these kinds
   const can = (i) => doing(i.kind) && i.ids.some((id) => mine(id) && (i.kind === 'frames-overlap' || !isFrame(store.get(id))))
   if (!lintBoard(store, scope).some(can)) return null
@@ -467,7 +468,7 @@ export function checkWritten(store, name, done, { words = 'tools', fix = true } 
   if (!ids.length) return done
   // fixed as written: only what changes nothing anyone would judge (shapes off each other, in their frame, a cramped label given a little room);
   // a label's fit, an arrow's way, are said with what to do — how to fix them is the agent's choice
-  const f = fix ? fixLayout(store, name, { ids, words, only: AS_WRITTEN, keepLayout: true }) : null
+  const f = fix ? fixLayout(store, name, { ids, words, only: AS_WRITTEN, keepLayout: true, movable: new Set(ids) }) : null // what was not just written stays where it is
   const left = f ? f.left : lintBoard(store, { ids, words })
   const check = { ...(f?.fixed.length ? { fixed: f.fixed } : {}), ...(left.length ? { problems: left.map((i) => i.text) } : {}) }
   return { ...done, ...(f ? { diff: mergeDiff(done.diff, f.diff) } : {}), ...(Object.keys(check).length ? { check } : {}) }

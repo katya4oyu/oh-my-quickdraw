@@ -55,7 +55,12 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
   - the word on an arrow ("causes", "yes"): the arrow's `label` (it follows the arrow); arrows that would cross: `bend` one round the other
   - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
 
-Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin in free space first — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes) — and add it to the offsets in `patterns.md`.
+**Place by relation, not by coordinates.** Two ways, both with no numbers to work out:
+
+- *Joined*: put a shape next to the one it follows, with the arrow between them in the same step — `{ "do": "shape", "text": "Verify", "from": "@a", "side": "right" }` (`side`: right, left, below, above; `gap`, 80 by default; `label`: the arrow's). A taken spot moves it to the nearest free one on that side; nothing else moves.
+- *Grouped*: things that line up go in a frame that arranges them — `{ "do": "frame", "title": "Actions", "arrange": "column" }` (row, column, or grid: rows that wrap), then add each with `"in": "@actions"`: each goes after the last, and the frame grows to hold them. Frames go in frames the same way: a row of column frames is a board of lists.
+
+`at` (board coordinates) is left for the few things only you can place: the first shape of a drawing (in a joined session, your `area`), or a deliberate offset.
 
 ## 4. Check
 

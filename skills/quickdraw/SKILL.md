@@ -72,6 +72,9 @@ omq board-card BOARD_ID [--live]                  # another board in this one: a
                                                         # read lists the boards on cards: title, frames, how much is in them
 omq frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
                                                         # --title-inside: its title inside its top-left corner, not above
+omq shape rectangle "Next" --from ID [--side right|left|below|above] [--label "then"]   # next to ID, joined by an arrow: no coordinates
+omq frame "Actions" --arrange column            # lines up what is put in it (--in): row, column, or grid; it grows with it
+omq move ID --in FRAME_ID                         # into a frame, at its next place
 omq arrow FROM_ID TO_ID [--line]                # follows the shapes when they move in later operations; --line: no arrowhead
 omq arrow FROM_ID TO_ID --label "causes" [--bend 40] [--dash dashed]   # a label by its middle (it follows the arrow); bend: + bows right as it goes, - left
 ```
@@ -167,7 +170,7 @@ Write the steps as JSON and apply them as **one** operation (one undo). Name wha
 omq apply steps.json      # or: … apply - < steps.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`, `at`), `span` (`id`, `span`, `auto`), `columns` (`id`, `cols`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update` (`id`, `text`, `color`, `text_size`, `dash`, `fill`, `bend`, `label`; `label: ""` takes an arrow's off), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`; style keys: `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes). If any step fails, nothing is applied.
+Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`, `at`), `span` (`id`, `span`, `auto`), `columns` (`id`, `cols`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `note`/`text`/`shape` with `from` (or `to`), `side`, `gap`, `label` (put next to that shape, joined by an arrow), `frame` with `arrange` (row, column, grid), `move` with `in`, `update` (`id`, `text`, `color`, `text_size`, `dash`, `fill`, `bend`, `label`; `label: ""` takes an arrow's off), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`; style keys: `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes). If any step fails, nothing is applied.
 
 ## Change and tidy
 
