@@ -10,6 +10,7 @@ import { openBoard, type Board } from '../board/open.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { teamOf, teamText } from '../board/team.ts'
+import { commentsText } from 'quickdraw-comments'
 import { linkedBoardsText } from '../board/linked.ts'
 import { isPath, listPets, setPet } from '../board/avatar.ts'
 import { pageBounds } from '@quickdrawjs/core'
@@ -160,6 +161,12 @@ there for and hands the rest to the one whose role fits; people and agents both 
   avatar --list                           the pets installed for Codex (~/.codex/pets)
   join … --role ROLE --avatar PET         joins with a role and a pet
 
+Comments (live boards): a thread on a frame, which people see on the board and answer there
+  comments [--frame ID]                   the threads (of one frame); read also shows them: read a drawing's
+                                          before you change it, and follow what was agreed
+  comment FRAME_ID TEXT                   adds to a frame's thread: ask what you cannot decide on your own
+                                          (what to leave out or stress), and say what you did meanwhile
+
 History
   log                                       this board's operations, newest last
   undo [OP]                                 the last operation (or OP), where untouched since
@@ -258,7 +265,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -372,7 +379,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         if (o.format === 'json') return out(jsonLines(describeBoard(store)))
         const team = live ? teamText(teamOf(board, o.name)) : '' // who does what
         const linked = live ? await linkedBoardsText(board) : '' // the boards its cards show
-        return out(boardToMarkdown(store) + [linked, team].filter(Boolean).map((t) => '\n\n' + t).join(''))
+        const said = board.comments ? commentsText(store, board.comments) : '' // the threads on the drawings
+        return out(boardToMarkdown(store) + [linked, team, said].filter(Boolean).map((t) => '\n\n' + t).join(''))
       }
       case 'members':
         needsLive()
@@ -386,6 +394,18 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         if (live) await sleep(300)
         const pet = set?.avatar as { name?: string } | null | undefined
         return out(JSON.stringify({ name: who, avatar: pet?.name ?? null }))
+      }
+      case 'comments':
+        needsLive()
+        return out(commentsText(store, board.comments!, { frames: o.frame ? [o.frame] : undefined }) || `No comments${o.frame ? ` on ${o.frame}` : ''}.`)
+      case 'comment': {
+        needsLive()
+        const [frame, ...words] = args
+        if (!frame || (store.get(frame) as { isFrame?: boolean } | undefined)?.isFrame !== true) throw new Error('comment needs a frame\'s id (omq read lists them), then the text')
+        if (!words.length) throw new Error('comment needs some text')
+        const c = board.comments!.add(frame, words.join(' '), o.name)
+        if (live) await sleep(300) // out to the others before the board closes
+        return out(JSON.stringify({ comment: c.id, frame }))
       }
       case 'role': {
         needsLive()

@@ -1,0 +1,33 @@
+{
+  "name": "quickdraw-comments",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Comment threads on a Quickdraw board's frames, kept in the board's Yjs document: agents ask what they cannot decide, people answer, and whoever works on the drawing next reads them.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "quickdraw-frames": "*",
+    "vitest": "^3.2.7",
+    "yjs": "^13.6.33"
+  },
+  "license": "MIT"
+}

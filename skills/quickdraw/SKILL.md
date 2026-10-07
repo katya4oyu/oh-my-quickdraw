@@ -213,3 +213,4 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 - Prefer one `apply` for anything with several parts, so the person can undo it at once.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).
+- **Comments** (live boards): a frame may have a thread — what was meant or asked about that drawing, and people's answers; `read` ends with them. Before you change a drawing, read its thread and follow what was agreed. When you cannot decide on your own what a drawing should say or stress (what to leave out, what to make stand out, what to do when text does not fit), ask in its thread — `omq comment FRAME_ID "…"`, saying what you did meanwhile — and go on; people answer there. `omq comments [--frame ID]` lists the threads.
