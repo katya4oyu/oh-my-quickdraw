@@ -6,7 +6,7 @@ What people made may be moved and edited when asked to tidy, never deleted (ask 
 
 ## 1. Read
 
-`omq read` (and `export --format png` for sketches and pen strokes text cannot show). List every item people made in the region you were asked about, with its id. The step is done when every item is in your list.
+`omq read` (and `omq look` for sketches and pen strokes text cannot show). List every item people made in the region you were asked about, with its id. The step is done when every item is in your list.
 
 ## 2. Group (affinity)
 
@@ -22,4 +22,4 @@ What people made may be moved and edited when asked to tidy, never deleted (ask 
 
 ## 4. Check
 
-`lint --fix` (it touches only what agents made), then fix the rest with `move` and `arrange`, `export` and look. Tell the person how many items went into which groups, and what you concluded.
+`lint --fix` (it touches only what agents made), then fix the rest with `move` and `arrange`, then `omq look` once. Tell the person how many items went into which groups, and what you concluded.

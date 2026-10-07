@@ -59,11 +59,10 @@ Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin 
 
 ## 4. Check
 
-After each drawing:
+Once a drawing is done (not after every step):
 
 1. `omq lint --ids …` (what you just made) and fix what it lists. An overlap you meant (a Venn) can stay.
-2. `omq export --format png --frame FRAME_ID --out check.png` (or `--ids`) and look at it.
-3. Go through the picture with these questions, and fix what fails:
+2. `omq look --frame FRAME_ID` (or `--ids`): a small picture. Go through it with these questions, and fix what fails:
    - Can the theme be read in three seconds?
    - Does the eye know where to start and where to go next?
    - Do any arrows cross each other or run across shapes?
