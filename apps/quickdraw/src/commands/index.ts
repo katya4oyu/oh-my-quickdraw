@@ -53,6 +53,9 @@ Writing (each command is one operation, undoable as a whole)
   note TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
   text TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
                                           --text-size: how big the words are, s m l xl (a heading: l, xl)
+  note|text|shape … --from ID [--side right|left|below|above] [--gap 80] [--label TEXT]
+                                          put it next to ID, joined by an arrow from it: no coordinates;
+                                          a taken spot moves it further that way, nothing else moves
   shape KIND [LABEL] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--in FRAME] [--at X,Y]
                                           KIND: rectangle, ellipse, …; --dash: draw solid dashed dotted;
                                           --fill: none semi solid (a light tint) pattern (hatched)
@@ -69,7 +72,7 @@ Writing (each command is one operation, undoable as a whole)
                                           a PNG, JPEG, GIF, WebP or SVG in the working directory
   image FILE --split COLSxROWS [--inset 0.1] [--width N] [--frame TITLE] [--at X,Y]
                                           a sheet cut into its cells, laid out as on the sheet
-  frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH] [--in FRAME] [--title-inside]
+  frame TITLE [--aspect 16:9] [--around ID,ID,…] [--at X,Y] [--size WxH] [--in FRAME] [--title-inside] [--arrange row|column|grid]
                                           --in FRAME: a frame in that frame (frames nest); --title-inside: its title
                                           inside its top-left corner, not above it
   frame TITLE --in BENTO [--span 2x1] [--auto]
@@ -88,7 +91,7 @@ Writing (each command is one operation, undoable as a whole)
   update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--bend N] [--label TEXT]
                                           --size: a shape's size (not a frame's; a cell: span);
                                           --label "": takes an arrow's label off
-  move ID (--to X,Y | --by DX,DY)
+  move ID (--to X,Y | --by DX,DY | --in FRAME)   --in: into a frame, at its next place
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
                                           to fit inside it (the frame keeps its size)
@@ -191,6 +194,9 @@ async function log(entry: LogEntry) {
   await appendFile(logFile(), JSON.stringify(entry) + '\n')
 }
 
+// "\n" typed in a shell argument is two characters, not a line break: as everyone means it, a line break
+const lines = (s: string) => s.replace(/\\n/g, '\n')
+
 /**
  * JSON for an agent to read: no indentation, but each top-level field, and each
  * element of a top-level list, on a line of its own — one long line gets cut
@@ -253,7 +259,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, 'no-fix': { type: 'boolean' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, 'no-fix': { type: 'boolean' }, from: { type: 'string' }, side: { type: 'string' }, arrange: { type: 'string' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
@@ -283,7 +289,14 @@ export interface CommandContext {
 }
 
 export const parseCommand = (argv: string[]) => {
-  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: argv, allowPositionals: true, options: OPTIONS })
+  // an option's value may be a negative number (--bend -60, --by -20,0): joined to it, as --bend=-60
+  const joined: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    const name = argv[i].startsWith('--') && !argv[i].includes('=') ? argv[i].slice(2) : null
+    if (name && (OPTIONS as Record<string, { type: string }>)[name]?.type === 'string' && /^-\d/.test(argv[i + 1] ?? '')) joined.push(`${argv[i]}=${argv[++i]}`)
+    else joined.push(argv[i])
+  }
+  const { values: o, positionals: [cmd, ...args] } = parseArgs({ args: joined, allowPositionals: true, options: OPTIONS })
   return { o, cmd, args }
 }
 
@@ -354,7 +367,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     const textSize = o['text-size'] as TextSize | undefined, dash = o.dash as Dash | undefined
     const style = { textSize, dash, fill: o.fill as Fill | undefined } // the operations check them
     const bend = o.bend == null ? undefined : Number(o.bend)
-    const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}), ...style }
+    const common = { color, at: point(o.at), inFrame: o.in, ...(size ? { w: size[0], h: size[1] } : {}), ...style,
+      ...(o.from ? { from: o.from, side: o.side as 'right' | 'left' | 'below' | 'above' | undefined, gap: o.gap ? Number(o.gap) : undefined, label: o.label && lines(o.label) } : {}) } // next to a shape, joined by an arrow
     let done: Operation<unknown>
     // the operations of a command, in a work area when it has one
     // where what has no place goes: a work area, else near where people look (in a session), else right of everything
@@ -433,11 +447,11 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return out(JSON.stringify({ undone: entry.op, ...r }))
       }
       case 'note': case 'text':
-        done = await op((ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
+        done = await op((ops) => ops[cmd as 'note' | 'text'](lines(args.join(' ')), common)); break
       case 'shape':
-        done = await op((ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
+        done = await op((ops) => ops.shape(args[0] as GeoId, lines(args.slice(1).join(' ')), common)); break
       case 'markdown': {
-        const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
+        const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : lines(args.join(' '))
         done = await op((ops) => ops.markdown(md, common)); break
       }
       case 'board-card': {
@@ -466,7 +480,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await written((s, where) => applySteps(s, o.name, steps as never, where)); break
       }
       case 'frame':
-        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto, titleInside: o['title-inside'] })); break
+        done = await op((ops) => ops.frame(args.join(' ') || 'Frame', { ...common, aspect: parseRatio(o.aspect), around: o.around?.split(','), span: spanOf(o.span), auto: o.auto, titleInside: o['title-inside'], arrange: o.arrange as 'row' | 'column' | 'grid' | undefined, gap: o.gap ? Number(o.gap) : undefined })); break
       case 'bento':
         done = await op((ops) => ops.layout({ cols: o.cols ? Number(o.cols) : undefined, w: o.width ? Number(o.width) : undefined, gap: o.gap ? Number(o.gap) : undefined }, { at: point(o.at) })); break
       case 'span': {
@@ -477,12 +491,12 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'columns':
         done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
       case 'arrow':
-        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label, bend, dash, textSize })); break
+        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label && lines(o.label), bend, dash, textSize })); break
       case 'update':
-        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label })); break
+        done = await op((ops) => ops.update(args[0], { text: o.text && lines(o.text), color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label === undefined ? undefined : lines(o.label) })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
-        done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
+        done = await op((ops) => ops.move(args[0], o.in ? { inFrame: o.in } : to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
       }
       case 'arrange':
         done = await op((ops) => ops.arrange(args.join(',').split(',').filter(Boolean), { layout: o.layout as 'grid' | 'row' | 'column' | undefined, cols: o.cols ? Number(o.cols) : undefined, gap: o.gap ? Number(o.gap) : undefined, at: point(o.at) })); break

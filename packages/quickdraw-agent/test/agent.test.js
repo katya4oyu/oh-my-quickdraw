@@ -4,7 +4,7 @@ import { bindFrames } from 'quickdraw-frames'
 import { registerMarkdown } from 'quickdraw-markdown'
 import { bindKanban, createKanban, createTicket } from 'quickdraw-tickets'
 import { bindLayouts } from 'quickdraw-layouts'
-import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, freeSpot, lintBoard, lintText, fixLayout, fixText, checkWritten } from '../src/index.js'
+import { describeBoard, boardToMarkdown, runOp, applySteps, undoDiff, BOARD_TOOLS, installMeasure, estimateWidth, freeSpot, lintBoard, lintText, fixLayout, fixText, checkWritten } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -591,7 +591,7 @@ describe('fixing the layout', () => {
     const { result: [n] } = applySteps(store, 'C', [{ do: 'note', text: 'Agent', at: { x: 50, y: 50 } }])
     applySteps(store, 'C', [
       { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
-      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'diamond', text: 'Wall', w: 120, h: 1400, at: { x: 300, y: -60 } }, // too tall to bend round
       { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
       { do: 'arrow', from: '@a', to: '@c' },
     ])
@@ -827,5 +827,160 @@ describe('checked as written', () => {
     expect(venn.check).toBeUndefined() // nothing said, nothing moved
     expect(store.get(venn.result[1]).x).toBe(1200)
     expect(one.op).toBeTruthy()
+  })
+})
+
+describe('said as written, with what to do', () => {
+  it("leaves a label's fit and an arrow's way to the agent, saying how much to cut or what bend clears it", () => {
+    const store = board()
+    const r1 = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'A label far too long for this small box to hold', w: 160, h: 40, at: { x: 0, y: 0 } }]))
+    expect(store.get(r1.result[0]).props.h).toBe(40) // not grown: shortening may read better
+    expect(r1.check.problems.join()).toMatch(/does not fit — \d+ lines at this width, room for 1: shorten it by about \d+ characters, or make it 160 × \d+/)
+    const r2 = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 600 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'Wall', w: 120, h: 80, at: { x: 300, y: 600 } },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 600, y: 600 }, ref: 'c' },
+      { do: 'arrow', from: '@a', to: '@c' },
+    ]))
+    expect(store.get(r2.result[3]).props.bend).toBe(0) // not bent
+    expect(r2.check.problems.join()).toMatch(/bend -?\d+ takes it round/)
+    expect(fixLayout(store, 'C', {}).fixed.join()).toMatch(/bent arrow/) // lint --fix still does both, when asked
+  })
+
+  it('says in words what a picture used to show: colours, sentences, a written-out \\n', () => {
+    const store = board()
+    const colours = ['red', 'green', 'blue', 'orange', 'violet'].map((color, i) => ({ do: 'shape', shape: 'rectangle', text: color, color, at: { x: i * 220, y: 0 } }))
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      ...colours,
+      { do: 'text', text: 'Step 3\\nKey later', at: { x: 0, y: 300 } },
+      { do: 'shape', shape: 'rectangle', text: 'This label is a whole sentence that goes on and on where a few words would do', w: 600, h: 200, at: { x: 0, y: 500 } },
+    ]))
+    const said = r.check.problems.join('\n')
+    expect(said).toMatch(/5 colours/)
+    expect(said).toMatch(/shows "\\n" as two characters/)
+    expect(said).toMatch(/\d+ words — a sentence/)
+  })
+})
+
+describe('an arrow label between shapes close together', () => {
+  it('wraps to the length of the line, so it does not lie on the shapes at its ends', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'Relay', w: 160, h: 90, at: { x: 0, y: 0 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'SQLite', w: 160, h: 90, at: { x: 260, y: 0 }, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'persist, compact every 500 updates' },
+    ]))
+    const label = store.shapes().find((l) => l.labelOf === r.result[2])
+    expect(label.props).toMatchObject({ autosize: false, text: 'persist, compact every 500 updates' }) // words as they are
+    expect(r.check?.problems ?? []).toEqual([]) // not on the boxes
+    const close = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'P', w: 160, h: 90, at: { x: 0, y: 400 }, ref: 'p' },
+      { do: 'shape', shape: 'rectangle', text: 'Q', w: 160, h: 90, at: { x: 200, y: 400 }, ref: 'q' },
+      { do: 'arrow', from: '@p', to: '@q', label: 'dispatches requests' },
+    ]))
+    const narrow = store.shapes().find((l) => l.labelOf === close.result[2])
+    expect(narrow.props.w).toBeGreaterThanOrEqual(estimateWidth('20px sans-serif', 'dispatches')) // a word is not broken in two
+    runOp(store, 'C', (ops) => ops.move(r.result[1], { x: 900 })) // room again: one line
+    expect(store.shapes().find((l) => l.labelOf === r.result[2]).props.autosize).toBe(true)
+  })
+})
+
+describe('as written: a little room for a cramped label; arrows may pass labels', () => {
+  it('gives a label that only just fits room without saying so, and does not count an arrow across another arrow\'s label', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'One line', w: 160, h: 30, at: { x: 0, y: 0 } }]))
+    expect(store.get(r.result[0]).props.h).toBeGreaterThan(30)
+    expect(r.check.fixed.join()).toMatch(/taller for its label/)
+    expect(r.check.problems).toBeUndefined()
+    const s = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 120, h: 80, at: { x: 0, y: 400 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'B', w: 120, h: 80, at: { x: 600, y: 400 }, ref: 'b' },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 120, h: 80, at: { x: 300, y: 200 }, ref: 'c' },
+      { do: 'shape', shape: 'rectangle', text: 'D', w: 120, h: 80, at: { x: 300, y: 650 }, ref: 'd' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'crossing here' },
+      { do: 'arrow', from: '@c', to: '@d' },
+    ]))
+    expect((s.check?.problems ?? []).join()).not.toMatch(/runs across text/)
+  })
+})
+
+describe('as written, the drawing keeps its layout', () => {
+  it('does not shrink a frame\'s contents to fit, nor lay it out afresh; it says so', () => {
+    const store = board()
+    const [f] = applySteps(store, 'C', [{ do: 'frame', title: 'Keep', w: 600, h: 300, at: { x: 0, y: 0 } }]).result
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'One', w: 180, h: 100, at: { x: 40, y: 60 } },
+      { do: 'shape', shape: 'rectangle', text: 'Two', w: 180, h: 100, at: { x: 500, y: 60 } }, // over the frame's right edge
+    ]))
+    expect(store.get(r.result[0]).props.w).toBe(180)
+    expect(store.get(r.result[1]).props.w).toBe(180) // not shrunk
+    expect(r.check.problems.join()).toMatch(/sticks out of|lies across|right against/)
+    expect(f).toBeTruthy()
+  })
+})
+
+describe('there and back', () => {
+  it('puts the labels of two arrows between the same shapes on either side', () => {
+    const store = board()
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'Page', w: 160, h: 90, at: { x: 0, y: 0 }, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'Relay', w: 160, h: 90, at: { x: 500, y: 0 }, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'Yjs updates' },
+      { do: 'arrow', from: '@b', to: '@a', label: 'broadcast' },
+    ]))
+    expect(r.check?.problems ?? []).toEqual([])
+    const ys = [r.result[2], r.result[3]].map((id) => pageBounds(store.shapes().find((l) => l.labelOf === id)).y)
+    expect(Math.abs(ys[0] - ys[1])).toBeGreaterThan(20)
+  })
+})
+
+describe('placed by what it is joined to, and by the frame it goes in', () => {
+  it('puts a shape next to another, joined by an arrow, further along when the spot is taken; nothing else moves', () => {
+    const store = board()
+    const [b] = applySteps(store, 'C', [{ do: 'shape', shape: 'rectangle', text: 'B', w: 160, h: 80, at: { x: 0, y: 0 } }]).result
+    const [blocker] = applySteps(store, 'C', [{ do: 'note', text: 'in the way', at: { x: 240, y: -60 } }]).result
+    const before = store.get(blocker)
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [
+      { do: 'shape', shape: 'rectangle', text: 'A', w: 160, h: 80, from: b, side: 'right', label: 'calls', ref: 'a' },
+      { do: 'shape', shape: 'rectangle', text: 'C', w: 160, h: 80, from: b, side: 'below' },
+    ]))
+    const [a, c] = r.result
+    const ab = pageBounds(store.get(a)), bb = pageBounds(store.get(b)), cb = pageBounds(store.get(c))
+    expect(ab.x).toBeGreaterThan(bb.x + bb.w) // to its right, clear of the note in the way and of the arrow's way to it
+    const nb = pageBounds(before)
+    expect(ab.x >= nb.x + nb.w || ab.y >= nb.y + nb.h || ab.y + ab.h <= nb.y || ab.x + ab.w <= nb.x).toBe(true)
+    expect(cb.y).toBeGreaterThan(bb.y + bb.h)
+    expect(store.get(blocker)).toEqual(before) // nothing else moved
+    expect(describeBoard(store).arrows).toEqual(expect.arrayContaining([expect.objectContaining({ from: b, to: a, label: 'calls' }), expect.objectContaining({ from: b, to: c })]))
+    expect(r.check?.problems ?? []).toEqual([])
+  })
+
+  it('lines up what is put in a frame that arranges, frames in frames too, and the frame grows to hold it', () => {
+    const store = board()
+    const [col] = applySteps(store, 'C', [{ do: 'frame', title: 'Actions', arrange: 'column', w: 300, h: 100, at: { x: 0, y: 0 } }]).result
+    const ids = applySteps(store, 'C', ['Ren', 'Sora', 'Taku'].map((t) => ({ do: 'shape', shape: 'rectangle', text: t, w: 200, h: 60, in: col }))).result
+    const ys = ids.map((id) => store.get(id).y)
+    expect(ys[1]).toBeGreaterThan(ys[0] + 60)
+    expect(ys[2]).toBeGreaterThan(ys[1] + 60)
+    expect(new Set(ids.map((id) => store.get(id).x)).size).toBe(1) // one column
+    const fb = pageBounds(store.get(col))
+    expect(fb.y + fb.h).toBeGreaterThanOrEqual(ys[2] + 60) // grown to hold them
+    // a row of frames, each lining up its own
+    const [row] = applySteps(store, 'C', [{ do: 'frame', title: 'Board', arrange: 'row', w: 200, h: 100, at: { x: 0, y: 600 } }]).result
+    const [p, q] = applySteps(store, 'C', [{ do: 'frame', title: 'Decided', arrange: 'column', w: 220, h: 80, in: row }, { do: 'frame', title: 'Open', arrange: 'column', w: 220, h: 80, in: row }]).result
+    expect(store.get(q).x).toBeGreaterThan(store.get(p).x + 220)
+    expect(store.get(p).frameId).toBe(row)
+    applySteps(store, 'C', [{ do: 'note', text: 'Ship v2', in: p }, { do: 'note', text: 'Drop old API', in: p }])
+    expect(lintBoard(store).map((i) => i.text)).toEqual([])
+    expect(boardToMarkdown(store)).toMatch(/lines up what is put in it: column/)
+  })
+
+  it('as written, moves only what was just written', () => {
+    const store = board()
+    const [old] = applySteps(store, 'C', [{ do: 'note', text: 'old', at: { x: 100, y: 0 } }]).result
+    const before = store.get(old)
+    const r = checkWritten(store, 'C', applySteps(store, 'C', [{ do: 'note', text: 'new', at: { x: 0, y: 0 } }])) // earlier in reading order than old
+    expect(store.get(old)).toEqual(before) // the old one stays
+    expect(r.check.fixed.join()).toMatch(/moved note "new"/)
   })
 })

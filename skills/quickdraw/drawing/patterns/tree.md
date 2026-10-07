@@ -1,21 +1,15 @@
 # Tree (breakdown, why-why, issue tree)
 
-Coordinates are offsets from an origin you pick in free space (`../visual-thinking.md`, Place): add its x and y to every `at`.
-
-A root on top, its parts below, evidence under the parts. Children 300 apart; the root centred over them.
+A root, its parts under it, evidence under the parts: each joined to its parent, `below`. Siblings on the same side spread out by themselves (a taken spot moves the next one across).
 
 ```json
 [
-  { "do": "shape", "shape": "rectangle", "text": "Churn is up", "color": "red", "w": 200, "h": 80, "at": { "x": 290, "y": 0 }, "ref": "r" },
-  { "do": "shape", "shape": "rectangle", "text": "Price", "color": "black", "w": 180, "h": 80, "at": { "x": 0, "y": 180 }, "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "Onboarding", "color": "black", "w": 180, "h": 80, "at": { "x": 300, "y": 180 }, "ref": "b" },
-  { "do": "shape", "shape": "rectangle", "text": "Bugs", "color": "black", "w": 180, "h": 80, "at": { "x": 600, "y": 180 }, "ref": "c" },
-  { "do": "note", "text": "Plan B costs 2x A", "color": "light-blue", "at": { "x": 0, "y": 320 }, "ref": "n1" },
-  { "do": "arrow", "from": "@r", "to": "@a" },
-  { "do": "arrow", "from": "@r", "to": "@b" },
-  { "do": "arrow", "from": "@r", "to": "@c" },
-  { "do": "arrow", "from": "@a", "to": "@n1", "line": true }
+  { "do": "shape", "shape": "rectangle", "text": "Churn is up", "color": "red", "ref": "r" },
+  { "do": "shape", "shape": "rectangle", "text": "Price", "color": "black", "from": "@r", "side": "below", "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Onboarding", "color": "black", "from": "@r", "side": "below", "ref": "b" },
+  { "do": "shape", "shape": "rectangle", "text": "Bugs", "color": "black", "from": "@r", "side": "below", "ref": "c" },
+  { "do": "note", "text": "Plan B costs 2x A", "color": "light-blue", "from": "@a", "side": "below", "line": true }
 ]
 ```
 
-More than 4 children, or deeper than 3 levels: grow sideways instead (root on the left, `layout: column` for each level, arrows to the right).
+Deeper than 3 levels, or many children: grow it sideways (`side: "right"` from the root).

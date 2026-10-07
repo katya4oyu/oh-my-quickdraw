@@ -3,7 +3,11 @@ import type { ColorId, Diff, GeoId, Store } from '@quickdrawjs/core'
 export interface Point { x: number, y: number }
 
 /** Where a new shape goes: `at` a page point, or `inFrame`'s free space; otherwise free space to the right. */
-export interface Placement { color?: ColorId, at?: Point, inFrame?: string, w?: number, h?: number }
+export interface Placement {
+  color?: ColorId, at?: Point, inFrame?: string, w?: number, h?: number
+  /** put it next to this shape, joined by an arrow from it (`to`: an arrow to it), on `side` (right), `gap` away (80); `label`: the arrow's */
+  from?: string, to?: string, side?: 'right' | 'left' | 'below' | 'above', gap?: number, label?: string
+}
 
 /** The operations, bound to one operation id. Adds return the new shape's id. */
 /** A bento cell's size in grid units: columns × rows. */
@@ -34,7 +38,7 @@ export interface Operations {
   /** Moves a ticket on; in a kanban it changes column. `by` defaults to this agent. */
   status(id: string, status: TicketStatus, change?: { by?: string | null, result?: string }): string
   /** With `inFrame` a bento grid's id: a cell at its end, `span` units big (`auto`: rows follow its contents). */
-  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[], span?: Span, auto?: boolean, titleInside?: boolean }): string
+  frame(title?: string, opts?: Placement & { aspect?: string | number | null, around?: string[], span?: Span, auto?: boolean, titleInside?: boolean, arrange?: 'row' | 'column' | 'grid' }): string
   /** A bento grid (quickdraw-layouts): an area whose frames (cells) pack themselves, `cols` columns `w` wide. */
   layout(opts?: { cols?: number, w?: number, gap?: number }, where?: { at?: Point }): string
   /** A cell's size in grid units, or whether its rows follow its contents; the other cells move along. */
@@ -45,7 +49,8 @@ export interface Operations {
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
   update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
-  move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
+  /** `inFrame`: into that frame, at its next place (after the last, in a frame that arranges) */
+  move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number, inFrame?: string }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', cols?: number, gap?: number, at?: Point }): string[]
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
   fit(frameId: string, opts?: { ids?: string[] }): string[]

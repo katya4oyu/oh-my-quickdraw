@@ -55,17 +55,22 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
   - the word on an arrow ("causes", "yes"): the arrow's `label` (it follows the arrow); arrows that would cross: `bend` one round the other
   - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
 
-Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin in free space first — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes) — and add it to the offsets in `patterns.md`.
+**Place by relation, not by coordinates.** Two ways, both with no numbers to work out:
+
+- *Joined*: put a shape next to the one it follows, with the arrow between them in the same step — `{ "do": "shape", "text": "Verify", "from": "@a", "side": "right" }` (`side`: right, left, below, above; `gap`, 80 by default; `label`: the arrow's). A taken spot moves it to the nearest free one on that side; nothing else moves.
+- *Grouped*: things that line up go in a frame that arranges them — `{ "do": "frame", "title": "Actions", "arrange": "column" }` (row, column, or grid: rows that wrap), then add each with `"in": "@actions"`: each goes after the last, and the frame grows to hold them. Frames go in frames the same way: a row of column frames is a board of lists.
+
+`at` (board coordinates) is left for the few things only you can place: the first shape of a drawing (in a joined session, your `area`), or a deliberate offset.
 
 ## 4. Check
 
-What you write is checked as you write it: a drawing command's result lists what it fixed by itself (`"fixed"`) and what is left for you (`"problems"`) — fix those before going on. No separate `lint` is needed after each step.
+What you write is checked as you write it. A drawing command's result says what it fixed by itself (`"fixed"`: shapes pushed off each other and clear of frames, a cramped label given room) and what is left for you (`"problems"`), each with what to do: how many characters to cut from a label or the size that holds it, the bend that takes an arrow round a shape, a label lying on a shape, too many colours, a sentence, a "\n" written out. Fix those from the numbers; you need no picture for them, and no `lint` after each step.
 
-Once a drawing is done (not after every step), look at it: `omq look --frame FRAME_ID` (or `--ids`), a small picture. Go through it with these questions, and fix what fails:
+Then look once, when the drawing is done: `omq look --frame FRAME_ID`, a small picture. It is for the two things only a picture answers:
 
 - Can the theme be read in three seconds?
 - Does the eye know where to start and where to go next?
-- Do any arrows cross each other or run across shapes?
-- Is any text a sentence where a keyword would do?
-- Does each colour mean one thing?
-- Is anything drawn as decided that was not decided?
+
+And one only you can answer: is anything drawn as decided that was not decided?
+
+After a fix from `problems`, do not look again — a result without problems is the check. Look again only after moving things around, and only that part (`omq look --ids …`).
