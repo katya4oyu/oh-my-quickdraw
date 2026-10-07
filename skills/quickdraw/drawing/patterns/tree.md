@@ -10,7 +10,7 @@ A root on top, its parts below, evidence under the parts. Children 300 apart; th
   { "do": "shape", "shape": "rectangle", "text": "Price", "color": "black", "w": 180, "h": 80, "at": { "x": 0, "y": 180 }, "ref": "a" },
   { "do": "shape", "shape": "rectangle", "text": "Onboarding", "color": "black", "w": 180, "h": 80, "at": { "x": 300, "y": 180 }, "ref": "b" },
   { "do": "shape", "shape": "rectangle", "text": "Bugs", "color": "black", "w": 180, "h": 80, "at": { "x": 600, "y": 180 }, "ref": "c" },
-  { "do": "note", "text": "Plan B costs 2x A", "color": "light-blue", "at": { "x": 0, "y": 320 }, "ref": "n1" },
+  { "do": "text", "text": "Plan B costs 2x A", "text_size": "s", "color": "grey", "at": { "x": 0, "y": 320 }, "ref": "n1" },
   { "do": "arrow", "from": "@r", "to": "@a" },
   { "do": "arrow", "from": "@r", "to": "@b" },
   { "do": "arrow", "from": "@r", "to": "@c" },

@@ -16,7 +16,7 @@ Sort the material before drawing anything. Each piece is one of:
 | **Decision** | agreed | green |
 | **Open** | not decided yet, a guess, a proposal | grey, or hatched (`"fill": "pattern"`), with "?" |
 | **Action** | someone does something by some time | blue, with who and when |
-| **Evidence** | numbers, quotes, examples behind a claim | a note or Markdown card beside its claim |
+| **Evidence** | numbers, quotes, examples behind a claim | a Markdown card (or a short text) beside its claim |
 
 Then find the **relation** that holds the pieces together. It decides the pattern:
 
@@ -36,16 +36,38 @@ Mixed material has several relations: pick the one that carries the theme for th
 
 Keep only what serves the theme. Words on the board are **keywords**: a noun phrase or a short verb phrase (2–6 words), not sentences. Full wording, when it matters, goes in a Markdown card.
 
+Draw only what a picture says better: when a table or a paragraph would say it as well, write that (a Markdown card). Keep one drawing small — about 9 shapes, 12 arrows and 1–2 highlighted (a rule of thumb, not a limit to fill); with more, split it into an overview and its details, side by side.
+
 ## 2. Pick a pattern
 
 Look the relation up in `patterns.md` and use its shape and its `apply` skeleton. When nothing fits, a plain row or column of shapes joined by arrows is always readable.
 
 ## 3. Place
 
+**Each piece in the element made for it** — chosen by what the piece is for, not by how long it is. Length only tells whether it fits the element you chose; when it does not, cut words, move the detail to a card beside it, or split the drawing, whichever keeps the point.
+
+| Element | For | Holds | Not for |
+|---|---|---|---|
+| Sticky note | one idea or remark that people will move, sort and group; who wrote it matters | one idea, in a short line | several points or an explanation in one note (split it; detail goes in a card); a fixed label nothing will move |
+| Shape | a thing or a concept in a diagram; it means what its arrows and its place say | its name: a keyword | a sentence (the name in the shape, the rest beside it or in a card) |
+| Arrow | one relation; its label names the kind ("causes", "yes") | a word or two | a link the layout already shows; two arrows between the same shapes for the same thing |
+| Text | the title, headings, a caption on how to read the drawing | a few words | body text (a card) |
+| Markdown card | what is read rather than seen: full wording, sources, evidence, steps | paragraphs, lists, tables, links | carrying the point alone (then there is no drawing); far from what it explains — put it beside |
+| Link card, embed (`embed URL`) | something outside the board: a page, a video, a design | the URL, with a line beside it on why it is there | a URL typed into a note, a shape or a text |
+| Frame | one drawing: one pattern, one point | its title: what the drawing says, not a category | two patterns or two points in one frame |
+| Pen | emphasis that stays: a circle, an underline | — | more than one or two places |
+
+**One meaning per look**, kept from the first shape to the last — a reader learns how to read the drawing once:
+- In one drawing a colour, a shape and a line style each mean one thing, and one thing always looks the same. Decide them before drawing; say the legend once when it is not obvious.
+- Arrows in one drawing mean one kind of relation (order, or cause). Another kind gets another line style, named once.
+- Small differences mean nothing: a slightly bigger box or a similar shade reads as the same. Make a difference big, or none.
+- Hand-drawn lines (`"dash": "draw"`) are the board's texture, the same everywhere; they mean nothing. Dashed or hatched means only "not decided".
+- Near means related: pieces of a group close together, wide gaps between groups.
+
 - **Reading order**: left to right, top to bottom; or from the centre outwards (mind map). The theme is where the eye lands first: top-left, or the centre.
-- **Levels of size**, with `text_size` (`--text-size`): the title `xl` (a `text`), headings `l`, the body `m` or `s` (shape labels are `s` unless set). Captions and an arrow's label stay `s`. Notes are big (200 × 200): use them for items people will move, and small shapes for the rest.
+- **Levels of size**, with `text_size` (`--text-size`): the title `xl` (a `text`), headings `l`, the body `m` or `s` (shape labels are `s` unless set). Captions and an arrow's label stay `s`. Notes are big (200 × 200).
 - **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. A shape with no `color` is **blue**: give `"color": "black"` to neutral shapes, or blue reads as an action. Say the legend once when it is not obvious.
-- **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided. Hand-drawn outlines (`"dash": "draw"`) by default; `dashed` for a proposal or a link that is not certain.
+- **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided; `dashed` for a proposal or a link that is not certain.
 - **Space**: 60–80 between shapes in a drawing, more between drawings. Crowding reads as noise: make room, or split into another frame.
 - **Group** what belongs together: a frame around it (`frame --around`), or a bento cell.
 - **Graphic-recording touches**, with what there is:
@@ -67,5 +89,6 @@ Once a drawing is done (not after every step):
    - Does the eye know where to start and where to go next?
    - Do any arrows cross each other or run across shapes?
    - Is any text a sentence where a keyword would do?
-   - Does each colour mean one thing?
+   - Does any colour, shape or line style mean two things, or one thing look two ways?
+   - Take each piece away in your mind: if the point still reads, take it away.
    - Is anything drawn as decided that was not decided?
