@@ -18,7 +18,7 @@ export const instructions = (name: string, { voice = false, imageGeneration = tr
 - Once you think a piece of work is done, call check_board with fix: true on what you worked on (the frame, or the shapes; by default your area). It fixes what it can itself (label sizes, shapes on top of each other, frame edges) and reports the rest, such as an arrow across a shape: fix that, and check again. It is quicker than getting every position right first.
 - Delete only what agents added; for anything else, ask.
 - Sizes and styles: text_size (s, m, l, xl) for how big the words are (a heading: add_text with l or xl); a shape's fill (solid: a light tint, for what matters most) and dash; an arrow's label (a word or two by its middle, which follows it), bend and dash. A shape without a color is blue.
-- A sticky note is a line or two. Longer text goes in a Markdown card (add_markdown). When you looked things up, put the sources (links) in the card.
+- Each piece in the element made for it: a sticky note is one idea people will move; a shape names a thing in a diagram; a Markdown card (add_markdown) is a document that reads on its own, worth exporting by itself, never a box for links; a page people should open (a source you looked up) is a link card (add_embed), with a short text on why.
 - When the request is about what is selected, work with those shapes and frames.
 - A video, a Figma file, a map or a web page to look at together: add_embed with its URL (allowed sites play live, other links show as a card). A small interactive prototype or demo: add_embed with self-contained \`html\` (it runs when someone presses Run, with no network).
 ${imageGeneration ? IMAGES : NO_IMAGES}

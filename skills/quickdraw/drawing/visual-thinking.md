@@ -16,7 +16,7 @@ Sort the material before drawing anything. Each piece is one of:
 | **Decision** | agreed | green |
 | **Open** | not decided yet, a guess, a proposal | grey, or hatched (`"fill": "pattern"`), with "?" |
 | **Action** | someone does something by some time | blue, with who and when |
-| **Evidence** | numbers, quotes, examples behind a claim | a Markdown card (or a short text) beside its claim |
+| **Evidence** | numbers, quotes, examples behind a claim | a short text beside its claim; a source people should open as a link card |
 
 Then find the **relation** that holds the pieces together. It decides the pattern:
 
@@ -36,7 +36,7 @@ Mixed material has several relations: pick the one that carries the theme for th
 
 Keep only what serves the theme. Words on the board are **keywords**: a noun phrase or a short verb phrase (2–6 words), not sentences. Full wording, when it matters, goes in a Markdown card.
 
-Draw only what a picture says better: when a table or a paragraph would say it as well, write that (a Markdown card). Keep one drawing small — about 9 shapes, 12 arrows and 1–2 highlighted (a rule of thumb, not a limit to fill). With more, split it: an overview and a drawing for each part, side by side, or the detail in a card beside it. Never get under the number by packing more words into fewer shapes: a shape keeps its name only.
+Draw only what a picture says better: when a table or a paragraph would say it as well, write that (a Markdown card). Keep one drawing small — about 9 shapes, 12 arrows and 1–2 highlighted (a rule of thumb, not a limit to fill). With more, split it: an overview and a drawing for each part, side by side. Never get under the number by packing more words into fewer shapes: a shape keeps its name only.
 
 ## 2. Pick a pattern
 
@@ -44,16 +44,16 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
 
 ## 3. Place
 
-**Each piece in the element made for it** — chosen by what the piece is for, not by how long it is. Length only tells whether it fits the element you chose; when it does not, cut words, move the detail to a card beside it, or split the drawing, whichever keeps the point.
+**Each piece in the element made for it** — chosen by what the piece is for, not by how long it is. Length only tells whether it fits the element you chose; when it does not, cut words, move the detail into a short text beside it, or split the drawing, whichever keeps the point.
 
 | Element | For | Holds | Not for |
 |---|---|---|---|
-| Sticky note | one idea or remark that people will move, sort and group; who wrote it matters | one idea, in a short line | several points or an explanation in one note (split it; detail goes in a card); a fixed label nothing will move |
-| Shape | a thing or a concept in a diagram; it means what its arrows and its place say | its name: a keyword | a sentence, or two things in one shape (the name in the shape, the rest beside it or in a card) |
+| Sticky note | one idea or remark that people will move, sort and group; who wrote it matters | one idea, in a short line | several points or an explanation in one note (split it); a fixed label nothing will move |
+| Shape | a thing or a concept in a diagram; it means what its arrows and its place say | its name: a keyword | a sentence, or two things in one shape (the name in the shape, the rest in a short text beside it) |
 | Arrow | one relation; its label names the kind ("causes", "yes") | a word or two | a link the layout already shows; two arrows between the same shapes for the same thing |
-| Text | the title, headings, a caption on how to read the drawing | a few words | body text (a card) |
-| Markdown card | what is read rather than seen: full wording, sources, evidence, steps | paragraphs, lists, tables, links | carrying the point alone (then there is no drawing); far from what it explains — put it beside |
-| Link card, embed (`embed URL`) | something outside the board: a page, a video, a design | the URL, with a line beside it on why it is there | a URL typed into a note, a shape or a text |
+| Text | the title, headings, a caption on how to read the drawing | a few words | body text |
+| Markdown card | a document that stands on its own: worth exporting and reading without the board (minutes, a summary, a spec, the material itself) | headings, paragraphs, lists, tables; a link where the text cites it | a box for URLs or sources; a fragment that makes sense only beside a shape (a quote, a number: a short text) |
+| Link card, embed (`embed URL`) | a page people should open or watch: a source, a video, a design | the URL, with a short text beside it on why to open it | a URL typed into a note, a shape, a text or a Markdown card to show it |
 | Frame | one drawing: one pattern, one point | its title: what the drawing says, not a category | two patterns or two points in one frame |
 | Pen | emphasis that stays: a circle, an underline | — | more than one or two places |
 
