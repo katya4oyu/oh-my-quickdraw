@@ -11,6 +11,7 @@ import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { createBoardCard, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
 import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
+import { readSvg, svgElements } from 'quickdraw-svg'
 import { estimateWidth } from './measure.js'
 import { labelFit } from './lint.js'
 import { hitsOf } from './hits.js'
@@ -75,6 +76,7 @@ export function describeBoard(store) {
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     ...(f.frameId && isFrame(store.get(f.frameId)) ? { frame: f.frameId } : {}), // in another frame
     ...(f.titleInside ? { title_inside: true } : {}),
+    ...(f.svg?.asset ? { svg: f.svg.asset } : {}), // drawn from an SVG (ops.svg), kept as this asset
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   // bento grids (quickdraw-layouts): their cells are frames, in order
@@ -86,6 +88,7 @@ export function describeBoard(store) {
     id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
+    ...(s.svg?.el ? { svg: s.svg.el } : {}), // the SVG element it was drawn from
     // who made it (an agent, or a person whose page marked it), and who changed it last if not them
     ...((s.made?.by ?? s.agent?.name) ? { by: s.made?.by ?? s.agent.name } : {}),
     ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
@@ -116,6 +119,7 @@ export function boardToMarkdown(store) {
       return `- [ticket, ${t.status}${who}${where}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
     }
     if (it.type === MARKDOWN) return `- ${tag}(id ${it.id})\n` + text.split('\n').map((l) => '  > ' + l).join('\n')
+    if (it.svg && it.type === 'draw') return `- ${tag}stroke of ${it.svg} in the SVG (id ${it.id})`
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`
   }
   const out = ['# Board', '']
@@ -132,8 +136,18 @@ export function boardToMarkdown(store) {
       : f.cell ? `bento cell ${f.cell.c}×${f.cell.r}${f.cell.auto ? ', rows follow its contents' : ''} in ${f.cell.layout}`
       : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
     const inside = f.frame ? `, in ${titles.get(f.frame)}` : ''
-    out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${kind}${inside}; id ${f.id})`, '')
-    const members = f.members.map((id) => byId.get(id)).filter(Boolean)
+    out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${f.svg ? 'drawn from an SVG' : kind}${inside}; id ${f.id})`, '')
+    let members = f.members.map((id) => byId.get(id)).filter(Boolean)
+    if (f.svg) {
+      // its strokes as drawn say nothing the SVG does not: the SVG is read instead, with what people changed since
+      const src = store.asset?.(f.svg)?.src
+      const left = new Set(members.map((m) => m.svg).filter(Boolean))
+      const gone = src ? Object.entries(svgElements(src)).filter(([el]) => !left.has(el)) : []
+      const quiet = members.filter((m) => m.svg && m.type === 'draw' && !m.edited_by)
+      members = members.filter((m) => !quiet.includes(m))
+      out.push(`The SVG it was drawn from is what it shows: \`omq svg --show ${f.id}\` prints it. Its ${quiet.length} strokes as drawn are not listed; what follows is its words, and what people changed or added since (their own marks: look at them).`, '')
+      if (gone.length) out.push(`- gone since drawn: ${gone.map(([el, what]) => `${el} (${what})`).join(', ')}`)
+    }
     const children = f.members.map((id) => framesById.get(id)).filter(Boolean)
     out.push(...(members.length ? members.map(line) : children.length ? [] : ['- (empty)']), ...(members.length || !children.length ? [''] : []))
     for (const c of children) section(c, depth + 1)
@@ -652,6 +666,32 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       } })
       return id2
     },
+    // Draws an SVG as a person would on a whiteboard (quickdraw-svg reads it):
+    // a frame its size (titled by its <title>), its outlines as pen strokes and
+    // its words as texts, where the SVG has them, in the order it was written.
+    // The SVG itself is kept on the board (an asset) as the source of the
+    // drawing: the frame and every stroke and word carry `svg: { asset, el,
+    // unit }` (el: the element it came from). `write` (chars or lines) is how
+    // the words go on when drawn live. Returns the frame and what is in it.
+    svg(source, { at, inFrame, write = 'chars' } = {}) {
+      if (!['chars', 'lines'].includes(write)) throw new Error(`unknown write "${write}" (chars or lines)`)
+      const d = readSvg(source)
+      if (!d.parts.length) throw new Error('nothing to draw in this SVG')
+      const asset = newId('asset')
+      store.put({ id: asset, typeName: 'asset', type: 'svg', src: String(source), w: d.w, h: d.h, title: d.title, write, units: d.units, dropped: d.dropped })
+      const frame = ops.frame(d.title || 'SVG', { at, w: d.w, h: d.h, inFrame })
+      store.update(frame, { svg: { asset } })
+      const f = store.get(frame), o = { x: f.x, y: f.y }
+      const ids = d.parts.map((p) => {
+        const id = p.kind === 'stroke'
+          ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size })
+          : ops.text(p.text, { at: { x: o.x + p.at[0], y: o.y + p.at[1] }, fontSize: Math.min(160, Math.max(8, p.fontSize)), w: p.w, align: p.align, color: p.color })
+        store.update(id, { svg: { asset, el: p.el, unit: p.unit } })
+        return id
+      })
+      focus = o
+      return [frame, ...ids]
+    },
     // Lays frames out close together, in reading order, in rows from `at` (by
     // default where the first of them is) no wider than `width`: a board that
     // grew outwards, gathered. A frame brings what is in it and its title; a
@@ -869,6 +909,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
+        case 'svg': out = ops.svg(s.svg ?? s.source, { at: at(s.at), inFrame: r(s.in), write: s.write }); break
         case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points?.map((p) => { const q = at(Array.isArray(p) ? { x: p[0], y: p[1] } : p); return [q.x, q.y] }), color: s.color, size: s.size }); break
         case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: at(s.at), gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break

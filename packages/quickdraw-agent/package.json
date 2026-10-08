@@ -26,6 +26,7 @@
     "quickdraw-frames": "*",
     "quickdraw-layouts": "*",
     "quickdraw-markdown": "*",
+    "quickdraw-svg": "*",
     "quickdraw-tickets": "*"
   },
   "peerDependencies": {

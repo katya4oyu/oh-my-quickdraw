@@ -97,6 +97,12 @@ Writing (each command is one operation, undoable as a whole)
   apply UNIT.json                          draws: shapes, words and arrows go on only this way, a unit of
                                            thought at a time, as written ({ origin, items }, every size a number),
                                            as one operation; prints placed (see SKILL.md)
+  svg FILE [--at X,Y] [--in FRAME] [--write chars|lines]
+                                           draws an SVG as by hand, as one operation: a frame its size, its
+                                           outlines with the pen and its words as texts, in the order written;
+                                           on a live board a stroke at a time (joined: while you go on). The SVG
+                                           is kept with it: omq read gives it back with what people changed since
+  svg --show FRAME                         the SVG a drawing was drawn from
 
 Tickets (work people leave on the board for agents)
   tickets [--status todo,doing,…] [--to NAME | --mine]
@@ -254,15 +260,24 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
+  show: { type: 'string' }, write: { type: 'string' },
   'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'svg', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * How an operation goes on the board. `live`: put on a live board as by hand
+ * (an SVG's strokes grow, its words are written: board/live.ts), not at once.
+ * `background` (with live, in a session): answered once made, drawn while the
+ * agent goes on.
+ */
+export interface OperateOptions { live?: boolean, background?: boolean }
 
 /** What a command runs against: an open board, and how its operations are made. */
 export interface CommandContext {
@@ -276,7 +291,7 @@ export interface CommandContext {
    * on a copy and then put on the board a piece at a time, in the thread of the
    * request being worked on.
    */
-  operate<T>(make: (store: Store, where: { area?: { x: number, y: number, w: number, h: number }, prefer?: { x: number, y: number } }) => Operation<T>): Promise<Operation<T>>
+  operate<T>(make: (store: Store, where: { area?: { x: number, y: number, w: number, h: number }, prefer?: { x: number, y: number } }) => Operation<T>, opts?: OperateOptions): Promise<Operation<T>>
   /** stdin's text, for `apply -` */
   stdin(): Promise<string>
   /** in a session: its operations show themselves as they are put, so no pause after */
@@ -334,7 +349,14 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
   try {
     await runCommand({
       board, url, boardKey: url ?? resolve(file!),
-      operate: async (make) => make(board.store, {}),
+      // on a live board, as by hand when asked (an SVG): made on a copy, then put on a stroke at a time (here: until it is done)
+      operate: async (make, opts) => {
+        if (!opts?.live || !url) return make(board.store, {})
+        const { copyOf, putLive } = await import('../board/live.ts')
+        const copy = copyOf(board.store), done = make(copy, {})
+        await putLive(board.store, done.diff, copy, board.cursor, undefined, { op: done.op })
+        return done
+      },
       stdin: () => readStream(process.stdin),
     }, argv, out, { signal })
   } finally {
@@ -437,6 +459,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         const entry = args[0] ? entries.find((e) => e.op === args[0]) : entries.filter((e) => !e.undone && e.command !== 'undo').at(-1)
         if (!entry) throw new Error(args[0] ? `no operation ${args[0]} on this board` : 'nothing to undo')
         if (!entry.diff) throw new Error(`${entry.op} cannot be undone`)
+        await (await import('../board/live.ts')).stopDrawing(entry.op) // still being drawn: stopped first, the rest never goes on
         const r = undoDiff(store, entry.diff)
         await log({ board: boardKey, op: 'undo:' + entry.op, at: new Date().toISOString(), name: o.name, command: 'undo', undone: entry.op })
         return out(JSON.stringify({ undone: entry.op, ...r }))
@@ -549,6 +572,30 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         board.relay!.status('waiting')
         board.relay!.activity('waiting', 'on the tickets')
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
+      case 'svg': {
+        if (o.show) { // the SVG a drawing was drawn from
+          const f = store.get(o.show) as { svg?: { asset?: string } } | undefined
+          const src = f?.svg?.asset ? (store.asset(f.svg.asset) as { src?: string } | null)?.src : undefined
+          if (!src) throw new Error(`${o.show} is not a drawing from an SVG (omq read shows which frames are)`)
+          return out(src)
+        }
+        if (!args[0]) throw new Error('svg needs a file: omq svg drawing.svg [--at X,Y] [--write chars|lines]')
+        const source = args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8')
+        const { readSvg } = await import('quickdraw-svg')
+        const d = readSvg(source) // what it will be, to say so (the operation reads it again)
+        const write = (o.write ?? 'chars') as 'chars' | 'lines'
+        done = await operate((s, where) => runOp(s, o.name, (ops) => ops.svg(source, { at: point(o.at), inFrame: o.in, write }), where), { live, background: live && ctx.session })
+        const strokes = d.parts.filter((p) => p.kind === 'stroke'), length = strokes.reduce((n, p) => n + p.points.reduce((m, q, i, a) => m + (i ? Math.hypot(q[0] - a[i - 1][0], q[1] - a[i - 1][1]) : 0), 0), 0)
+        const frame = [done.result].flat()[0] as string
+        await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: `svg ${args[0]}`, diff: done.diff })
+        const f = store.get(frame) ?? null
+        return out(jsonLines({
+          op: done.op, frame, ...(f ? { at: `${Math.round((f as { x: number }).x)},${Math.round((f as { y: number }).y)}` } : {}), size: `${d.w}x${d.h}`,
+          units: d.units.length, strokes: strokes.length, words: d.parts.length - strokes.length,
+          ...(Object.keys(d.dropped).length ? { dropped: d.dropped } : {}),
+          ...(live ? { drawing: ctx.session ? `on the board in about ${Math.round(length / 900 + d.parts.length * 0.4)} s, while you go on` : 'drawn' } : {}),
+        }))
+      }
       case 'apply': {
         const steps = JSON.parse(args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8'))
         done = await operate((s, where) => applySteps(s, o.name, steps, { ...where, drawing: 'units' })); break

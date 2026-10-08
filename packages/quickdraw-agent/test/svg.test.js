@@ -1,0 +1,52 @@
+import { describe, it, expect } from 'vitest'
+import { Store, pageBounds } from '@quickdrawjs/core'
+import { bindFrames } from 'quickdraw-frames'
+import { applySteps, boardToMarkdown, describeBoard, installMeasure, undoDiff } from '../src/index.js'
+
+installMeasure() // Node has no canvas to measure text with
+
+const board = () => { const s = new Store(); bindFrames(s); return s }
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><title>Page to relay</title>
+  <rect x="20" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="30" y="85" font-size="16">Page</text>
+  <rect x="260" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="270" y="85" font-size="16">Relay</text>
+  <line x1="140" y1="80" x2="260" y2="80" stroke="#1d1d1d" marker-end="url(#a)"/></svg>`
+
+describe('an SVG drawn on the board', () => {
+  it('is a frame its size with its strokes and words where the SVG has them, each saying its element', () => {
+    const store = board()
+    const { result: [ids] } = applySteps(store, 'C', [{ do: 'svg', svg, at: [1000, 500] }])
+    const [frame, ...parts] = ids
+    expect(pageBounds(store.get(frame))).toMatchObject({ x: 1000, y: 500, w: 400, h: 200 })
+    expect(parts.map((id) => [store.get(id).type, store.get(id).svg.el])).toEqual([['draw', 'rect1'], ['text', 'text1'], ['draw', 'rect2'], ['text', 'text2'], ['draw', 'line1'], ['draw', 'line1']])
+    const box = store.get(parts[0]) // the stroke's points start at the box's corner
+    expect([box.x, box.y]).toEqual([1020, 540])
+    const kept = store.asset(store.get(frame).svg.asset)
+    expect(kept.src).toBe(svg) // the SVG is kept on the board, as the source
+    expect(describeBoard(store).frames[0].svg).toBe(kept.id)
+  })
+
+  it('reads as its SVG: its words, not its strokes, and what is gone since', () => {
+    const store = board()
+    const { result: [[frame, ...parts]] } = applySteps(store, 'C', [{ do: 'svg', svg, at: [0, 0] }])
+    let md = boardToMarkdown(store)
+    expect(md).toContain(`## Page to relay (drawn from an SVG; id ${frame})`)
+    expect(md).toContain(`omq svg --show ${frame}`)
+    expect(md).toContain('Page (id')
+    expect(md).not.toContain('(drawing)')
+    store.remove([parts[2]]) // someone rubs out the second box
+    md = boardToMarkdown(store)
+    expect(md).toContain('- gone since drawn: rect2 (a box)')
+  })
+
+  it('is one operation: undoing it takes back the frame, the strokes, the words and the kept SVG', () => {
+    const store = board()
+    const { diff } = applySteps(store, 'C', [{ do: 'svg', svg, at: [0, 0] }])
+    undoDiff(store, diff)
+    expect(store.all()).toEqual([])
+  })
+
+  it('says what is wrong with what is not an SVG', () => {
+    expect(() => applySteps(board(), 'C', [{ do: 'svg', svg: '<html></html>' }])).toThrow(/not an SVG/)
+    expect(() => applySteps(board(), 'C', [{ do: 'svg', svg, write: 'words' }])).toThrow(/chars or lines/)
+  })
+})

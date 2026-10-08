@@ -33,6 +33,7 @@
     "quickdraw-members": "*",
     "quickdraw-presence": "*",
     "quickdraw-screenshare": "*",
+    "quickdraw-svg": "*",
     "quickdraw-tickets": "*",
     "quickdraw-toolbar": "*",
     "quickdraw-voice": "*",
