@@ -463,7 +463,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return (typeof result === 'string' ? result : JSON.stringify(result)) + [linked, team, said].filter(Boolean).map((t) => '\n\n' + t).join('')
     }
     const area = work.get(requestId)?.area
-    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
+    // an SVG is drawn by hand, which takes a while: the agent is answered at once and goes on
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never, { background: name === 'draw_svg' })
   }
 
   // ---- a request's work area: where it draws, which people see, move and draw in ----
@@ -664,9 +665,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
   let drawing: Promise<unknown> = Promise.resolve() // one put on in the background, still going on
-  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect, placed?: unknown[] }) {
-    const { r, grew } = await putOp(requestId, make)
-    return JSON.stringify({ op: r.op, ids: r.ids, ...(r.placed ? { placed: r.placed } : {}), ...(grew ? { area: grew } : {}) })
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect, placed?: unknown[], drawing?: unknown }, { background = false } = {}) {
+    const { r, grew } = await putOp(requestId, make, { background })
+    return JSON.stringify({ op: r.op, ids: r.ids, ...(r.placed ? { placed: r.placed } : {}), ...(r.drawing ? { drawing: r.drawing } : {}), ...(grew ? { area: grew } : {}) })
   }
   async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T, { background = false } = {}) {
     await drawing // what is still being drawn goes on first: this is made on the board as it will be

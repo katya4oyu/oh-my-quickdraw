@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
-import { applySteps, boardToMarkdown, describeBoard, installMeasure, undoDiff } from '../src/index.js'
+import { applySteps, BOARD_TOOLS, boardToMarkdown, describeBoard, installMeasure, undoDiff } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
 
@@ -48,5 +48,13 @@ describe('an SVG drawn on the board', () => {
   it('says what is wrong with what is not an SVG', () => {
     expect(() => applySteps(board(), 'C', [{ do: 'svg', svg: '<html></html>' }])).toThrow(/not an SVG/)
     expect(() => applySteps(board(), 'C', [{ do: 'svg', svg, write: 'words' }])).toThrow(/chars or lines/)
+  })
+
+  it('is the draw_svg tool: answered with the frame and what will be drawn, not every stroke', () => {
+    const store = board()
+    const r = BOARD_TOOLS.find((t) => t.name === 'draw_svg').run(store, { svg, x: 10, y: 20, write: 'lines' }, { name: 'C' })
+    expect(r.ids).toHaveLength(1)
+    expect(r.drawing).toMatchObject({ frame: r.ids[0], at: [10, 20], size: [400, 200], units: 3, strokes: 4, words: 2 })
+    expect(store.asset(store.get(r.ids[0]).svg.asset).write).toBe('lines')
   })
 })

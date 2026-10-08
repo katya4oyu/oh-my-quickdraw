@@ -3,6 +3,7 @@
 // is one operation (one undo), made with applySteps, so it behaves exactly as
 // the same step in a list of steps.
 import { COLOR_IDS, GEO_IDS, SIZE_IDS, DASH_IDS, FILL_IDS } from '@quickdrawjs/core'
+import { readSvg } from 'quickdraw-svg'
 import { applySteps, boardToMarkdown, describeBoard } from './ops.js'
 import { fixLayout, fixText, lintBoard, lintText } from './lint.js'
 
@@ -94,6 +95,24 @@ export const BOARD_TOOLS = [
     kind: { type: 'string', enum: ['circle', 'underline', 'points'] }, id: str('the shape to circle or underline'),
     points: { type: 'array', items: { type: 'array', items: num }, description: 'page points [[x, y], …], for kind points' }, color,
   }),
+  {
+    name: 'draw_svg',
+    description: 'Draws an SVG you write on the board as a person would at a whiteboard: its outlines with the pen and its words as texts, where the SVG has them, in the order it is written (its <g> groups, or a box and what is in it, are drawn together), in a frame its size titled by its <title>. '
+      + 'People watch it drawn a stroke at a time; you are answered at once and may go on (the next change waits until it is drawn). Fills, gradients and shadows are not drawn: a whiteboard has outlines and words. '
+      + 'The SVG is kept with the drawing: read_board gives it back with what people changed since. `write`: chars (words written a character at a time, for people watching) or lines.',
+    inputSchema: object({
+      svg: str('a self-contained SVG (viewBox in px, text with font-size, no images or external fonts)'),
+      x: { type: 'number', description: 'left edge on the board (with y); without them it goes in your work area or free space' }, y: num,
+      write: { type: 'string', enum: ['chars', 'lines'] },
+    }, ['svg']),
+    run(store, { svg, x, y, write } = {}, { name: who = 'Agent', area, prefer } = {}) {
+      const at = x != null && y != null ? [x, y] : undefined
+      const { op, diff, result: [[frame, ...parts]], focus, area: grown } = applySteps(store, who, [{ do: 'svg', svg, at, write }], { area, prefer })
+      const d = readSvg(svg), strokes = d.parts.filter((p) => p.kind === 'stroke').length
+      const f = store.get(frame)
+      return { op, diff, focus, ids: [frame], drawing: { frame, at: [Math.round(f.x), Math.round(f.y)], size: [d.w, d.h], units: d.units.length, strokes, words: parts.length - strokes, ...(Object.keys(d.dropped).length ? { dropped: d.dropped } : {}) }, ...(grown ? { area: grown } : {}) }
+    },
+  },
   step('tidy_frames', 'tidy', 'Gathers frames close together in reading order, in rows (about `width` wide) from `at` or where the first one is: for a board that has spread out, or when asked to tidy up. Each frame brings what is in it and its title; a kanban\'s columns stay together; what is in no frame stays put. By default all the frames.', {
     ids: ids('frames to lay out (default: all)'), at: point, gap: num, width: { type: 'number', description: 'how wide a row may get (default 2400)' },
   }),
