@@ -86,7 +86,7 @@ A unit has an `origin` and `items`. The origin is a board point you pick in free
   { "do": "shape", "shape": "rectangle", "color": "green", "w": 240, "h": 80, "at": [360, 0], "ref": "a" },
   { "do": "text", "text": "Sample data first", "font_size": 16, "color": "green", "w": 240, "align": "middle", "at": [360, 18] },
   { "do": "text", "text": "2 weeks · fewer tickets", "font_size": 12, "color": "grey", "w": 240, "align": "middle", "at": [360, 46] },
-  { "do": "arrow", "from": "@q", "to": "@a" }
+  { "do": "arrow", "from": "@q", "to": "@a", "from_at": [246, 140], "to_at": [354, 40] }
 ] }
 ```
 
@@ -98,13 +98,13 @@ Each item has one way to be written:
 
 - `shape` — `shape` (rectangle ellipse triangle diamond hexagon star cloud), `w`, `h`, `color`, `fill` (none semi solid pattern), `dash` (draw solid dashed dotted). A box: it holds no words.
 - `text` — `text`, `font_size` in px, `color`; `w` to wrap at that width, with `align` (start middle end) in it. Every word on the board is a text. Sizes: a title 34, a heading 22, a box's name 16, a detail, a caption or the word on an arrow 12–13. A line is 1.32 × `font_size` tall; a Latin letter about 0.55 × `font_size` wide, a CJK character about 1 ×. A box's name: at the box's x, `w` its width, `align: "middle"`, its top (box height − lines × line height) / 2 down; a detail under it, smaller and grey.
-- `arrow` — `from`, `to` (shapes: `"@ref"` in the same unit, or an id), `bend` (how far the middle bows out), `dash`, `line` (no arrowhead), `color`. A straight line between the shapes' edges; it follows them when they move. The word on it is a `text` by its middle.
+- `arrow` — `from`, `to` (the shapes it joins), `from_at`, `to_at` (where its two ends are, `[x, y]` from the origin: at the edges of those shapes, a few px off them), `bend` (how far the middle bows out; 0 straight), `dash`, `line` (no arrowhead), `color`. A diamond's corners and an ellipse's ends are at the middles of its box's sides: run arrows to and from there. It is drawn from end to end exactly; when a shape moves later, its end stays at the same spot on it. The word on it is a `text` by its middle. Plan the ends so arrows do not cross each other or run over other shapes.
 - `frame` — `title`, `w`, `h` (or `around`: the shapes it encloses, then it needs no `at`), `aspect`.
 - `pen` (`points` from the origin), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `delete` (`ids`).
 
-`ref` names what an item adds, and `"@ref"` points at it in the same unit; in later units use the ids `placed` gave. If any item breaks a rule or fails, nothing of the unit is applied, and the error says which item and why.
+`ref` names what an item adds, and `"@ref"` points at it — in the same unit or any later one (the last thing you named so on this board): give the things of a drawing distinct refs. If any item breaks a rule or fails, nothing of the unit is applied, and the error says which item and why.
 
-It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its ends. Nothing is changed to fit: when a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`), or draw the next unit around it.
+It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its two `ends`. Nothing is changed to fit: when a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`), or draw the next unit around it.
 
 A plain list of steps, with no origin, only changes what is there: `[{ "do": "update", "id": "…", "color": "green" }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 

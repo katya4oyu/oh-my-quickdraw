@@ -102,7 +102,8 @@ export const BOARD_TOOLS = [
     name: 'apply_steps',
     description: 'Draws on the board: the one way to add shapes, words and arrows. One unit of thought per call (a question; then its options and the arrows to them; then what was chosen), so people see the drawing grow. '
       + '`items` are steps { do: shape|text|arrow|frame|image|embed|pen|update|move|delete, …the fields of that step }, each with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left); it goes exactly there, nothing is moved or looked for. '
-      + 'Every size is a number: a shape gives w and h and holds no words; words are text items with font_size in px (a box\'s name: at the box\'s x, w its width, align middle; a detail under it, smaller); an arrow joins two shapes (from, to; ref "a" names what an item adds, "@a" points at it in the same call) and takes no label (put the word as a text by it). '
+      + 'Every size is a number: a shape gives w and h and holds no words; words are text items with font_size in px (a box\'s name: at the box\'s x, w its width, align middle; a detail under it, smaller); an arrow joins two shapes (from, to) with its ends where you write them, from_at and to_at [x, y] from the origin at the shapes\' edges (a straight line, or bowed by bend), and takes no label (put the word as a text by it). '
+      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one. '
       + 'It gives back `placed`: each item\'s id, at, size, a text\'s px and lines, whether it lies inside the frame. What does not fit is left as written: fix it in the next call. '
       + '`steps` instead of `items` (no origin): changes to what is there only — update, move, arrange, fit, tidy, status, delete, frame around shapes.',
     inputSchema: object({

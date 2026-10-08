@@ -1,6 +1,6 @@
 # Mind map
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `Q_ID` and the like are the ids an earlier unit's `placed` gave.
+Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
 
 One topic in the centre, its parts around it; parts of parts further out.
 
@@ -15,7 +15,7 @@ One topic in the centre, its parts around it; parts of parts further out.
 {"unit": "a branch", "origin": [0, 0], "items": [
   {"do": "shape", "shape": "rectangle", "color": "black", "w": 160, "h": 70, "at": [0, 40], "ref": "a"},
   {"do": "text", "text": "Venue", "font_size": 16, "color": "black", "w": 160, "align": "middle", "at": [0, 64]},
-  {"do": "arrow", "from": "C_ID", "to": "@a", "line": true}
+  {"do": "arrow", "from": "@c", "to": "@a", "line": true, "from_at": [323, 215], "to_at": [146, 113]}
 ] }
 ```
 

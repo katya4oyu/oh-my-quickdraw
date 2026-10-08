@@ -43,7 +43,8 @@ export interface Operations {
   /** A bento grid's columns; its cells pack again. */
   columns(id: string, cols: number): string
   /** `bend`: how far its middle bows out (+ right as it goes, - left); `label`: a text by its middle that follows it (its `textSize`, s by default) */
-  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
+  /** fromAt, toAt: where its ends are, page points at the edges of the two shapes it joins (as written; they stay at those spots on the shapes) */
+  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize, fromAt?: Point, toAt?: Point }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
   update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, fontSize?: number, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
@@ -95,7 +96,10 @@ export interface Placed {
   font_size?: number
   /** with the unit's `in`: whether it lies inside that frame */
   inside?: boolean
-  from?: string, to?: string, label?: { at: [number, number], size: [number, number] }
+  from?: string, to?: string
+  /** an arrow's two ends, from the origin */
+  ends?: [[number, number], [number, number]]
+  label?: { at: [number, number], size: [number, number] }
 }
 
 export interface BoardDescription {
@@ -139,6 +143,8 @@ export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame
 /** Layout problems: shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. Narrowed to a frame, some shapes or an area. */
 /** What to check; `words`: how fixes are named, as the board tools (default) or as omq commands ('cli'). */
 export interface LintScope { frame?: string, ids?: string[], area?: Rect, words?: 'tools' | 'cli' }
+/** Where a linked arrow goes now: its written ends where they are on its shapes, else edge to edge. */
+export function linkRoute(store: Store, arrow: object): { x: number, y: number, dx: number, dy: number } | null
 export function lintBoard(store: Store, scope?: LintScope): LintIssue[]
 /** A shape's label as the core lays it out: the lines it wraps to, and whether it fits the shape; null for what has no label. */
 export function labelFit(shape: object): { lines: number, fits: boolean } | null

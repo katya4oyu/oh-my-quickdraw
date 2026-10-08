@@ -129,6 +129,11 @@ describe('a unit', () => {
       { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
       { do: 'arrow', from: '@a', to: '@b', label: 'yes' },
     ] }, { name: 'C' })).toThrow(/takes no label/)
+    expect(() => tool.run(store, { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b' },
+    ] }, { name: 'C' })).toThrow(/from_at and to_at/)
     expect(store.shapes()).toHaveLength(0)
   })
 
@@ -148,5 +153,35 @@ describe('a unit', () => {
     expect(store.get(name.id).props.scale).toBe(1.5)
     expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', font_size: 2 }])).toThrow(/8 to 160/)
     expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', align: 'left' }])).toThrow(/unknown align/)
+  })
+
+  it('an arrow goes exactly where its ends are written, and they stay at those spots when a shape moves', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [100, 100], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 200, h: 100, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [400, 200], w: 200, h: 100, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', from_at: [204, 30], to_at: [396, 270] },
+    ] }, { drawing: 'units' })
+    const arrow = placed[2]
+    expect(arrow.ends).toEqual([[204, 30], [396, 270]])
+    expect(store.get(arrow.id)).toMatchObject({ x: 304, y: 130, props: { dx: 192, dy: 240 } })
+    applySteps(store, 'C', [{ do: 'move', id: placed[1].id, dx: 0, dy: 100 }])
+    const moved = store.get(arrow.id)
+    expect([moved.x, moved.y, moved.x + moved.props.dx, moved.y + moved.props.dy]).toEqual([304, 130, 496, 470]) // the same spot on b, 100 lower
+    expect(() => applySteps(store, 'C', { origin: [100, 100], items: [
+      { do: 'arrow', from: placed[0].id, to: placed[1].id, from_at: [600, 600], to_at: [396, 370] },
+    ] }, { drawing: 'units' })).toThrow(/from_at .* is not on or by/)
+  })
+
+  it('a ref points at what the same agent named so before, in an earlier unit', () => {
+    const store = board()
+    applySteps(store, 'C', { origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'q' }] }, { drawing: 'units' })
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [300, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'arrow', from: '@q', to: '@a', from_at: [104, 30], to_at: [296, 30] },
+    ] }, { drawing: 'units' })
+    expect(placed[1].from).toBe(store.shapes().find((s) => s.agent?.ref === 'q').id)
+    // another agent's names are not this one's
+    expect(() => applySteps(store, 'D', [{ do: 'update', id: '@q', color: 'red' }])).toThrow(/unknown ref @q/)
   })
 })

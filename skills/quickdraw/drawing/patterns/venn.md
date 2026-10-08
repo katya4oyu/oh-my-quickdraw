@@ -1,6 +1,6 @@
 # Venn
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `Q_ID` and the like are the ids an earlier unit's `placed` gave.
+Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
 
 What two (or three) things share. The circles overlap on purpose: lint reports it, leave it.
 

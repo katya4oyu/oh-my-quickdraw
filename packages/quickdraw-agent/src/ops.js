@@ -501,10 +501,17 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // shapes it keeps `link` and is re-routed when they move in an operation.
     // `bend`: how far its middle bows out (+ to the right as it goes, - to the
     // left); `dash`; `label`: a word or two by its middle, which follows it
+    // fromAt, toAt: where its ends are (page points on or by those shapes), as
+    // written; kept as where on each shape they are, so they stay there when it moves
     arrow(from, to, opts = {}) {
-      const g = route(store, [from, to].map((e) => (typeof e === 'string' ? pageBounds(need(e)) : { x: e.x, y: e.y, w: 0, h: 0 })))
+      const ends = [from, to].map((e) => (typeof e === 'string' ? pageBounds(need(e)) : { x: e.x, y: e.y, w: 0, h: 0 }))
+      const written = opts.fromAt && opts.toAt
+      if ((opts.fromAt || opts.toAt) && !written) throw new Error('give both ends, from_at and to_at, or neither')
+      if (written && (typeof from !== 'string' || typeof to !== 'string')) throw new Error('an arrow with written ends joins two shapes')
+      const at = written ? [opts.fromAt, opts.toAt].map((p, i) => onShape(p, ends[i], i ? 'to_at' : 'from_at', i ? to : from)) : null
+      const g = written ? { x: at[0].x, y: at[0].y, dx: at[1].x - at[0].x, dy: at[1].y - at[0].y } : route(store, ends)
       const id = newId()
-      const link = typeof from === 'string' && typeof to === 'string' ? { link: { from, to } } : {}
+      const link = typeof from === 'string' && typeof to === 'string' ? { link: { from, to, ...(at ? { at: { from: at[0].on, to: at[1].on } } : {}) } } : {}
       put({ id, type: opts.line ? 'line' : 'arrow', x: g.x, y: g.y, ...link, props: { dx: g.dx, dy: g.dy, bend: checkBend(opts.bend) ?? 0, color: checkColor(opts.color) ?? 'black', size: 'm', dash: checkDash(opts.dash) ?? 'solid' } })
       if (opts.label) setLabel(id, opts.label, opts)
       return id
@@ -680,6 +687,14 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       focus = { x: x0, y: y0 }
       return boxes.flatMap((b) => b.fs.map((f) => f.id))
     },
+    // a ref an agent gave what it added, kept with it, to point at it later as '@ref'
+    name(id, ref) {
+      const s = typeof id === 'string' && store.get(id)
+      if (s?.typeName === 'shape' && s.agent) store.update(id, { agent: { ...s.agent, ref: String(ref) } })
+    },
+    named(ref) {
+      return store.shapes().filter((s) => s.agent?.name === name && s.agent.ref === ref).sort((a, b) => b.z - a.z)[0]?.id
+    },
     // only what an agent added; a frame goes with its title, its members stay
     delete(ids) {
       for (const id of ids) {
@@ -705,9 +720,8 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
   function reroute() {
     for (const s of store.shapes()) {
       if (!s.link || !isLine(s)) continue
-      const a = store.get(s.link.from), b = store.get(s.link.to)
-      if (!a || !b) continue
-      const g = route(store, [pageBounds(a), pageBounds(b)])
+      const g = linkRoute(store, s)
+      if (!g) continue
       if (Math.abs(g.x - s.x) + Math.abs(g.y - s.y) + Math.abs(g.dx - s.props.dx) + Math.abs(g.dy - s.props.dy) > 0.5) {
         store.update(s.id, { x: g.x, y: g.y, props: { dx: g.dx, dy: g.dy } })
       }
@@ -725,6 +739,26 @@ function withTitle(store, s) {
   const tb = pageBounds(t)
   const x = Math.min(b.x, tb.x), y = Math.min(b.y, tb.y)
   return { x, y, w: Math.max(b.x + b.w, tb.x + tb.w) - x, h: Math.max(b.y + b.h, tb.y + tb.h) - y }
+}
+
+// a written end: a page point on a shape (or by it: within reach of its box),
+// and where on the shape it is, as fractions of its box (so it follows the shape)
+const REACH = 24
+function onShape(p, b, what, id) {
+  const x = Number(p?.x), y = Number(p?.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`${what} is a point, [x, y]`)
+  if (x < b.x - REACH || x > b.x + b.w + REACH || y < b.y - REACH || y > b.y + b.h + REACH) throw new Error(`${what} (${Math.round(x)}, ${Math.round(y)} on the page) is not on or by ${id} (${Math.round(b.x)}, ${Math.round(b.y)}, ${Math.round(b.w)} × ${Math.round(b.h)}): put it at the shape's edge`)
+  return { x, y, on: [b.w ? (x - b.x) / b.w : 0, b.h ? (y - b.y) / b.h : 0] }
+}
+
+/** Where a linked arrow goes now: its written ends where they are on its shapes, else edge to edge; null when an end is gone. */
+export function linkRoute(store, s) {
+  const a = s.link && store.get(s.link.from), b = s.link && store.get(s.link.to)
+  if (!a || !b) return null
+  const ra = pageBounds(a), rb = pageBounds(b)
+  if (!s.link.at) return route(store, [ra, rb])
+  const [p, q] = [[ra, s.link.at.from], [rb, s.link.at.to]].map(([r, [fx, fy]]) => ({ x: r.x + fx * r.w, y: r.y + fy * r.h }))
+  return { x: p.x, y: p.y, dx: q.x - p.x, dy: q.y - p.y }
 }
 
 // the segment between two rects' centres, cut at their edges (plus a gap)
@@ -809,7 +843,8 @@ export function applySteps(store, name, steps, { area, prefer, drawing } = {}) {
 
 // `at`: where a position given in a step is on the page; `label`: how an error names the step (a unit's items: all errors)
 function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
-  const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
+  // '@a': what this list named a, else what this agent named a before on this board (the latest)
+  const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? ops.named(v.slice(1)) ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
   const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, align: s.align, inFrame: r(s.in) })
   return steps.map((s, i) => {
     let out
@@ -828,7 +863,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: at(s.at) }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
-        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
+        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize, fromAt: at(pointOf(s.from_at, 'from_at')), toAt: at(pointOf(s.to_at, 'to_at')) }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
@@ -842,7 +877,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
       if (label && !e.message.startsWith(label(i, s))) e.message = `${label(i, s)}: ${e.message}`
       throw e
     }
-    if (s.ref) refs[s.ref] = out
+    if (s.ref) { refs[s.ref] = out; ops.name(out, s.ref) }
     return out
   })
 }
@@ -861,7 +896,7 @@ const ADDS = new Set([...PLACES, 'arrow'])
 const UNIT_RULES = {
   shape: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : s.text != null || s.label != null ? 'a shape holds no words: put them as a text item over it (at, font_size, w, align: middle)' : null),
   text: (s) => (s.font_size == null && s.fontSize == null ? 'give its font_size in px' : null),
-  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : null),
+  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : s.from_at == null || s.to_at == null ? 'give where its ends are, from_at and to_at [x, y] (from the origin), at the edges of the shapes it joins' : null),
   frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
   image: (s) => (s.w == null ? 'give its width, w' : null),
   embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
@@ -907,7 +942,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     if (isLine(rec)) {
       const label = store.shapes().find((l) => l.labelOf === id)
       const lb = label && box(label)
-      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}) }
+      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ends: [[round(rec.x - base.x), round(rec.y - base.y)], [round(rec.x + rec.props.dx - base.x), round(rec.y + rec.props.dy - base.y)]], ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}) }
     }
     const b = box(rec)
     const fit = labelFit(rec)

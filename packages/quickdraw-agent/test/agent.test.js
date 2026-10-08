@@ -108,7 +108,7 @@ describe('tools', () => {
     const { ids } = tool('apply_steps').run(store, { origin: [0, 0], items: [
       { do: 'shape', shape: 'rectangle', at: [0, 0], w: 180, h: 100, ref: 'a' },
       { do: 'shape', shape: 'ellipse', at: [300, 0], w: 180, h: 100, ref: 'b' },
-      { do: 'arrow', from: '@a', to: '@b' },
+      { do: 'arrow', from: '@a', to: '@b', from_at: [188, 50], to_at: [292, 50] },
     ] })
     expect(ids).toHaveLength(3)
     // a plain list changes what is there; it adds nothing

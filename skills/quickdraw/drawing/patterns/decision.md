@@ -1,6 +1,6 @@
 # Decision (issue → options → chosen)
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `Q_ID` and the like are the ids an earlier unit's `placed` gave.
+Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
 
 The core of most meetings: a question, the options with what each costs, the one chosen. The question on the left, options in a column, the chosen one green, the dropped ones grey, the reason in a smaller grey text under the option's name. A question in a diamond: its text narrower than the diamond (about half its width), wrapped to two lines.
 
@@ -19,16 +19,16 @@ The core of most meetings: a question, the options with what each costs, the one
   {"do": "shape", "shape": "rectangle", "color": "black", "w": 260, "h": 90, "at": [380, 200], "ref": "b"},
   {"do": "text", "text": "Billing redesign first", "font_size": 16, "color": "black", "w": 260, "align": "middle", "at": [380, 224]},
   {"do": "text", "text": "(paying users)", "font_size": 12, "color": "grey", "w": 260, "align": "middle", "at": [380, 250]},
-  {"do": "arrow", "from": "Q_ID", "to": "@a"},
-  {"do": "arrow", "from": "Q_ID", "to": "@b"}
+  {"do": "arrow", "from": "@q", "to": "@a", "from_at": [229, 123], "to_at": [374, 83]},
+  {"do": "arrow", "from": "@q", "to": "@b", "from_at": [231, 175], "to_at": [374, 211]}
 ] }
 ```
 
 ```json
 {"unit": "the one chosen", "items": [
-  {"do": "update", "id": "A_ID", "color": "green", "fill": "solid"},
-  {"do": "update", "id": "B_ID", "color": "grey"},
-  {"do": "frame", "title": "Decided: onboarding first", "around": ["Q_ID", "A_ID", "B_ID"]}
+  {"do": "update", "id": "@a", "color": "green", "fill": "solid"},
+  {"do": "update", "id": "@b", "color": "grey"},
+  {"do": "frame", "title": "Decided: onboarding first", "around": ["@q", "@a", "@b"]}
 ] }
 ```
 
