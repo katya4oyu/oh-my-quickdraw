@@ -94,17 +94,17 @@ Writing (each command is one operation, undoable as a whole)
                                           about --width wide (2400): each brings what is in it and its title, a
                                           kanban's columns stay together; for a board that has spread out
   delete ID…                               only shapes an agent added
-  apply UNIT.json                          draws: shapes, words and arrows go on only this way, a unit of
-                                           thought at a time, as written ({ origin, items }, every size a number),
-                                           as one operation; prints placed (see SKILL.md)
   svg FILE [--at X,Y] [--in FRAME] [--write chars|lines]
-                                           draws an SVG as by hand, as one operation: a frame its size, its
-                                           outlines with the pen and its words as texts, in the order written;
+                                           draws: shapes, words and arrows go on only this way. An SVG as by
+                                           hand, as one operation: a frame its size, its outlines with the pen
+                                           and its words as texts, in the order written (a <g> drawn together);
                                            on a live board a stroke at a time (joined: while you go on). The SVG
                                            is kept with it: omq read gives it back with what people changed since.
                                            Prints hits: words past their box, words on words, a line through words
   svg FILE --replace FRAME                 that drawing again from the SVG, changed: only what changed is redrawn
   svg --show FRAME                         the SVG a drawing was drawn from
+  apply STEPS.json                         changes what is there, as one operation: [{ "do": "move", … }, …]
+                                           (update, move, arrange, fit, tidy, status, delete, frame around)
 
 Tickets (work people leave on the board for agents)
   tickets [--status todo,doing,…] [--to NAME | --mine]
@@ -468,9 +468,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       }
       case 'note':
         done = await op((ops) => ops.note(args.join(' '), common)); break
-      // shapes, words and arrows have one way on: a unit with apply, every size a number
+      // shapes, words and arrows have one way on: an SVG, with omq svg
       case 'text': case 'shape': case 'arrow':
-        throw new Error(`${cmd}: draw with omq apply, a unit ({ origin, items }, each item at its at, every size a number; see SKILL.md)`)
+        throw new Error(`${cmd}: shapes, words and arrows are drawn as an SVG: write one, and draw it with omq svg FILE (see SKILL.md)`)
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = await op((ops) => ops.markdown(md, common)); break

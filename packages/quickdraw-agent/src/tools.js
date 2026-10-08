@@ -121,12 +121,9 @@ export const BOARD_TOOLS = [
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
-    description: 'Draws on the board: the one way to add shapes, words and arrows. One unit of thought per call (a question; then its options and the arrows to them; then what was chosen), so people see the drawing grow. '
-      + '`items` are steps { do: shape|text|arrow|frame|image|embed|pen|update|move|delete, …the fields of that step }, each with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left); it goes exactly there, nothing is moved or looked for. '
-      + 'Every size is a number: a shape gives w and h and holds no words; words are text items with font_size in px (a box\'s name: at the box\'s x, w its width, align middle; a detail under it, smaller); an arrow joins two shapes (from, to) with its ends where you write them, from_at and to_at [x, y] from the origin at the shapes\' edges (a straight line, or bowed by bend), and takes no label (put the word as a text by it). '
-      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one. '
-      + 'It gives back `placed`: each item\'s id, at, size, a text\'s px and lines, whether it lies inside the frame, and `hits`: what it runs into as drawn (an arrow crossing another, a line through words or over a shape it does not join, things on top of each other). Nothing is changed: put hits right in the next call. '
-      + '`steps` instead of `items` (no origin): changes to what is there only — update, move, arrange, fit, tidy, status, delete, frame around shapes.',
+    description: 'Changes what is there, as one step: `steps` [{ do: update|move|arrange|fit|tidy|status|delete|frame (around shapes), …the fields of that step }]. Shapes, words and arrows are drawn as an SVG with draw_svg, not here. '
+      + 'Or a unit that puts frames, images, embeds and pen strokes exactly where written: `items` with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left), every size a number; it gives back `placed` (each item\'s id, at, size, whether it lies inside the frame). '
+      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one.',
     inputSchema: object({
       unit: str('what this unit of thought is, in a few words'),
       origin: { type: 'array', items: num, minItems: 2, maxItems: 2, description: '[x, y]: the board point (with in: the point in that frame) every at in items is from' },

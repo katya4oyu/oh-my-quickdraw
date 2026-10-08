@@ -1,35 +1,33 @@
 # Tree (breakdown, why-why, issue tree)
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
+One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
 A root on top, its parts below, evidence under the parts. Children 300 apart; the root centred over them.
 
-```json
-{"unit": "the root", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "red", "w": 200, "h": 80, "at": [290, 0], "ref": "r"},
-  {"do": "text", "text": "Churn is up", "font_size": 16, "color": "red", "w": 200, "align": "middle", "at": [290, 30]}
-] }
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360">
+  <title>Why churn is up</title>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z"/></marker></defs>
+  <g id="root">
+    <rect x="300" y="10" width="200" height="80" rx="8" fill="none" stroke="#e03131" stroke-width="3"/>
+    <text x="400" y="56" font-size="16" fill="#e03131" text-anchor="middle">Churn is up</text>
+  </g>
+  <g id="parts">
+    <rect x="10" y="190" width="180" height="80" rx="8" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+    <text x="100" y="236" font-size="16" fill="#1d1d1d" text-anchor="middle">Price</text>
+    <rect x="310" y="190" width="180" height="80" rx="8" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+    <text x="400" y="236" font-size="16" fill="#1d1d1d" text-anchor="middle">Onboarding</text>
+    <rect x="610" y="190" width="180" height="80" rx="8" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+    <text x="700" y="236" font-size="16" fill="#1d1d1d" text-anchor="middle">Bugs</text>
+    <line x1="330" y1="94" x2="170" y2="184" stroke="#1d1d1d" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="400" y1="96" x2="400" y2="182" stroke="#1d1d1d" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="470" y1="94" x2="630" y2="184" stroke="#1d1d1d" stroke-width="3" marker-end="url(#a)"/>
+  </g>
+  <g id="evidence">
+    <line x1="100" y1="276" x2="100" y2="312" stroke="#9fa8b2" stroke-width="1.5"/>
+    <text x="100" y="334" font-size="12" fill="#9fa8b2" text-anchor="middle">Plan B costs 2× A</text>
+  </g>
+</svg>
 ```
 
-```json
-{"unit": "its parts", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "black", "w": 180, "h": 80, "at": [0, 180], "ref": "a"},
-  {"do": "text", "text": "Price", "font_size": 16, "color": "black", "w": 180, "align": "middle", "at": [0, 210]},
-  {"do": "shape", "shape": "rectangle", "color": "black", "w": 180, "h": 80, "at": [300, 180], "ref": "b"},
-  {"do": "text", "text": "Onboarding", "font_size": 16, "color": "black", "w": 180, "align": "middle", "at": [300, 210]},
-  {"do": "shape", "shape": "rectangle", "color": "black", "w": 180, "h": 80, "at": [600, 180], "ref": "c"},
-  {"do": "text", "text": "Bugs", "font_size": 16, "color": "black", "w": 180, "align": "middle", "at": [600, 210]},
-  {"do": "arrow", "from": "@r", "to": "@a", "from_at": [318, 83], "to_at": [162, 177]},
-  {"do": "arrow", "from": "@r", "to": "@b", "from_at": [390, 86], "to_at": [390, 174]},
-  {"do": "arrow", "from": "@r", "to": "@c", "from_at": [462, 83], "to_at": [618, 177]}
-] }
-```
-
-```json
-{"unit": "evidence under a part", "origin": [0, 0], "items": [
-  {"do": "text", "text": "Plan B costs 2x A", "font_size": 12, "color": "grey", "at": [0, 320], "ref": "n1"},
-  {"do": "arrow", "from": "@a", "to": "@n1", "line": true, "from_at": [77, 266], "to_at": [64, 314]}
-] }
-```
-
-More than 4 children, or deeper than 3 levels: grow sideways instead (root on the left, `layout: column` for each level, arrows to the right).
+More than 4 children, or deeper than 3 levels: grow sideways instead (the root on the left, each level a column, arrows to the right).

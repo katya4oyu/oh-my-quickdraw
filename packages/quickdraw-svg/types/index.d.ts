@@ -1,7 +1,7 @@
 export type PenColor = 'black' | 'grey' | 'light-violet' | 'violet' | 'blue' | 'light-blue' | 'yellow' | 'orange' | 'green' | 'light-green' | 'light-red' | 'red'
 
 /** A pen stroke along an element's outline (or an arrowhead), in the SVG's coordinates. */
-export interface SvgStroke { kind: 'stroke', el: string, tag: string, unit: number, sig: string, points: [number, number][], color: PenColor, size: 's' | 'm' | 'l' | 'xl' }
+export interface SvgStroke { kind: 'stroke', el: string, tag: string, unit: number, sig: string, points: [number, number][], color: PenColor, size: 's' | 'm' | 'l' | 'xl', dash?: 'dashed' | 'dotted' }
 /** A line of words where the SVG put it: `at` is its top-left. */
 export interface SvgText { kind: 'text', el: string, tag: 'text', unit: number, sig: string, text: string, at: [number, number], fontSize: number, color: PenColor, w?: number, align?: 'middle' | 'end' }
 

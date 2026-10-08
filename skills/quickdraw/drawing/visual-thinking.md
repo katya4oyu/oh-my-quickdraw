@@ -14,7 +14,7 @@ Sort the material before drawing anything. Each piece is one of:
 | **Claim** | something someone holds to be true | a shape or a short text |
 | **Issue** | a point under discussion, a question | red / light-red |
 | **Decision** | agreed | green |
-| **Open** | not decided yet, a guess, a proposal | grey, or hatched (`"fill": "pattern"`), with "?" |
+| **Open** | not decided yet, a guess, a proposal | grey, or a dashed outline (`stroke-dasharray`), with "?" |
 | **Action** | someone does something by some time | blue, with who and when |
 | **Evidence** | numbers, quotes, examples behind a claim | a note or Markdown card beside its claim |
 
@@ -38,35 +38,35 @@ Keep only what serves the theme. Words on the board are **keywords**: a noun phr
 
 ## 2. Pick a pattern
 
-Look the relation up in `patterns.md` and use its shape and its units (`apply` skeletons). When nothing fits, a plain row or column of shapes joined by arrows is always readable.
+Look the relation up in `patterns.md` and use its shape and its units (SVG skeletons, a `<g>` per unit). When nothing fits, a plain row or column of boxes joined by arrows is always readable.
 
 ## 3. Place
 
 - **Reading order**: left to right, top to bottom; or from the centre outwards (mind map). The theme is where the eye lands first: top-left, or the centre.
-- **Levels of size**, as numbers (`font_size`, px): the title 34, headings 22, a box's name 16, details, captions and the word on an arrow 12–13. A few levels, used the same way throughout. Notes are big (200 × 200, words 20 px): use them for items people will move, and boxes with texts for the rest.
-- **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. A shape with no `color` is **blue**: give `"color": "black"` to neutral shapes, or blue reads as an action. Say the legend once when it is not obvious.
-- **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided. Hand-drawn outlines (`"dash": "draw"`) by default; `dashed` for a proposal or a link that is not certain.
+- **Levels of size**, as numbers (`font-size`, px): the title 34, headings 22, a box's name 16, details, captions and the word on an arrow 12–13. A few levels, used the same way throughout. Notes are big (200 × 200, words 20 px): use them for items people will move, and boxes with texts for the rest.
+- **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black (`#1d1d1d`) or grey (`#9fa8b2`): blue reads as an action. Say the legend once when it is not obvious.
+- **Weight with the line**, as on a whiteboard (there are no fills): a bolder outline (`stroke-width` 5) for the one or two shapes that matter most, 3 for the rest; a dashed outline (`stroke-dasharray="8 6"`) for a proposal, what is out of scope or not certain.
 - **Space**: 60–80 between shapes in a drawing, more between drawings. Crowding reads as noise: make room, or split into another frame.
-- **Group** what belongs together: a frame around it (`frame --around`), or a bento cell.
+- **Group** what belongs together: one SVG (its frame), or a box drawn round a part of it.
 - **Graphic-recording touches**, with what there is:
   - a speaker or a role: a small SVG figure (`image person.svg --width 60`), next to what they said
   - emphasis that stays: `pen circle ID`, `pen underline ID`
-  - a quote or an idea: a `cloud` shape; a highlight: a `star`
-  - the word on an arrow ("causes", "yes"): a `text` (12–13 px) by its middle; arrows that would cross: `bend` one round the other
-  - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
+  - a quote or an idea: a cloud (a `path` of `Q` curves: arcs are drawn straight); a highlight: a star (`polygon`)
+  - the word on an arrow ("causes", "yes"): a `text` (12–13 px) by its middle; arrows that would cross: curve one round the other (a `path` with `Q`)
+  - an icon or a small figure: draw it in the SVG with a few strokes
 
-Positions, a unit at a time:
+Positions, as numbers:
 
-1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: each box big enough for its texts (`SKILL.md`, Drawing: a line's height and a letter's width), a diamond or an ellipse about half as wide again as a rectangle for the same words.
-2. Draw one unit of thought per `apply` — the question, then its options, then the arrows and what was chosen — all with that `origin`, each item at its planned `at`. The board shows exactly what you wrote.
-3. Read the `placed` it prints before the next unit: its `hits` (arrows crossing, a line through words or over a shape, things on top of each other), a text that took more lines than planned, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
+1. Plan the drawing in its own coordinates (the SVG's `viewBox`): where each part goes (the offsets in `patterns.md`), sizes included — each box big enough for its words (`SKILL.md`, Drawing: a letter's width), a diamond or an ellipse about half as wide again as a box for the same words.
+2. Write it as one SVG, a unit of thought per `<g>` in reading order — the question, then its options, then the arrows and what was chosen — and draw it with `omq svg` (in a joined session it goes in your `area`, else in free space; `--at X,Y` puts it elsewhere). People see it drawn a unit at a time.
+3. Read the `hits` it prints (words past their box, words on words, a line through words) and fix the SVG: `omq svg FILE --replace FRAME_ID` redraws only what changed.
 
 ## 4. Check
 
 Once a drawing is done (not after every step):
 
-1. `omq lint --ids …` (what you just made) and fix what it lists. An overlap you meant (a Venn) can stay.
-2. `omq look --frame FRAME_ID` (or `--ids`): a small picture. Go through it with these questions, and fix what fails:
+1. `hits` (from `omq svg`) are fixed. An overlap you meant (a Venn) can stay.
+2. `omq look --frame FRAME_ID`: a small picture of it as drawn. Go through it with these questions, and fix what fails:
    - Can the theme be read in three seconds?
    - Does the eye know where to start and where to go next?
    - Do any arrows cross each other or run across shapes?

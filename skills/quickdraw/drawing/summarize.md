@@ -13,13 +13,13 @@ You are given material — meeting notes, a chat log, a document, a codebase, re
 
 Decide where each part goes before filling any of them:
 
-- A title: the theme as a `text` of 34 px, and the one message under it as a `text` of 18 px.
-- The parts: frames in reading order when each part is one diagram (it has its own size); a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists that will grow. Build each part, `frame --around` it, then line the frames up with `tidy FRAME,FRAME,…` (or `arrange`).
+- A title: the theme in 34 px and the one message under it in 18 px, as a small SVG of its own (`omq svg`) at the top.
+- The parts: an SVG per part, in reading order (each is its own frame, its own size; `--at` beside the last), or a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists of notes that will grow. Line the frames up with `tidy FRAME,FRAME,…` (or `arrange`).
 - A conclusion at the end of the reading order: decisions, open points and next actions.
 
 ## 3. Fill
 
-Fill one part at a time, each with its pattern, a unit of thought per `apply` (all with the part's origin), so the part grows as people watch. Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). `lint` each part before the next; look at the whole once at the end (`omq look`).
+Fill one part at a time, each with its pattern: one SVG, a unit of thought per `<g>`, so the part is drawn as people watch (joined: write the next part while it is drawn). Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). Fix each part's `hits` before the next; look at the whole once at the end (`omq look`).
 
 ## 4. Finish
 

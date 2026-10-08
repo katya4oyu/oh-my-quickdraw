@@ -1,35 +1,29 @@
 # Decision (issue → options → chosen)
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
+One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
-The core of most meetings: a question, the options with what each costs, the one chosen. The question on the left, options in a column, the chosen one green, the dropped ones grey, the reason in a smaller grey text under the option's name. A question in a diamond: its text narrower than the diamond (about half its width), wrapped to two lines.
+The core of most meetings: a question, the options with what each costs, the one chosen. The question on the left, options in a column, the chosen one green and bold, the dropped ones grey, the reason in a smaller grey text under the option's name. A question in a diamond: its words about half the diamond's width, on two lines.
 
-```json
-{"unit": "the question", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "diamond", "color": "red", "w": 260, "h": 180, "at": [0, 60], "ref": "q"},
-  {"do": "text", "text": "Onboarding or billing first?", "font_size": 16, "color": "red", "w": 140, "align": "middle", "at": [60, 129]}
-] }
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 320">
+  <title>Decided: onboarding first</title>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z"/></marker></defs>
+  <g id="question">
+    <path d="M10 160 L140 70 L270 160 L140 250 Z" fill="none" stroke="#e03131" stroke-width="3"/>
+    <text x="140" y="154" font-size="16" fill="#e03131" text-anchor="middle">Onboarding or</text>
+    <text x="140" y="176" font-size="16" fill="#e03131" text-anchor="middle">billing first?</text>
+  </g>
+  <g id="options">
+    <rect x="390" y="30" width="260" height="90" rx="8" fill="none" stroke="#099268" stroke-width="5"/>
+    <text x="520" y="70" font-size="16" fill="#099268" text-anchor="middle">Onboarding first</text>
+    <text x="520" y="94" font-size="12" fill="#9fa8b2" text-anchor="middle">2 weeks · fewer tickets</text>
+    <rect x="390" y="200" width="260" height="90" rx="8" fill="none" stroke="#9fa8b2" stroke-width="3"/>
+    <text x="520" y="240" font-size="16" fill="#9fa8b2" text-anchor="middle">Billing redesign first</text>
+    <text x="520" y="264" font-size="12" fill="#9fa8b2" text-anchor="middle">paying users</text>
+    <line x1="240" y1="138" x2="382" y2="90" stroke="#1d1d1d" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="240" y1="182" x2="382" y2="230" stroke="#9fa8b2" stroke-width="3" marker-end="url(#a)"/>
+  </g>
+</svg>
 ```
 
-```json
-{"unit": "the options", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "black", "w": 260, "h": 90, "at": [380, 0], "ref": "a"},
-  {"do": "text", "text": "Onboarding first", "font_size": 16, "color": "black", "w": 260, "align": "middle", "at": [380, 24]},
-  {"do": "text", "text": "(2 weeks, fewer tickets)", "font_size": 12, "color": "grey", "w": 260, "align": "middle", "at": [380, 50]},
-  {"do": "shape", "shape": "rectangle", "color": "black", "w": 260, "h": 90, "at": [380, 200], "ref": "b"},
-  {"do": "text", "text": "Billing redesign first", "font_size": 16, "color": "black", "w": 260, "align": "middle", "at": [380, 224]},
-  {"do": "text", "text": "(paying users)", "font_size": 12, "color": "grey", "w": 260, "align": "middle", "at": [380, 250]},
-  {"do": "arrow", "from": "@q", "to": "@a", "from_at": [229, 123], "to_at": [374, 83]},
-  {"do": "arrow", "from": "@q", "to": "@b", "from_at": [231, 175], "to_at": [374, 211]}
-] }
-```
-
-```json
-{"unit": "the one chosen", "items": [
-  {"do": "update", "id": "@a", "color": "green", "fill": "solid"},
-  {"do": "update", "id": "@b", "color": "grey"},
-  {"do": "frame", "title": "Decided: onboarding first", "around": ["@q", "@a", "@b"]}
-] }
-```
-
-The frame's title says the decision, so it reads even from afar. Still open: the question stays red and no option is green.
+The title says the decision, so it reads even from afar. Still open: the question stays red, no option is green, and the title asks the question. When it is decided, change the SVG and draw it again with `--replace`: only what changed is redrawn.

@@ -53,7 +53,7 @@ export interface Operations {
   fit(frameId: string, opts?: { ids?: string[] }): string[]
   delete(ids: string[]): string[]
   /** A hand-drawn pen stroke: around a shape, under it, or through page points; red unless said. */
-  pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string }): string
+  pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string, dash?: Dash }): string
   /**
    * Draws an SVG as on a whiteboard (quickdraw-svg): a frame its size, its outlines as pen strokes, its words as texts, where it has them.
    * The SVG is kept as an asset; the frame and every part carry `svg: { asset, el, unit }`. Returns [frame, …parts].

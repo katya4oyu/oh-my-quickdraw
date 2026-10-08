@@ -107,33 +107,23 @@ describe('a unit', () => {
     const store = board()
     const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
     const r = tool.run(store, { unit: 'u', origin: [0, 0], items: [
-      { do: 'shape', shape: 'rectangle', at: [10, 20], w: 180, h: 100, ref: 'a' },
-      { do: 'text', text: 'A', font_size: 16, w: 180, align: 'middle', at: [10, 50] },
+      { do: 'frame', title: 'F', at: [10, 20], w: 180, h: 100, ref: 'a' },
+      { do: 'pen', points: [[20, 40], [120, 40]] },
     ] }, { name: 'C' })
-    expect(r.placed).toEqual([expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100] }), expect.objectContaining({ at: [10, 50], font_size: 16, lines: 1 })])
+    expect(r.placed[0]).toEqual(expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100] }))
     expect(r.ids).toHaveLength(2)
   })
 
-  it('drawn by an agent, a unit has one way to write each thing: every size a number, every word a text', () => {
+  it('drawn by an agent, shapes, words and arrows have one way: an SVG (draw_svg)', () => {
     const store = board()
     const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
     const one = (item) => () => tool.run(store, { origin: [0, 0], items: [item] }, { name: 'C' })
-    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0] })).toThrow(/w and h/)
-    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, text: 'A' })).toThrow(/holds no words/)
-    expect(one({ do: 'text', text: 'A', at: [0, 0] })).toThrow(/font_size in px/)
-    expect(one({ do: 'text', text: 'A', at: [0, 0], font_size: 16, text_size: 'l' })).toThrow(/not text_size/)
+    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60 })).toThrow(/drawn as an SVG/)
+    expect(one({ do: 'text', text: 'A', at: [0, 0], font_size: 16 })).toThrow(/drawn as an SVG/)
+    expect(one({ do: 'arrow', from: 'a', to: 'b', from_at: [0, 0], to_at: [1, 1] })).toThrow(/drawn as an SVG/)
+    expect(() => tool.run(store, { steps: [{ do: 'text', text: 'A' }] }, { name: 'C' })).toThrow(/drawn as an SVG/)
     expect(one({ do: 'note', text: 'A', at: [0, 0] })).toThrow(/not in a unit/)
     expect(one({ do: 'frame', title: 'F', at: [0, 0] })).toThrow(/w and h/)
-    expect(() => tool.run(store, { origin: [0, 0], items: [
-      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
-      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
-      { do: 'arrow', from: '@a', to: '@b', label: 'yes' },
-    ] }, { name: 'C' })).toThrow(/takes no label/)
-    expect(() => tool.run(store, { origin: [0, 0], items: [
-      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
-      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
-      { do: 'arrow', from: '@a', to: '@b' },
-    ] }, { name: 'C' })).toThrow(/from_at and to_at/)
     expect(store.shapes()).toHaveLength(0)
   })
 
@@ -161,7 +151,7 @@ describe('a unit', () => {
       { do: 'shape', shape: 'rectangle', at: [0, 0], w: 200, h: 100, ref: 'a' },
       { do: 'shape', shape: 'rectangle', at: [400, 200], w: 200, h: 100, ref: 'b' },
       { do: 'arrow', from: '@a', to: '@b', from_at: [204, 30], to_at: [396, 270] },
-    ] }, { drawing: 'units' })
+    ] })
     const arrow = placed[2]
     expect(arrow.ends).toEqual([[204, 30], [396, 270]])
     expect(store.get(arrow.id)).toMatchObject({ x: 304, y: 130, props: { dx: 192, dy: 240 } })
@@ -170,16 +160,16 @@ describe('a unit', () => {
     expect([moved.x, moved.y, moved.x + moved.props.dx, moved.y + moved.props.dy]).toEqual([304, 130, 496, 470]) // the same spot on b, 100 lower
     expect(() => applySteps(store, 'C', { origin: [100, 100], items: [
       { do: 'arrow', from: placed[0].id, to: placed[1].id, from_at: [600, 600], to_at: [396, 370] },
-    ] }, { drawing: 'units' })).toThrow(/from_at .* is not on or by/)
+    ] })).toThrow(/from_at .* is not on or by/)
   })
 
   it('a ref points at what the same agent named so before, in an earlier unit', () => {
     const store = board()
-    applySteps(store, 'C', { origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'q' }] }, { drawing: 'units' })
+    applySteps(store, 'C', { origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'q' }] })
     const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
       { do: 'shape', shape: 'rectangle', at: [300, 0], w: 100, h: 60, ref: 'a' },
       { do: 'arrow', from: '@q', to: '@a', from_at: [104, 30], to_at: [296, 30] },
-    ] }, { drawing: 'units' })
+    ] })
     expect(placed[1].from).toBe(store.shapes().find((s) => s.agent?.ref === 'q').id)
     // another agent's names are not this one's
     expect(() => applySteps(store, 'D', [{ do: 'update', id: '@q', color: 'red' }])).toThrow(/unknown ref @q/)

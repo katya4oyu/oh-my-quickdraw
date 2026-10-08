@@ -6,7 +6,7 @@
 // strokes, a text (or each positioned tspan) words where they were. Colours
 // and widths come from attributes, <style> rules by class or tag, and what a
 // <g> passes down, and go to the nearest of the board's colours and sizes.
-// Fills are not drawn (a whiteboard has none): a shape with only a fill gets
+// A dash pattern is a dashed or dotted pen line. Fills are not drawn (a whiteboard has none): a shape with only a fill gets
 // its outline. What cannot be carried (gradients, filters, faint decoration)
 // is listed in `dropped`. Every part says which element it came from (`el`).
 // Dependency-free.
@@ -234,10 +234,12 @@ export function readSvg(source) {
   const TAG = new Map(recs.filter((r) => r.el).map((r) => [r.el, r.tag]))
   for (const r of recs) if (r.el && r.lines?.some((l) => !l.closed) && (marker(r.cs['marker-end']) || marker(r.cs['marker-start']))) TAG.set(r.el, 'arrow')
   const head = (p, q, len) => { const a = Math.atan2(q[1] - p[1], q[0] - p[0]), s = Math.PI / 7; return [[q[0] - len * Math.cos(a - s), q[1] - len * Math.sin(a - s)], q, [q[0] - len * Math.cos(a + s), q[1] - len * Math.sin(a + s)]] }
-  const stroke = (el, unit, pts, color, size) => {
+  const stroke = (el, unit, pts, color, size, dash) => {
     if (new Set(pts.map((p) => p.join())).size < 2) return
-    parts.push({ kind: 'stroke', el, tag: TAG.get(el), unit, points: pts.map(([x, y]) => [r1(x), r1(y)]), color, size })
+    parts.push({ kind: 'stroke', el, tag: TAG.get(el), unit, points: pts.map(([x, y]) => [r1(x), r1(y)]), color, size, ...(dash ? { dash } : {}) })
   }
+  // a dash pattern: dotted when its dashes are short for the line's width, else dashed
+  const dashOf = (cs) => { const v = String(cs['stroke-dasharray'] ?? 'none').split(/[ ,]+/).map(Number).filter((n) => n > 0); return v.length ? (v[0] <= 2 * num(cs['stroke-width'], 1) ? 'dotted' : 'dashed') : undefined }
   units.forEach((u, unit) => {
     for (const r of u.recs) {
       const cs = r.cs
@@ -248,7 +250,7 @@ export function readSvg(source) {
         const outlineOnly = !hasStroke && fill !== 'none' && (dark ? lum(fill) > 20 : lum(fill) < 245)
         const size = sizeOf(num(cs['stroke-width'], 1))
         for (const l of r.lines) {
-          if (hasStroke) stroke(r.el, unit, l.pts, ink(cs.stroke), size)
+          if (hasStroke) stroke(r.el, unit, l.pts, ink(cs.stroke), size, dashOf(cs))
           else if (outlineOnly && (l.closed || r.tag !== 'path')) stroke(r.el, unit, l.pts, dark ? 'grey' : closest(fill, PALE), 's')
           else if (outlineOnly) stroke(r.el, unit, l.pts, ink(fill), 's') // a filled shape drawn as a path: its outline
           if (!l.closed && hasStroke) {
@@ -280,7 +282,7 @@ export function readSvg(source) {
 
 // what a part is, as drawn: the same element drawn the same way has the same signature
 function signature(p) {
-  const v = JSON.stringify(p.kind === 'stroke' ? [p.el, p.points, p.color, p.size] : [p.el, p.text, p.at, p.fontSize, p.color, p.w ?? null, p.align ?? null])
+  const v = JSON.stringify(p.kind === 'stroke' ? [p.el, p.points, p.color, p.size, p.dash ?? null] : [p.el, p.text, p.at, p.fontSize, p.color, p.w ?? null, p.align ?? null])
   let h = 5381
   for (let i = 0; i < v.length; i++) h = ((h * 33) ^ v.charCodeAt(i)) >>> 0
   return h.toString(36)

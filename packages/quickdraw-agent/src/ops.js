@@ -638,7 +638,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // Draws with the pen, as a person marks something: around a shape (circle),
     // under it (underline), or through page points. A hand-drawn stroke (a
     // 'draw' shape), red unless said: it stays until someone deletes it.
-    pen({ kind = 'circle', id, points, color, size = 'm' } = {}) {
+    pen({ kind = 'circle', id, points, color, size = 'm', dash = 'draw' } = {}) {
       let path
       if (kind === 'points') {
         if (!Array.isArray(points) || points.length < 2) throw new Error('the pen needs two points or more: [[x, y], …]')
@@ -662,7 +662,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const id2 = newId()
       put({ id: id2, type: 'draw', x: round(x0), y: round(y0), props: {
         pts: path.flatMap(([x, y]) => [Math.round((x - x0) * 10) / 10, Math.round((y - y0) * 10) / 10, 0.5]),
-        color: checkColor(color) ?? 'red', size, dash: 'draw', done: true,
+        color: checkColor(color) ?? 'red', size, dash: checkDash(dash) ?? 'draw', done: true,
       } })
       return id2
     },
@@ -702,7 +702,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
         const same = kept.get(p.sig)
         if (same?.length) return same.shift() // drawn the same: it stays
         const id = p.kind === 'stroke'
-          ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size })
+          ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size, dash: p.dash })
           : ops.text(p.text, { at: { x: o.x + p.at[0], y: o.y + p.at[1] }, fontSize: Math.min(160, Math.max(8, p.fontSize)), w: p.w, align: p.align, color: p.color })
         store.update(id, { svg: { asset, el: p.el, unit: p.unit, sig: p.sig } })
         return id
@@ -897,6 +897,7 @@ export function applySteps(store, name, steps, { area, prefer, drawing } = {}) {
   if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer }, strict)
   if (!Array.isArray(steps)) throw new Error('steps must be an array, or a unit: { origin: [x, y], items: [steps] }')
   if (strict) steps.forEach((s, i) => {
+    if (['shape', 'text', 'arrow'].includes(s?.do)) throw new Error(`step ${i + 1} ${s.do}: ${AS_SVG}`)
     if (ADDS.has(s?.do) && !(s.do === 'frame' && s.around?.length)) throw new Error(`step ${i + 1} ${s.do}: things are added in a unit, { origin: [x, y], items: [...] }, each at its at; a list of steps only changes what is there`)
   })
   return runOp(store, name, (ops) => runSteps(ops, steps, {}, (p) => pointOf(p, 'at')), { area, prefer }) // at: { x, y } or [x, y]
@@ -955,10 +956,12 @@ function pointOf(v, what) {
 const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
 const ADDS = new Set([...PLACES, 'arrow'])
 // in a unit drawn by an agent, each item has one way to be written: every size a number, every word a text
+// shapes, words and arrows are drawn one way: as an SVG (ops.svg: omq svg, the draw_svg tool)
+const AS_SVG = 'shapes, words and arrows are drawn as an SVG: write one, and draw it with omq svg FILE (the draw_svg tool)'
 const UNIT_RULES = {
-  shape: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : s.text != null || s.label != null ? 'a shape holds no words: put them as a text item over it (at, font_size, w, align: middle)' : null),
-  text: (s) => (s.font_size == null && s.fontSize == null ? 'give its font_size in px' : null),
-  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : s.from_at == null || s.to_at == null ? 'give where its ends are, from_at and to_at [x, y] (from the origin), at the edges of the shapes it joins' : null),
+  shape: () => AS_SVG,
+  text: () => AS_SVG,
+  arrow: () => AS_SVG,
   frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
   image: (s) => (s.w == null ? 'give its width, w' : null),
   embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
@@ -984,7 +987,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
     if (strict) {
       const rule = UNIT_RULES[s.do]
-      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit draws with shape, text, arrow, frame, image, embed, pen (and update, move, delete)`)
+      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit puts frame, image, embed, pen (and update, move, delete); ${AS_SVG}`)
       const why = (s.text_size ?? s.textSize) != null ? 'sizes are numbers here: font_size in px, not text_size' : s.in != null ? 'give in to the unit, not to an item' : rule(s)
       if (why) throw new Error(`${name_(i, s)}: ${why}`)
     }
