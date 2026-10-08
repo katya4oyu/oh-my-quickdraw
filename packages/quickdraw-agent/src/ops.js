@@ -13,6 +13,7 @@ import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'qu
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
 import { labelFit } from './lint.js'
+import { hitsOf } from './hits.js'
 
 const GAP = 40
 const PAD = 24 // inside a frame's edges
@@ -934,6 +935,7 @@ function applyUnit(store, name, unit, where, strict = false) {
   const done = runOp(store, name, (ops) => runSteps(ops, steps, refs, (p) => (p ? { x: base.x + p.x, y: base.y + p.y } : p), name_), where)
   // what each item became, as it ended up (a note is 200 wide and grows down; arrows follow their shapes)
   const fb = frame && pageBounds(store.get(frame.id))
+  const hit = (id) => { const h = hitsOf(store, id); return h.length ? { hits: h } : {} } // what it runs into, as drawn
   const placed = steps.map((s, i) => {
     const id = done.result[i]
     const rec = typeof id === 'string' ? store.get(id) : null
@@ -942,7 +944,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     if (isLine(rec)) {
       const label = store.shapes().find((l) => l.labelOf === id)
       const lb = label && box(label)
-      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ends: [[round(rec.x - base.x), round(rec.y - base.y)], [round(rec.x + rec.props.dx - base.x), round(rec.y + rec.props.dy - base.y)]], ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}) }
+      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ends: [[round(rec.x - base.x), round(rec.y - base.y)], [round(rec.x + rec.props.dx - base.x), round(rec.y + rec.props.dy - base.y)]], ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}), ...hit(id) }
     }
     const b = box(rec)
     const fit = labelFit(rec)
@@ -950,7 +952,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     return { ...out, at: [b.x - base.x, b.y - base.y], size: [b.w, b.h],
       ...(fit ? { lines: fit.lines, fits: fit.fits } : {}),
       ...(px ? { font_size: px, lines: Math.max(1, Math.round(b.h / (px * 1.32))) } : {}),
-      ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}) }
+      ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}), ...hit(id) }
   }).filter(Boolean)
   return { ...done, ...(unit.unit != null ? { unit: String(unit.unit) } : {}), placed }
 }

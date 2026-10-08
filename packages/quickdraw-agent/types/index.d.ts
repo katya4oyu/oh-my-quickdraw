@@ -97,6 +97,8 @@ export interface Placed {
   /** with the unit's `in`: whether it lies inside that frame */
   inside?: boolean
   from?: string, to?: string
+  /** what it runs into as drawn: "crosses arrow @x", "over text \"…\" @y", "on arrow @x", "under arrow @x", "overlaps rectangle @z" */
+  hits?: string[]
   /** an arrow's two ends, from the origin */
   ends?: [[number, number], [number, number]]
   label?: { at: [number, number], size: [number, number] }

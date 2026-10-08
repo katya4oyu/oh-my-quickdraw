@@ -104,7 +104,7 @@ Each item has one way to be written:
 
 `ref` names what an item adds, and `"@ref"` points at it — in the same unit or any later one (the last thing you named so on this board): give the things of a drawing distinct refs. If any item breaks a rule or fails, nothing of the unit is applied, and the error says which item and why.
 
-It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its two `ends`. Nothing is changed to fit: when a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`), or draw the next unit around it.
+It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its two `ends`; and `hits`, what it runs into as drawn — `crosses arrow @x` (arrows crossing), `over text "…" @y` / `on arrow @x` (a line through words), `over rectangle @z` / `under arrow @x` (a line over a shape it does not join), `overlaps …` (shapes or texts on top of each other, a text across a box's edge). Nothing is changed to fit: when there are `hits`, a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`, or delete and draw it again), or draw the next unit around it.
 
 A plain list of steps, with no origin, only changes what is there: `[{ "do": "update", "id": "…", "color": "green" }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 

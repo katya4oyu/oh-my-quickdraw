@@ -59,7 +59,7 @@ Positions, a unit at a time:
 
 1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: each box big enough for its texts (`SKILL.md`, Drawing: a line's height and a letter's width), a diamond or an ellipse about half as wide again as a rectangle for the same words.
 2. Draw one unit of thought per `apply` — the question, then its options, then the arrows and what was chosen — all with that `origin`, each item at its planned `at`. The board shows exactly what you wrote.
-3. Read the `placed` it prints before the next unit: a text that took more lines than planned, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
+3. Read the `placed` it prints before the next unit: its `hits` (arrows crossing, a line through words or over a shape, things on top of each other), a text that took more lines than planned, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
 
 ## 4. Check
 

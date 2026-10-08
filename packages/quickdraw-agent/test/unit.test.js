@@ -184,4 +184,31 @@ describe('a unit', () => {
     // another agent's names are not this one's
     expect(() => applySteps(store, 'D', [{ do: 'update', id: '@q', color: 'red' }])).toThrow(/unknown ref @q/)
   })
+
+  it('placed says what each item runs into, as drawn: arrows crossing, an arrow over a shape, words on a line, overlaps', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [400, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'shape', shape: 'rectangle', at: [0, 300], w: 100, h: 60, ref: 'c' },
+      { do: 'shape', shape: 'rectangle', at: [400, 300], w: 100, h: 60, ref: 'd' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'mid' },
+      { do: 'arrow', from: '@a', to: '@b', from_at: [104, 30], to_at: [396, 30], ref: 'ab' },
+      { do: 'arrow', from: '@a', to: '@d', from_at: [104, 60], to_at: [396, 300], ref: 'ad' },
+      { do: 'arrow', from: '@c', to: '@b', from_at: [104, 300], to_at: [396, 60], ref: 'cb' },
+      { do: 'text', text: 'sends', font_size: 12, at: [130, 24], ref: 'word' },
+      { do: 'text', text: 'Box C', font_size: 16, w: 100, align: 'middle', at: [0, 320], ref: 'inC' },
+      { do: 'text', text: 'half out', font_size: 16, at: [70, 345], ref: 'edge' },
+    ] })
+    const by = Object.fromEntries(placed.map((p) => [p.ref, p.hits ?? []]))
+    expect(by.ab).toEqual(expect.arrayContaining(['over rectangle @mid', 'over text "sends" @word']))
+    expect(by.ad).toContain('crosses arrow @cb')
+    expect(by.cb).toContain('crosses arrow @ad')
+    expect(by.ad.some((h) => h.includes('@ab'))).toBe(false) // they start at the same box side: meeting, not crossing
+    expect(by.word).toContain('on arrow @ab')
+    expect(by.mid).toContain('under arrow @ab')
+    expect(by.inC).toEqual([]) // a name in its box
+    expect(by.edge).toEqual(expect.arrayContaining(['overlaps rectangle @c']))
+    expect(by.a).toEqual([])
+  })
 })
