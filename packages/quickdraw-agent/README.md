@@ -26,7 +26,7 @@ undoDiff(store, diff) // later: reverts what nobody changed since
 | `add_bento`, `set_span`, `set_columns` | A bento grid ([`quickdraw-layouts`](../quickdraw-layouts)): frames (cells, `add_frame` with `in` the grid and `span`) that pack themselves; a full cell grows a row when something is put `in` it, and the cells after it move along |
 | `update_shape`, `move_shape`, `arrange_shapes` | Changes text or color, moves (a frame brings its members), lays out |
 | `delete_shapes` | Only what an agent added |
-| `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`) |
+| `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`). As a unit (`origin`, `items`): drawn as written, every `at` from the origin, and `placed` says where each item ended up, how big, and whether its label fits |
 
 A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `diff` to undo it, show a cursor at `focus`.
 

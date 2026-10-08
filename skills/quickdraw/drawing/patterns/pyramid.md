@@ -1,13 +1,23 @@
 # Pyramid
 
-Coordinates are offsets from an origin you pick in free space (`../visual-thinking.md`, Place): add its x and y to every `at`.
+Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `Q_ID` and the like are the ids an earlier unit's `placed` gave.
 
 Levels, the base widest: foundations → goals, many → few.
 
 ```json
-[
-  { "do": "shape", "shape": "rectangle", "text": "Vision", "color": "violet", "fill": "solid", "w": 200, "h": 70, "at": { "x": 200, "y": 0 } },
-  { "do": "shape", "shape": "rectangle", "text": "Strategy", "color": "blue", "fill": "solid", "w": 400, "h": 70, "at": { "x": 100, "y": 80 } },
-  { "do": "shape", "shape": "rectangle", "text": "Projects", "color": "light-blue", "fill": "solid", "w": 600, "h": 70, "at": { "x": 0, "y": 160 } }
-]
+{ "unit": "the base", "origin": [0, 0], "items": [
+  { "do": "shape", "shape": "rectangle", "text": "Projects", "color": "light-blue", "fill": "solid", "w": 600, "h": 70, "at": [0, 160] }
+] }
+```
+
+```json
+{ "unit": "what it serves", "origin": [0, 0], "items": [
+  { "do": "shape", "shape": "rectangle", "text": "Strategy", "color": "blue", "fill": "solid", "w": 400, "h": 70, "at": [100, 80] }
+] }
+```
+
+```json
+{ "unit": "the top", "origin": [0, 0], "items": [
+  { "do": "shape", "shape": "rectangle", "text": "Vision", "color": "violet", "fill": "solid", "w": 200, "h": 70, "at": [200, 0] }
+] }
 ```

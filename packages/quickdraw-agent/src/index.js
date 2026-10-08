@@ -3,7 +3,7 @@
 // Runs in browsers and in Node (installMeasure stands in for text measuring).
 export { describeBoard, boardToMarkdown, textOf, runOp, applySteps, undoDiff, parseRatio, spanOf, freeSpot } from './ops.js'
 export { BOARD_TOOLS } from './tools.js'
-export { lintBoard, lintText, fixLayout, fixText } from './lint.js'
+export { lintBoard, lintText, fixLayout, fixText, labelFit } from './lint.js'
 export { createAgentPanel, agentTools, AGENT_ICON, buildAgentRequest, agentOptions, feedbackToSend, limitText, limitLevel, detectAgentMention, updateAgentThread, undoAgentRequest, dragArea, pendingApproval, markedArea } from './panel.js'
 export { hasAgentThreadForAnchor, requestId } from './panel.js'
 export { installMeasure, estimateWidth } from './measure.js'

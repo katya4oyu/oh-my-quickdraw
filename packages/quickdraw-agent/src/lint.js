@@ -90,6 +90,16 @@ function sidesGrow(s) {
 // what of a shape's box its label may use: all of a rectangle's, less of the others'
 const roomFor = (s) => (['rectangle', 'cloud', 'rhombus'].includes(s.props.geo) || !s.props.geo ? 1 : 0.8)
 
+/**
+ * A shape's label as the core lays it out: how many lines it wraps to, and
+ * whether it fits the shape (in height, and at the sides of a diamond or an
+ * ellipse) — what lint reports as text-overflow. Measures only.
+ */
+export function labelFit(s) {
+  if (s?.type !== 'geo' || !s.props.label) return null
+  return { lines: labelLines(s).widths.length, fits: labelHeight(s) <= s.props.h * roomFor(s) + 4 && sidesFit(s) }
+}
+
 const shrink = (r, d) => ({ x: r.x + d, y: r.y + d, w: Math.max(0, r.w - d * 2), h: Math.max(0, r.h - d * 2) })
 
 /**

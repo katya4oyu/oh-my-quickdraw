@@ -102,7 +102,8 @@ Writing (each command is one operation, undoable as a whole)
                                           about --width wide (2400): each brings what is in it and its title, a
                                           kanban's columns stay together; for a board that has spread out
   delete ID…                               only shapes an agent added
-  apply STEPS.json                          several steps as one operation (see SKILL.md)
+  apply UNIT.json                          a unit of thought, drawn as written ({ origin, items }),
+                                           as one operation; prints placed (see SKILL.md)
 
 Tickets (work people leave on the board for agents)
   tickets [--status todo,doing,…] [--to NAME | --mine]
@@ -569,6 +570,8 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
     if (live && done.focus && !ctx.session) { board.cursor(done.focus.x, done.focus.y); await new Promise((r) => setTimeout(r, 1200)) }
     const ids = [...new Set([done.result].flat(Infinity).filter((v) => typeof v === 'string'))]
     const ticket = TICKET_COMMANDS.has(cmd) && store.get(ids[0]) ? { ticket: describeTicket(store.get(ids[0])) } : {}
-    out(jsonLines({ op: done.op, ids, ...ticket }))
+    // a unit (apply with an origin): what each item became, one per line
+    const placed = (done as { placed?: unknown[] }).placed
+    out(jsonLines({ op: done.op, ids, ...ticket, ...(placed ? { placed } : {}) }))
   }
 }

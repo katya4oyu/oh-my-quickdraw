@@ -102,13 +102,22 @@ export const BOARD_TOOLS = [
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
-    description: 'Several steps as one operation (one undo), all or nothing: for diagrams and anything with several parts. '
+    description: 'Several steps as one operation (one undo), all or nothing. '
       + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|layout|span|columns|arrow|update|move|arrange|fit|tidy|pen|delete, …the fields of that tool }. '
-      + 'A step may name what it adds with ref: "a", and later steps point at it as "@a".',
-    inputSchema: object({ steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } } }, ['steps']),
-    run(store, { steps }, { name: who = 'Agent', area, prefer } = {}) {
-      const { op, diff, result, focus, area: grown } = applySteps(store, who, steps, { area, prefer })
-      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(grown ? { area: grown } : {}) }
+      + 'A step may name what it adds with ref: "a", and later steps point at it as "@a". '
+      + 'To draw: one unit of thought per call (a question, its options, the arrows between them) as `items`, with an `origin` [x, y] (in `in`: from that frame\'s top-left): '
+      + 'each item\'s `at` [x, y] is from the origin, and is where it goes — nothing is moved or looked for. It gives back `placed`: each item\'s id, at, size (a note is 200 wide and grows down), '
+      + 'a label\'s lines and whether it fits, and whether it lies inside the frame. What does not fit is left as written: fix it in the next call. `steps` instead of `items`: the old way, things placed in free space.',
+    inputSchema: object({
+      unit: str('what this unit of thought is, in a few words'),
+      origin: { type: 'array', items: num, minItems: 2, maxItems: 2, description: '[x, y]: the board point (with in: the point in that frame) every at in items is from' },
+      in: str('a frame id: origin is from its top-left, and placed says whether each item lies inside it'),
+      items: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str(), at: { type: 'array', items: num, minItems: 2, maxItems: 2 } }, required: ['do'] }, description: 'the steps of the unit; whatever they put needs at [x, y]' },
+      steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } },
+    }),
+    run(store, { steps, ...unit }, { name: who = 'Agent', area, prefer } = {}) {
+      const { op, diff, result, focus, area: grown, placed } = applySteps(store, who, unit.items ? unit : steps, { area, prefer })
+      return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(placed ? { placed } : {}), ...(grown ? { area: grown } : {}) }
     },
   },
 ]

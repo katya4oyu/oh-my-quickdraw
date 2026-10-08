@@ -77,6 +77,23 @@ export interface EmbedPreview { title?: string, description?: string, siteName?:
 export type TicketStatus = 'todo' | 'doing' | 'done' | 'failed'
 
 export interface Step { do: string, ref?: string, [field: string]: unknown }
+/**
+ * One unit of thought (a question, its options, the arrows between them), drawn
+ * as written: every position in `items` (`at`, a move's x/y, pen points) is from
+ * `origin` — a board point, or with `in` a point in that frame — and whatever an
+ * item puts needs its `at` (a frame `around` shapes or a bento cell aside).
+ */
+export interface Unit { unit?: string, origin: [number, number] | Point, in?: string, items: Step[] }
+/** What an item of a unit became, measured, never changed to fit: `at` from the origin; an arrow's ends and its label's box. */
+export interface Placed {
+  ref?: string, id: string, do: string
+  at?: [number, number], size?: [number, number]
+  /** a shape's label: the lines it wraps to, and whether it fits the shape */
+  lines?: number, fits?: boolean
+  /** with the unit's `in`: whether it lies inside that frame */
+  inside?: boolean
+  from?: string, to?: string, label?: { at: [number, number], size: [number, number] }
+}
 
 export interface BoardDescription {
   frames: { id: string, title: string, aspect?: number, x: number, y: number, w: number, h: number, members: string[],
@@ -105,6 +122,8 @@ export function textOf(store: Store, shape: object): string
 /** `area`: where what has no place goes (see Rect); else `prefer`: near that page point (where people look), in free space; else right of everything. */
 export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect, prefer?: Point }): Operation<T>
 export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]>
+/** A unit drawn as written: positions are from `origin`; what it adds is where `at` says (no free space is looked for), then measured. */
+export function applySteps(store: Store, name: string, unit: Unit, opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]> & { unit?: string, placed: Placed[] }
 /** Free space for a w × h box (and a frame's title above it), clear of every shape: at `prefer` (its top-left) if free, else the nearest free spot. */
 export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts?: { gap?: number, above?: number }): Point
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
@@ -117,6 +136,8 @@ export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame
 /** What to check; `words`: how fixes are named, as the board tools (default) or as omq commands ('cli'). */
 export interface LintScope { frame?: string, ids?: string[], area?: Rect, words?: 'tools' | 'cli' }
 export function lintBoard(store: Store, scope?: LintScope): LintIssue[]
+/** A shape's label as the core lays it out: the lines it wraps to, and whether it fits the shape; null for what has no label. */
+export function labelFit(shape: object): { lines: number, fits: boolean } | null
 /** Issues as a model or a person reads them. */
 export function lintText(issues: LintIssue[]): string
 /** Fixes, as one operation on what agents made, what needs no judgement: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Null when there is nothing it can fix. */

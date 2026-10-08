@@ -1,6 +1,6 @@
 # Comparison table and pros / cons
 
-Coordinates are offsets from an origin you pick in free space (`../visual-thinking.md`, Place): add its x and y to every `at`.
+Draw it a unit at a time (`../visual-thinking.md`, Place): a cell, a row or an option per `apply`.
 
 Options side by side over the same points. A bento grid with one column per option plus one for the point names reads as a table:
 
