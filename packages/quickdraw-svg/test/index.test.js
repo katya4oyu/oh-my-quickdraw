@@ -78,3 +78,12 @@ describe('an arrow through words', () => {
     expect(d.hits).toEqual(['a line (line1) through words "connects" (text1)'])
   })
 })
+
+describe('fills', () => {
+  it('are drawn only where the SVG asks, under the outline, in the pale colour', () => {
+    const d = readSvg(`<svg viewBox="0 0 300 100"><rect x="10" y="10" width="100" height="60" fill="#dbeafe" stroke="#4263eb"/><rect x="150" y="10" width="100" height="60" fill="#dbeafe" stroke="#4263eb" data-fill="hatch"/><rect x="10" y="80" width="10" height="10" fill="#f00" data-fill="paint"/></svg>`)
+    expect(d.parts.map((p) => [p.kind, p.el, p.style ?? null])).toEqual([['stroke', 'rect1', null], ['fill', 'rect2', 'hatch'], ['stroke', 'rect2', null], ['stroke', 'rect3', null]])
+    expect(d.parts[1].color).toBe('blue')
+    expect(d.dropped).toEqual({ 'data-fill "paint" (tint, hatch or scribble)': 1 })
+  })
+})

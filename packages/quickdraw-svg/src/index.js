@@ -6,10 +6,14 @@
 // strokes, a text (or each positioned tspan) words where they were. Colours
 // and widths come from attributes, <style> rules by class or tag, and what a
 // <g> passes down, and go to the nearest of the board's colours and sizes.
-// A dash pattern is a dashed or dotted pen line. Fills are not drawn (a whiteboard has none): a shape with only a fill gets
-// its outline. What cannot be carried (gradients, filters, faint decoration)
+// A dash pattern is a dashed or dotted pen line. Fills are not drawn (a
+// whiteboard has none): a shape with only a fill gets its outline; one marked
+// data-fill="tint|hatch|scribble" gets its fill too, under its outline (a shape
+// of its own: fill.js). What cannot be carried (gradients, filters, faint decoration)
 // is listed in `dropped`. Every part says which element it came from (`el`).
-// Dependency-free.
+// Dependency-free (fill.js, the board's fill shape, uses the core).
+import { FILL_STYLES } from './fill.js'
+export { FILL, FILL_STYLES, registerSvgFill, validateSvgFill } from './fill.js'
 
 const PEN = { black: '#1d1d1d', grey: '#9fa8b2', 'light-violet': '#e085f4', violet: '#ae3ec9', blue: '#4263eb', 'light-blue': '#4dabf7', yellow: '#f1ac4b', orange: '#e16919', green: '#099268', 'light-green': '#4cb05e', 'light-red': '#f87777', red: '#e03131' }
 const PALE = { black: '#e8e8e8', grey: '#eceef0', 'light-violet': '#f9ebfc', violet: '#f0dcf5', blue: '#dfe5fb', 'light-blue': '#e0f0fe', yellow: '#fcefdc', orange: '#fae5d5', green: '#d3ebe3', 'light-green': '#dff0e2', 'light-red': '#fde4e4', red: '#f9dcdc' }
@@ -179,7 +183,8 @@ export function readSvg(source) {
       if (cs.filter) drop('filter')
       if (String(cs.fill ?? '').startsWith('url(')) { const g = /url\(#([^)]+)\)/.exec(cs.fill)?.[1]; if (!gradients[g]) drop('pattern fill'); cs.fill = gradients[g] ?? 'none' }
       if (String(cs.stroke ?? '').startsWith('url(')) { const g = /url\(#([^)]+)\)/.exec(cs.stroke)?.[1]; cs.stroke = gradients[g] ?? 'none' }
-      const r = { el: elId(c), tag: c.tag, cs }
+      const fillStyle = fillStyleOf(c.attrs['data-fill'], drop)
+      const r = { el: elId(c), tag: c.tag, cs, ...(fillStyle ? { fillStyle } : {}) }
       const a = c.attrs
       if (c.tag === 'rect') {
         const [x, y, w, h] = [num(a.x), num(a.y), num(a.width), num(a.height)]
@@ -250,6 +255,9 @@ export function readSvg(source) {
         const outlineOnly = !hasStroke && fill !== 'none' && (dark ? lum(fill) > 20 : lum(fill) < 245)
         const size = sizeOf(num(cs['stroke-width'], 1))
         for (const l of r.lines) {
+          // its fill, under it, only where the SVG asks for one: data-fill="tint|hatch|scribble" (a shape of its own: fill.js)
+          if (r.fillStyle && fill !== 'none' && new Set(l.pts.map((q) => q.join())).size > 2)
+            parts.push({ kind: 'fill', el: r.el, tag: r.tag, unit, points: l.pts.map(([x, y]) => [r1(x), r1(y)]), color: closest(fill, PALE), style: r.fillStyle })
           if (hasStroke) stroke(r.el, unit, l.pts, ink(cs.stroke), size, dashOf(cs))
           else if (outlineOnly && (l.closed || r.tag !== 'path')) stroke(r.el, unit, l.pts, dark ? 'grey' : closest(fill, PALE), 's')
           else if (outlineOnly) stroke(r.el, unit, l.pts, ink(fill), 's') // a filled shape drawn as a path: its outline
@@ -282,7 +290,7 @@ export function readSvg(source) {
 
 // what a part is, as drawn: the same element drawn the same way has the same signature
 function signature(p) {
-  const v = JSON.stringify(p.kind === 'stroke' ? [p.el, p.points, p.color, p.size, p.dash ?? null] : [p.el, p.text, p.at, p.fontSize, p.color, p.w ?? null, p.align ?? null])
+  const v = JSON.stringify(p.kind === 'fill' ? [p.el, 'fill', p.points, p.color, p.style] : p.kind === 'stroke' ? [p.el, p.points, p.color, p.size, p.dash ?? null] : [p.el, p.text, p.at, p.fontSize, p.color, p.w ?? null, p.align ?? null])
   let h = 5381
   for (let i = 0; i < v.length; i++) h = ((h * 33) ^ v.charCodeAt(i)) >>> 0
   return h.toString(36)
@@ -321,6 +329,15 @@ function hitsOf(parts, boxes) {
     if (l.points.some(([x, y]) => x > t.x + 2 && x < t.x + t.w - 2 && y > t.y + 2 && y < t.y + t.h - 2)) hits.push(`a line (${l.el}) through words ${quote(t.p.text)} (${t.p.el})`)
   }
   return [...new Set(hits)]
+}
+
+// data-fill on an element: how its fill is drawn ("" or true: tint)
+function fillStyleOf(v, drop) {
+  if (v == null || v === 'none' || v === 'false') return null
+  if (v === '' || v === 'true') return 'tint'
+  if (FILL_STYLES.includes(v)) return v
+  drop(`data-fill "${v}" (tint, hatch or scribble)`)
+  return null
 }
 
 // a text's lines: its own words, and each tspan placed with x, y or dy starts one

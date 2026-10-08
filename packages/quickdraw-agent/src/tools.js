@@ -98,7 +98,7 @@ export const BOARD_TOOLS = [
   {
     name: 'draw_svg',
     description: 'Draws an SVG you write on the board as a person would at a whiteboard: its outlines with the pen and its words as texts, where the SVG has them, in the order it is written (its <g> groups, or a box and what is in it, are drawn together), in a frame its size titled by its <title>. '
-      + 'People watch it drawn a stroke at a time; you are answered at once and may go on (the next change waits until it is drawn). Fills, gradients and shadows are not drawn: a whiteboard has outlines and words. '
+      + 'People watch it drawn a stroke at a time; you are answered at once and may go on (the next change waits until it is drawn). Fills, gradients and shadows are not drawn: a whiteboard has outlines and words (a shape with data-fill="tint", or hatch or scribble, is filled: only where it helps). '
       + 'It answers `hits`, what reads badly once drawn (words past their box: the board\'s hand-drawn letters are wider; words on words; a line through words): fix the SVG and draw it again with `replace`. '
       + 'The SVG is kept with the drawing: read_board gives it back with what people changed since. `write`: chars (words written a character at a time, for people watching) or lines.',
     inputSchema: object({

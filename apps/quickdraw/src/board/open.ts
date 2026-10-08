@@ -19,6 +19,7 @@ const { registerEmbed } = await import('quickdraw-embed')
 const { registerTicket, bindKanban } = await import('quickdraw-tickets')
 const { registerMemberCard, bindMemberCards } = await import('quickdraw-members')
 const { registerBoardCard } = await import('quickdraw-boards')
+const { registerSvgFill } = await import('quickdraw-svg')
 
 export interface Board {
   store: StoreType
@@ -42,6 +43,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
   registerTicket()
   registerMemberCard()
   registerBoardCard()
+  registerSvgFill()
   const store = new Store()
   if (url) {
     const Y = await import('yjs')

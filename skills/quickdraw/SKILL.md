@@ -89,7 +89,7 @@ Write the SVG so it draws well:
 - An arrow: a `line` or `path` with `marker-end` (any marker; the board draws the head). Its ends a few px off the shapes it joins; plan them so arrows do not cross each other or run over shapes.
 - Words: `<text x y font-size fill>` — `y` is the baseline; `text-anchor="middle"` centres it on `x`. One line per `text` (or `<tspan x="…" dy="…">` per line). Sizes: a title 34, a heading 22, a box's name 16, a detail or the word on an arrow 12–13. The board's letters are hand-drawn and wide: a Latin letter about 0.56 × `font-size`, a CJK character 1 ×; leave room.
 - Colours: the board's — black `#1d1d1d`, grey `#9fa8b2`, blue `#4263eb`, light-blue `#4dabf7`, green `#099268`, light-green `#4cb05e`, red `#e03131`, light-red `#f87777`, orange `#e16919`, yellow `#f1ac4b`, violet `#ae3ec9`, light-violet `#e085f4` (any other colour goes to the nearest).
-- Not drawn: fills, gradients, shadows and filters, faint things (`opacity` under .5), images, rotation.
+- Not drawn: fills, gradients, shadows and filters, faint things (`opacity` under .5), images, rotation. A whiteboard has outlines: fill only where it helps (the one thing that matters most, an area to set apart) with `data-fill="tint"` (or `hatch`, `scribble`) on the shape, its `fill` the colour.
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200">

@@ -11,7 +11,7 @@ import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { createBoardCard, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
 import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
-import { readSvg, svgElements } from 'quickdraw-svg'
+import { readSvg, svgElements, registerSvgFill, FILL } from 'quickdraw-svg'
 import { estimateWidth } from './measure.js'
 import { labelFit } from './lint.js'
 import { hitsOf } from './hits.js'
@@ -20,6 +20,7 @@ const GAP = 40
 const PAD = 24 // inside a frame's edges
 const MIN_FIT = 0.3 // smaller than this and notes stop being readable
 const round = (n) => Math.round(n)
+const round1 = (n) => Math.round(n * 10) / 10
 const emptyDiff = () => ({ added: {}, removed: {}, updated: {} })
 const isTitle = (s) => s.isFrameTitle === true || s.id === s.frameId + '-title'
 const isLine = (s) => s.type === 'arrow' || s.type === 'line'
@@ -39,6 +40,7 @@ export function textOf(store, s) {
     case BOARDCARD: return `${s.props.title} (board ${s.props.board}${s.props.live ? ', live' : ''})` // a board in this board (quickdraw-boards)
     case 'image': return '(image)'
     case 'draw': case 'highlight': return '(drawing)'
+    case FILL: return '(fill)' // a fill an SVG asked for (quickdraw-svg)
     default: return ''
   }
 }
@@ -119,7 +121,7 @@ export function boardToMarkdown(store) {
       return `- [ticket, ${t.status}${who}${where}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
     }
     if (it.type === MARKDOWN) return `- ${tag}(id ${it.id})\n` + text.split('\n').map((l) => '  > ' + l).join('\n')
-    if (it.svg && it.type === 'draw') return `- ${tag}stroke of ${it.svg} in the SVG (id ${it.id})`
+    if (it.svg && (it.type === 'draw' || it.type === FILL)) return `- ${tag}${it.type === FILL ? 'fill' : 'stroke'} of ${it.svg} in the SVG (id ${it.id})`
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`
   }
   const out = ['# Board', '']
@@ -143,7 +145,7 @@ export function boardToMarkdown(store) {
       const src = store.asset?.(f.svg)?.src
       const left = new Set(members.map((m) => m.svg).filter(Boolean))
       const gone = src ? Object.entries(svgElements(src)).filter(([el]) => !left.has(el)) : []
-      const quiet = members.filter((m) => m.svg && m.type === 'draw' && !m.edited_by)
+      const quiet = members.filter((m) => m.svg && (m.type === 'draw' || m.type === FILL) && !m.edited_by)
       members = members.filter((m) => !quiet.includes(m))
       out.push(`The SVG it was drawn from is what it shows: \`omq svg --show ${f.id}\` prints it. Its ${quiet.length} strokes as drawn are not listed; what follows is its words, and what people changed or added since (their own marks: look at them).`, '')
       if (gone.length) out.push(`- gone since drawn: ${gone.map(([el, what]) => `${el} (${what})`).join(', ')}`)
@@ -680,6 +682,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     svg(source, { at, inFrame, write = 'chars', replace } = {}) {
       if (!['chars', 'lines'].includes(write)) throw new Error(`unknown write "${write}" (chars or lines)`)
       const d = readSvg(source)
+      if (d.parts.some((p) => p.kind === 'fill')) registerSvgFill()
       if (!d.parts.length) throw new Error('nothing to draw in this SVG')
       let frame, asset, kept = new Map()
       if (replace) {
@@ -701,6 +704,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const ids = d.parts.map((p) => {
         const same = kept.get(p.sig)
         if (same?.length) return same.shift() // drawn the same: it stays
+        if (p.kind === 'fill') { // under its outline: a shape of its own (quickdraw-svg's fill)
+          const xs = p.points.map((q) => q[0]), ys = p.points.map((q) => q[1]), x0 = Math.min(...xs), y0 = Math.min(...ys)
+          const id = add(FILL, { pts: p.points.flatMap(([x, y]) => [round1(x - x0), round1(y - y0)]), w: Math.max(...xs) - x0, h: Math.max(...ys) - y0, color: p.color, style: p.style }, 0, 0, { at: { x: o.x + x0, y: o.y + y0 } })
+          store.update(id, { svg: { asset, el: p.el, unit: p.unit, sig: p.sig } })
+          return id
+        }
         const id = p.kind === 'stroke'
           ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size, dash: p.dash })
           : ops.text(p.text, { at: { x: o.x + p.at[0], y: o.y + p.at[1] }, fontSize: Math.min(160, Math.max(8, p.fontSize)), w: p.w, align: p.align, color: p.color })

@@ -67,6 +67,7 @@
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
     import { bindGifs } from 'quickdraw-gif'
     import { bindBoardCards, boardCardTools, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
+    import { registerSvgFill, validateSvgFill, FILL as SVGFILL } from 'quickdraw-svg'
     import { bindMembers, bindMemberCards, bindMemberCardEditing, memberTools, validateMemberCard, CARD, createPet, isPet, petState, PET_SHEET } from 'quickdraw-members'
     import { bindComments, createComments, commentTools } from 'quickdraw-comments'
     import { createToolbar, labelsTool, MORE_ICON } from 'quickdraw-toolbar'
@@ -183,7 +184,8 @@
     } })
 
     // shapes from other packages, checked by their own validators: in an imported file, or pasted
-    const shapeTypes = { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard, [BOARDCARD]: validateBoardCard }
+    const shapeTypes = { [MARKDOWN]: validateMarkdown, [EMBED]: validateEmbed, [TICKET]: validateTicket, [CARD]: validateMemberCard, [BOARDCARD]: validateBoardCard, [SVGFILL]: validateSvgFill }
+    registerSvgFill() // what an agent's SVG asked to fill (quickdraw-svg)
     // a board in this board (quickdraw-boards): a card for another board, its picture or a live window onto it
     const boardHost = {
       boards: async () => (await (await fetch('/api/boards')).json()),
