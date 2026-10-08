@@ -1,21 +1,28 @@
 # Flow (sequence, with decisions)
 
-Coordinates are offsets from an origin you pick in free space (`../visual-thinking.md`, Place): add its x and y to every `at`.
+Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `Q_ID` and the like are the ids an earlier unit's `placed` gave.
 
-Steps in order; a diamond for a choice. No coordinates needed: `arrange` lays them out.
+Steps in order, 260 apart, centred on one line; a diamond for a choice.
 
 ```json
-[
-  { "do": "shape", "shape": "rectangle", "text": "Sign up", "color": "black", "ref": "a" },
-  { "do": "shape", "shape": "rectangle", "text": "Verify email", "color": "black", "ref": "b" },
-  { "do": "shape", "shape": "diamond", "text": "Paid?", "color": "black", "ref": "c" },
-  { "do": "shape", "shape": "rectangle", "text": "Dashboard", "color": "green", "ref": "d" },
-  { "do": "arrange", "ids": ["@a", "@b", "@c", "@d"], "layout": "row", "gap": 80 },
-  { "do": "arrow", "from": "@a", "to": "@b" },
-  { "do": "arrow", "from": "@b", "to": "@c" },
-  { "do": "arrow", "from": "@c", "to": "@d", "label": "yes" },
-  { "do": "frame", "title": "Onboarding flow", "around": ["@a", "@b", "@c", "@d"] }
-]
+{ "unit": "the first steps", "origin": [0, 0], "items": [
+  { "do": "shape", "shape": "rectangle", "text": "Sign up", "color": "black", "w": 180, "h": 90, "at": [0, 25], "ref": "a" },
+  { "do": "shape", "shape": "rectangle", "text": "Verify email", "color": "black", "w": 180, "h": 90, "at": [260, 25], "ref": "b" },
+  { "do": "arrow", "from": "@a", "to": "@b" }
+] }
+```
+
+```json
+{ "unit": "the choice", "origin": [0, 0], "items": [
+  { "do": "shape", "shape": "diamond", "text": "Paid?", "color": "black", "w": 180, "h": 140, "at": [520, 0], "ref": "c" },
+  { "do": "shape", "shape": "rectangle", "text": "Dashboard", "color": "green", "w": 180, "h": 90, "at": [780, 25], "ref": "d" },
+  { "do": "arrow", "from": "B_ID", "to": "@c" },
+  { "do": "arrow", "from": "@c", "to": "@d", "label": "yes" }
+] }
+```
+
+```json
+{ "unit": "named", "items": [{ "do": "frame", "title": "Onboarding flow", "around": ["A_ID", "B_ID", "C_ID", "D_ID"] }] }
 ```
 
 The word on a branch ("yes"): the arrow's `"label": "yes"`. More than 5 steps: two rows, or a column.

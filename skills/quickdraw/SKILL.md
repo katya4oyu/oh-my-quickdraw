@@ -147,27 +147,32 @@ omq columns GRID_ID 6                            # the grid's columns; its cells
 - A cell's size is its span: `update --size` refuses it. `move` a cell onto another's place to reorder; moved out of the grid, it is a plain frame again.
 - `read` lists each grid's cells in order ("bento cell 2×1"); `tidy` moves a grid as one, its cells with it.
 
-## Diagrams and bigger changes: `apply`
+## Drawing: `apply`, one unit of thought at a time
 
-Write the steps as JSON and apply them as **one** operation (one undo). Name what you add with `ref` and point at it later with `"@ref"`:
+Draw as a person draws at a whiteboard: one **unit of thought** per `apply` — a question; then its options and the arrows to them; then what was chosen — so the people watching see the drawing grow, piece by piece. Never a whole drawing, or a frame full of it, in one `apply`.
+
+A unit has an `origin` and `items`. The origin is a board point you pick in free space (with `"in": FRAME_ID`, a point in that frame, from its top-left). Every `at` in the unit is `[x, y]` from the origin, and is exactly where the item goes: nothing is moved, resized or put elsewhere for it. Keep one origin for a whole drawing, and its units' `at`s are the drawing's own coordinates.
 
 ```json
-[
-  { "do": "shape", "shape": "rectangle", "text": "Browser", "ref": "b" },
-  { "do": "shape", "shape": "rectangle", "text": "Server", "ref": "s" },
-  { "do": "shape", "shape": "ellipse", "text": "Database", "ref": "db" },
-  { "do": "arrow", "from": "@b", "to": "@s" },
-  { "do": "arrow", "from": "@s", "to": "@db" },
-  { "do": "arrange", "ids": ["@b", "@s", "@db"], "layout": "row", "gap": 80 },
-  { "do": "frame", "title": "Architecture", "around": ["@b", "@s", "@db"] }
-]
+{ "unit": "the question and its options", "origin": [1200, 0], "items": [
+  { "do": "shape", "shape": "diamond", "text": "Which first?", "color": "red", "w": 240, "h": 160, "at": [0, 60], "ref": "q" },
+  { "do": "shape", "shape": "rectangle", "text": "Sample data first", "color": "green", "w": 240, "h": 90, "at": [360, 0], "ref": "a" },
+  { "do": "arrow", "from": "@q", "to": "@a" }
+] }
 ```
 
 ```sh
-omq apply steps.json      # or: … apply - < steps.json
+omq apply unit.json      # or: … apply - < unit.json
 ```
 
-Steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `status` (`id`, `status`, `result`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`, `at`), `span` (`id`, `span`, `auto`), `columns` (`id`, `cols`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update` (`id`, `text`, `color`, `text_size`, `dash`, `fill`, `bend`, `label`; `label: ""` takes an arrow's off), `move` (`id`, `x`/`y` or `dx`/`dy`), `arrange` (`ids`, `layout`: grid|row|column, `cols`, `gap`), `fit` (`frame`, `ids`), `delete` (`ids`). Placement keys: `at: {x, y}`, `in: frame id`, `w`, `h`, `color`; style keys: `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes). If any step fails, nothing is applied.
+It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a shape's label: how many `lines` it wraps to and whether it `fits`; with `in`: whether it lies `inside` the frame; an arrow: its ends and its label's box. What does not fit is **left as you wrote it**: put it right in a later unit (`update ID --size`, `move`), or draw the next unit around it. A note is always 200 wide and grows down with its text: `placed` gives its real height.
+
+- `ref` names what a unit adds, and `"@ref"` points at it **in the same unit**; in later units use the ids `placed` gave.
+- Items are steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `pen` (`points` from the origin), `delete` (`ids`). Keys: `at: [x, y]`, `w`, `h`, `color`, `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes).
+- Whatever an item puts needs its `at` — except a `frame` `around` shapes (it encloses them; a unit of only that needs no origin) and a cell of a bento grid.
+- If any item fails, nothing of the unit is applied.
+
+Changes that are not drawing (`update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete` on what is there) can still go as a plain list of steps, without origin or `at`: `[{ "do": "update", "id": "…", "color": "green" }, …]`; in such a list, what is added without `at` goes in free space.
 
 ## Change and tidy
 
@@ -210,7 +215,7 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 - Read, then write; re-read after bigger changes to check the result.
 - Draw first, then check: once a piece of work is done, `omq lint` (or `lint --frame ID`, `lint --ids ID,…` for just what you made) lists what reads badly — shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. `omq lint --fix` fixes what needs no judgement itself, as one operation (`undo` reverts it), on what agents made only: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Fix the rest (an arrow across a shape) with `move`, `arrange` or `fit`, and lint again. Leave what people made where it is.
 - Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
-- Prefer one `apply` for anything with several parts, so the person can undo it at once.
+- Draw a unit of thought per `apply`, and read its `placed` before the next: where things ended up, how tall a note grew, which label does not fit.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).
 - **Comments** (live boards): a frame may have a thread — what was meant or asked about that drawing, and people's answers; `read` ends with them. Before you change a drawing, read its thread and follow what was agreed. When you cannot decide on your own what a drawing should say or stress (what to leave out, what to make stand out, what to do when text does not fit), ask in its thread — `omq comment FRAME_ID "…"`, saying what you did meanwhile — and go on; people answer there. `omq comments [--frame ID]` lists the threads.

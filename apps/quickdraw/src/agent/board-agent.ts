@@ -697,9 +697,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   }
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
-  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect }) {
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect, placed?: unknown[] }) {
     const { r, grew } = await putOp(requestId, make)
-    return JSON.stringify({ op: r.op, ids: r.ids, ...(grew ? { area: grew } : {}) })
+    return JSON.stringify({ op: r.op, ids: r.ids, ...(r.placed ? { placed: r.placed } : {}), ...(grew ? { area: grew } : {}) })
   }
   async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T) {
     let copy = copyOf(board.store)

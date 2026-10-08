@@ -12,6 +12,7 @@ import { createBoardCard, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw
 import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
+import { labelFit } from './lint.js'
 
 const GAP = 40
 const PAD = 24 // inside a frame's edges
@@ -766,14 +767,27 @@ export function runOp(store, name, fn, { area, prefer } = {}) {
 // Runs a list of steps as one operation. Steps may name what they add
 // (`ref: 'a'`) and point at it later as '@a'.
 // [{ do: 'note', text, color?, in?, ref? }, { do: 'arrow', from: '@a', to: '@b' }, …]
+//
+// Or a unit: { unit?, origin, in?, items: [steps] } — one unit of thought (a
+// question, its options, the arrows between them), drawn as written: every
+// position in it (`at`, a move's x/y, pen points) is relative to `origin`
+// (relative to the frame's top-left with `in`), and whatever is put needs its
+// `at` — nothing is placed in free space for it. It returns `placed`: what each
+// item became, where it is and how big, a label's lines and whether it fits, and
+// whether it lies inside the unit's frame — measured, never changed to fit.
 export function applySteps(store, name, steps, { area, prefer } = {}) {
-  if (!Array.isArray(steps)) throw new Error('steps must be an array')
-  return runOp(store, name, (ops) => {
-    const refs = {}
-    const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
-    const opts = (s) => ({ color: s.color, at: s.at, w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
-    return steps.map((s, i) => {
-      let out
+  if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer })
+  if (!Array.isArray(steps)) throw new Error('steps must be an array, or a unit: { origin: [x, y], items: [steps] }')
+  return runOp(store, name, (ops) => runSteps(ops, steps, {}, (p) => pointOf(p, 'at')), { area, prefer }) // at: { x, y } or [x, y]
+}
+
+// `at`: where a position given in a step is on the page; `label`: how an error names the step (a unit's items: all errors)
+function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
+  const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
+  const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
+  return steps.map((s, i) => {
+    let out
+    try {
       switch (s.do) {
         case 'note': out = ops.note(s.text ?? '', opts(s)); break
         case 'text': out = ops.text(s.text ?? '', opts(s)); break
@@ -785,23 +799,80 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
         case 'ticket': out = ops.ticket(s.title ?? s.text ?? '', { body: s.body, to: s.to }, opts(s)); break
         case 'status': out = ops.status(r(s.id), s.status, { by: s.by, result: s.result }); break
         case 'frame': out = ops.frame(s.title ?? s.text, { ...opts(s), aspect: s.aspect, around: s.around?.map(r), span: spanOf(s.span), auto: s.auto, titleInside: s.title_inside ?? s.titleInside }); break
-        case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: s.at }); break
+        case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: at(s.at) }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
-        case 'move': out = ops.move(r(s.id), s); break
-        case 'arrange': out = ops.arrange(s.ids.map(r), s); break
+        case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
+        case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
-        case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points, color: s.color, size: s.size }); break
-        case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: s.at, gap: s.gap, width: s.width }); break
+        case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points?.map((p) => { const q = at(Array.isArray(p) ? { x: p[0], y: p[1] } : p); return [q.x, q.y] }), color: s.color, size: s.size }); break
+        case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: at(s.at), gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break
-        default: throw new Error(`step ${i + 1}: unknown "do": ${JSON.stringify(s.do)}`)
+        default: throw new Error(`${label ? label(i, s) : `step ${i + 1}`}: unknown "do": ${JSON.stringify(s.do)}`)
       }
-      if (s.ref) refs[s.ref] = out
-      return out
-    })
-  }, { area, prefer })
+    } catch (e) {
+      if (label && !e.message.startsWith(label(i, s))) e.message = `${label(i, s)}: ${e.message}`
+      throw e
+    }
+    if (s.ref) refs[s.ref] = out
+    return out
+  })
+}
+
+// a point as { x, y } or [x, y]
+function pointOf(v, what) {
+  if (v == null) return v
+  const p = Array.isArray(v) ? { x: v[0], y: v[1] } : v
+  if (!Number.isFinite(Number(p?.x)) || !Number.isFinite(Number(p?.y))) throw new Error(`${what} is a point, [x, y] or { x, y } (not ${JSON.stringify(v)})`)
+  return { x: Number(p.x), y: Number(p.y) }
+}
+// what puts something somewhere: it needs `at` in a unit (no free space is looked for)
+const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
+const needsAt = (s) => PLACES.has(s.do) && !(s.do === 'frame' && s.around?.length) && !(s.do === 'frame' && s.in) // a frame around shapes, or a bento cell: placed by what it holds
+
+// A unit (see applySteps): drawn as written, then measured.
+function applyUnit(store, name, unit, where) {
+  const { items } = unit
+  if (!Array.isArray(items) || !items.length) throw new Error('a unit needs items: [steps]')
+  // (one that only encloses or joins what is there, with no position in it, may leave it out)
+  const origin = pointOf(unit.origin, 'origin') ?? (items.some((s) => s?.at != null || s?.x != null || s?.y != null || s?.points || needsAt(s ?? {})) ? null : { x: 0, y: 0 })
+  if (!origin) throw new Error('a unit needs an origin: [x, y] (in board coordinates, or in its frame with in)')
+  let base = origin, frame = null
+  if (unit.in != null) {
+    frame = store.get(unit.in)
+    if (!frame || !isFrame(frame)) throw new Error(`a unit's in is a frame's id: ${unit.in} is not one`)
+    base = { x: frame.x + origin.x, y: frame.y + origin.y }
+  }
+  const name_ = (i, s) => `item ${i + 1}${s.ref ? ` (${s.ref})` : ''}${s.do ? ` ${s.do}` : ''}`
+  const steps = items.map((s, i) => {
+    if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
+    const at = pointOf(s.at, `${name_(i, s)}: at`)
+    if (needsAt(s) && !at) throw new Error(`${name_(i, s)}: give it at: [x, y] (from the unit's origin) — in a unit nothing is put in free space`)
+    return { ...s, at }
+  })
+  const refs = {}
+  const done = runOp(store, name, (ops) => runSteps(ops, steps, refs, (p) => (p ? { x: base.x + p.x, y: base.y + p.y } : p), name_), where)
+  // what each item became, as it ended up (a note is 200 wide and grows down; arrows follow their shapes)
+  const fb = frame && pageBounds(store.get(frame.id))
+  const placed = steps.map((s, i) => {
+    const id = done.result[i]
+    const rec = typeof id === 'string' ? store.get(id) : null
+    if (!rec || rec.typeName !== 'shape' || (!PLACES.has(s.do) && s.do !== 'arrow')) return null
+    const out = { ...(s.ref ? { ref: s.ref } : {}), id, do: s.do }
+    if (isLine(rec)) {
+      const label = store.shapes().find((l) => l.labelOf === id)
+      const lb = label && box(label)
+      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}) }
+    }
+    const b = box(rec)
+    const fit = labelFit(rec)
+    return { ...out, at: [b.x - base.x, b.y - base.y], size: [b.w, b.h],
+      ...(fit ? { lines: fit.lines, fits: fit.fits } : {}),
+      ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}) }
+  }).filter(Boolean)
+  return { ...done, ...(unit.unit != null ? { unit: String(unit.unit) } : {}), placed }
 }
 
 // a span as { c, r }, from that or "2x1"

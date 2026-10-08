@@ -19,7 +19,7 @@ Decide where each part goes before filling any of them:
 
 ## 3. Fill
 
-Fill one part at a time, each with its pattern, as one `apply`. Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). `lint` each part before the next; look at the whole once at the end (`omq look`).
+Fill one part at a time, each with its pattern, a unit of thought per `apply` (all with the part's origin), so the part grows as people watch. Keywords on the board; the material's full wording, when people will want it, in a Markdown card at the side (or a link card to the source). `lint` each part before the next; look at the whole once at the end (`omq look`).
 
 ## 4. Finish
 

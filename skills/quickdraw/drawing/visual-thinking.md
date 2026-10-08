@@ -38,7 +38,7 @@ Keep only what serves the theme. Words on the board are **keywords**: a noun phr
 
 ## 2. Pick a pattern
 
-Look the relation up in `patterns.md` and use its shape and its `apply` skeleton. When nothing fits, a plain row or column of shapes joined by arrows is always readable.
+Look the relation up in `patterns.md` and use its shape and its units (`apply` skeletons). When nothing fits, a plain row or column of shapes joined by arrows is always readable.
 
 ## 3. Place
 
@@ -55,7 +55,11 @@ Look the relation up in `patterns.md` and use its shape and its `apply` skeleton
   - the word on an arrow ("causes", "yes"): the arrow's `label` (it follows the arrow); arrows that would cross: `bend` one round the other
   - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
 
-Positions: `apply` steps take `at: {x, y}` in board coordinates. Pick an origin in free space first — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes) — and add it to the offsets in `patterns.md`.
+Positions, a unit at a time:
+
+1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: a label of `n` characters needs about `n × 10` of width at `s` (CJK: `n × 20`), plus 30; a diamond or an ellipse about half as wide again.
+2. Draw one unit of thought per `apply` — the question, then its options, then the arrows and what was chosen — all with that `origin`, each item at its planned `at`. The board shows exactly what you wrote.
+3. Read the `placed` it prints before the next unit: a label with `fits: false`, a note that grew taller, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
 
 ## 4. Check
 
