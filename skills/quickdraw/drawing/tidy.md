@@ -18,7 +18,7 @@ What people made may be moved and edited when asked to tidy, never deleted (ask 
 ## 3. Relate and conclude
 
 1. Between groups: arrows where one causes or feeds another, the biggest or most urgent group first in reading order (or `pen circle` it).
-2. Above the groups: a Markdown card with what it all adds up to — 2–3 lines, each pointing at the groups it comes from. This is the part only you add; keep it clearly yours (a card, not people's notes rewritten).
+2. Above the groups: what it all adds up to, as text (`--text-size l`) — 2–3 lines, each pointing at the groups it comes from. This is the part only you add; keep it clearly yours (your text, not people's notes rewritten).
 
 ## 4. Check
 
