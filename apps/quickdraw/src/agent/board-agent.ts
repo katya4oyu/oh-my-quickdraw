@@ -119,6 +119,8 @@ export interface BoardAgent {
    * waits for it to be on the board first.
    */
   operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect, prefer?: { x: number, y: number } }) => T, opts?: { prefer?: { x: number, y: number }, background?: boolean }): Promise<T>
+  /** resolves once what it is drawing in the background is on the board */
+  drawn(): Promise<void>
   /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
   peopleSince(requestId: string): string
   /** puts its cursor at a page point and keeps it there (not hidden when it goes idle) */
@@ -652,6 +654,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return (await putOp(requestId, (store) => make(store, area ? { area } : { prefer: prefer ?? viewOf(requestId) }), { background })).r
     },
     peopleSince,
+    drawn: async () => { await drawing },
     point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
     close: async () => {
       await drawing // what it was still drawing is finished first

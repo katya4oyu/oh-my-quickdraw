@@ -101,7 +101,9 @@ Writing (each command is one operation, undoable as a whole)
                                            draws an SVG as by hand, as one operation: a frame its size, its
                                            outlines with the pen and its words as texts, in the order written;
                                            on a live board a stroke at a time (joined: while you go on). The SVG
-                                           is kept with it: omq read gives it back with what people changed since
+                                           is kept with it: omq read gives it back with what people changed since.
+                                           Prints hits: words past their box, words on words, a line through words
+  svg FILE --replace FRAME                 that drawing again from the SVG, changed: only what changed is redrawn
   svg --show FRAME                         the SVG a drawing was drawn from
 
 Tickets (work people leave on the board for agents)
@@ -260,7 +262,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  show: { type: 'string' }, write: { type: 'string' },
+  show: { type: 'string' }, write: { type: 'string' }, replace: { type: 'string' },
   'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
@@ -584,7 +586,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         const { readSvg } = await import('quickdraw-svg')
         const d = readSvg(source) // what it will be, to say so (the operation reads it again)
         const write = (o.write ?? 'chars') as 'chars' | 'lines'
-        done = await operate((s, where) => runOp(s, o.name, (ops) => ops.svg(source, { at: point(o.at), inFrame: o.in, write }), where), { live, background: live && ctx.session })
+        done = await operate((s, where) => runOp(s, o.name, (ops) => ops.svg(source, { at: point(o.at), inFrame: o.in, write, replace: o.replace }), where), { live, background: live && ctx.session })
         const strokes = d.parts.filter((p) => p.kind === 'stroke'), length = strokes.reduce((n, p) => n + p.points.reduce((m, q, i, a) => m + (i ? Math.hypot(q[0] - a[i - 1][0], q[1] - a[i - 1][1]) : 0), 0), 0)
         const frame = [done.result].flat()[0] as string
         await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: `svg ${args[0]}`, diff: done.diff })
@@ -592,7 +594,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return out(jsonLines({
           op: done.op, frame, ...(f ? { at: `${Math.round((f as { x: number }).x)},${Math.round((f as { y: number }).y)}` } : {}), size: `${d.w}x${d.h}`,
           units: d.units.length, strokes: strokes.length, words: d.parts.length - strokes.length,
+          ...(o.replace ? { redrawn: Object.keys(done.diff.added).filter((id) => (store.get(id) as { svg?: unknown } | undefined)?.svg).length, taken_off: Object.keys(done.diff.removed).length } : {}),
           ...(Object.keys(d.dropped).length ? { dropped: d.dropped } : {}),
+          ...(d.hits.length ? { hits: d.hits } : {}),
           ...(live ? { drawing: ctx.session ? `on the board in about ${Math.round(length / 900 + d.parts.length * 0.4)} s, while you go on` : 'drawn' } : {}),
         }))
       }

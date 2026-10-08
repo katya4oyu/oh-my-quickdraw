@@ -57,4 +57,21 @@ describe('an SVG drawn on the board', () => {
     expect(r.drawing).toMatchObject({ frame: r.ids[0], at: [10, 20], size: [400, 200], units: 3, strokes: 4, words: 2 })
     expect(store.asset(store.get(r.ids[0]).svg.asset).write).toBe('lines')
   })
+
+  it('draws a changed SVG again over its drawing: what is the same stays (where people moved it), only what changed goes and comes', () => {
+    const store = board()
+    const { result: [[frame, box1, word1, box2, word2]] } = applySteps(store, 'C', [{ do: 'svg', svg, at: [0, 0] }])
+    store.update(box1, { x: store.get(box1).x + 30 }) // someone moves the first box
+    const note = applySteps(store, 'Yuya', [{ do: 'note', text: 'mine', at: [100, 100] }]).result[0]
+    const changed = svg.replace('>Relay<', '>Server<')
+    const { result: [[again, ...parts]], diff } = applySteps(store, 'C', [{ do: 'svg', svg: changed, replace: frame }])
+    expect(again).toBe(frame)
+    expect(parts).toContain(box1)
+    expect(store.get(box1).x).toBe(50) // kept where it was moved to
+    expect(Object.keys(diff.removed)).toEqual([word2])
+    expect(Object.values(diff.added).filter((r) => r.typeName === 'shape').map((r) => r.props.text)).toEqual(['Server'])
+    expect(store.get(note)).toBeTruthy() // what people added stays
+    expect(store.asset(store.get(frame).svg.asset).src).toBe(changed)
+    expect(() => applySteps(store, 'C', [{ do: 'svg', svg, replace: note }])).toThrow(/not a drawing from an SVG/)
+  })
 })

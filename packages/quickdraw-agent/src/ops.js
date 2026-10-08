@@ -671,24 +671,44 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // its words as texts, where the SVG has them, in the order it was written.
     // The SVG itself is kept on the board (an asset) as the source of the
     // drawing: the frame and every stroke and word carry `svg: { asset, el,
-    // unit }` (el: the element it came from). `write` (chars or lines) is how
-    // the words go on when drawn live. Returns the frame and what is in it.
-    svg(source, { at, inFrame, write = 'chars' } = {}) {
+    // unit, sig }` (el: the element it came from; sig: how it was drawn).
+    // `write` (chars or lines) is how the words go on when drawn live.
+    // `replace`: a drawing's frame, drawn again from this SVG: what is drawn
+    // the same stays as it is (moved by people, too), only what changed goes
+    // and comes; what people added in it stays. Returns the frame and what
+    // was drawn.
+    svg(source, { at, inFrame, write = 'chars', replace } = {}) {
       if (!['chars', 'lines'].includes(write)) throw new Error(`unknown write "${write}" (chars or lines)`)
       const d = readSvg(source)
       if (!d.parts.length) throw new Error('nothing to draw in this SVG')
-      const asset = newId('asset')
+      let frame, asset, kept = new Map()
+      if (replace) {
+        const f = need(replace)
+        asset = f.svg?.asset
+        if (!asset || !store.asset(asset)) throw new Error(`${replace} is not a drawing from an SVG (omq read shows which frames are)`)
+        frame = f.id
+        if (f.props.w !== d.w || f.props.h !== d.h) store.update(frame, { props: { w: d.w, h: d.h } })
+        if (d.title && d.title !== frameTitle(store, frame)) renameFrame(store, frame, d.title)
+        // what it drew before, by how it was drawn
+        for (const s of store.shapes()) if (s.svg?.asset === asset && s.id !== frame && s.svg.sig) kept.set(s.svg.sig, [...(kept.get(s.svg.sig) ?? []), s.id])
+      } else {
+        asset = newId('asset')
+        frame = ops.frame(d.title || 'SVG', { at, w: d.w, h: d.h, inFrame })
+        store.update(frame, { svg: { asset } })
+      }
       store.put({ id: asset, typeName: 'asset', type: 'svg', src: String(source), w: d.w, h: d.h, title: d.title, write, units: d.units, dropped: d.dropped })
-      const frame = ops.frame(d.title || 'SVG', { at, w: d.w, h: d.h, inFrame })
-      store.update(frame, { svg: { asset } })
       const f = store.get(frame), o = { x: f.x, y: f.y }
       const ids = d.parts.map((p) => {
+        const same = kept.get(p.sig)
+        if (same?.length) return same.shift() // drawn the same: it stays
         const id = p.kind === 'stroke'
           ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size })
           : ops.text(p.text, { at: { x: o.x + p.at[0], y: o.y + p.at[1] }, fontSize: Math.min(160, Math.max(8, p.fontSize)), w: p.w, align: p.align, color: p.color })
-        store.update(id, { svg: { asset, el: p.el, unit: p.unit } })
+        store.update(id, { svg: { asset, el: p.el, unit: p.unit, sig: p.sig } })
         return id
       })
+      const gone = [...kept.values()].flat()
+      if (gone.length) store.remove(gone) // what the new SVG no longer draws so
       focus = o
       return [frame, ...ids]
     },
@@ -909,7 +929,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
-        case 'svg': out = ops.svg(s.svg ?? s.source, { at: at(s.at), inFrame: r(s.in), write: s.write }); break
+        case 'svg': out = ops.svg(s.svg ?? s.source, { at: at(s.at), inFrame: r(s.in), write: s.write, replace: r(s.replace) }); break
         case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points?.map((p) => { const q = at(Array.isArray(p) ? { x: p[0], y: p[1] } : p); return [q.x, q.y] }), color: s.color, size: s.size }); break
         case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: at(s.at), gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break

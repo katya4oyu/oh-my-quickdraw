@@ -273,7 +273,51 @@ export function readSvg(source) {
       }
     }
   })
-  return { w: W, h: H, title, dark, units: units.map((u) => u.name), parts, dropped }
+  for (const p of parts) p.sig = signature(p)
+  const boxes = recs.filter((r) => r.box && !isPage(r) && r.tag === 'rect').map((r) => ({ el: r.el, x: r.box[0], y: r.box[1], w: r.box[2], h: r.box[3] }))
+  return { w: W, h: H, title, dark, units: units.map((u) => u.name), parts, dropped, hits: hitsOf(parts, boxes) }
+}
+
+// what a part is, as drawn: the same element drawn the same way has the same signature
+function signature(p) {
+  const v = JSON.stringify(p.kind === 'stroke' ? [p.el, p.points, p.color, p.size] : [p.el, p.text, p.at, p.fontSize, p.color, p.w ?? null, p.align ?? null])
+  let h = 5381
+  for (let i = 0; i < v.length; i++) h = ((h * 33) ^ v.charCodeAt(i)) >>> 0
+  return h.toString(36)
+}
+
+// What reads badly once drawn on the board, whose letters (hand-drawn) are about
+// as wide as textWidth says: words that run past the box they are in, words
+// on top of other words, a line through words. Measured, never changed.
+function hitsOf(parts, boxes) {
+  const hits = []
+  const quote = (t) => `"${t.length > 30 ? t.slice(0, 29) + '…' : t}"`
+  const texts = parts.filter((p) => p.kind === 'text').map((p) => {
+    const w = textWidth(p.text, p.fontSize), h = p.fontSize * 1.32
+    const x = p.align === 'middle' ? p.at[0] + p.w / 2 - w / 2 : p.align === 'end' ? p.at[0] + p.w - w : p.at[0]
+    return { p, x, y: p.at[1] + p.fontSize * 0.2, w, h }
+  })
+  const inBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+  for (const t of texts) {
+    const mid = t.y + t.h / 2
+    // the smallest box it is anchored in: where it starts, its middle (centred) or where it ends
+    const ax = t.p.align === 'middle' ? t.x + t.w / 2 : t.p.align === 'end' ? t.x + t.w - 1 : t.x + 1
+    const box = boxes.filter((b) => inBox(b, ax, mid)).sort((a, b) => a.w * a.h - b.w * b.h)[0]
+    if (box) {
+      const over = Math.round(Math.max(t.x + t.w - (box.x + box.w), box.x - t.x))
+      if (over > 2) hits.push(`words ${quote(t.p.text)} (${t.p.el}) run past the edge of ${box.el} by ${over} px`)
+    }
+  }
+  for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
+    const a = texts[i], b = texts[j]
+    if (a.x < b.x + b.w - 2 && b.x < a.x + a.w - 2 && a.y < b.y + b.h - 3 && b.y < a.y + a.h - 3) hits.push(`words ${quote(a.p.text)} (${a.p.el}) on words ${quote(b.p.text)} (${b.p.el})`)
+  }
+  const open = (p) => { const a = p.points[0], b = p.points.at(-1); return Math.hypot(a[0] - b[0], a[1] - b[1]) > 1 }
+  const lines = [...new Map(parts.filter((p) => p.kind === 'stroke' && ['line', 'path', 'polyline', 'arrow'].includes(p.tag) && open(p)).map((p) => [p.el, p])).values()]
+  for (const l of lines) for (const t of texts) {
+    if (l.points.some(([x, y]) => x > t.x + 2 && x < t.x + t.w - 2 && y > t.y + 2 && y < t.y + t.h - 2)) hits.push(`a line (${l.el}) through words ${quote(t.p.text)} (${t.p.el})`)
+  }
+  return hits
 }
 
 // a text's lines: its own words, and each tspan placed with x, y or dy starts one

@@ -57,3 +57,17 @@ describe('dark paper', () => {
     expect(d.parts.map((p) => [p.kind, p.color])).toEqual([['stroke', 'grey'], ['text', 'black']])
   })
 })
+
+describe('hits', () => {
+  it('says what will read badly once drawn: words past their box, words on words, a line through words', () => {
+    const d = readSvg(`<svg viewBox="0 0 400 200">
+      <rect x="10" y="10" width="80" height="40" fill="none" stroke="#000"/><text x="20" y="35" font-size="16">A long name here</text>
+      <text x="200" y="100" font-size="16">One</text><text x="205" y="104" font-size="16">Two</text>
+      <line x1="150" y1="150" x2="350" y2="150" stroke="#000"/><text x="230" y="155" font-size="14">across</text></svg>`)
+    expect(d.hits).toEqual([
+      'words "A long name here" (text1) run past the edge of rect1 by 73 px',
+      'words "One" (text2) on words "Two" (text3)',
+      'a line (line1) through words "across" (text4)',
+    ])
+  })
+})
