@@ -52,12 +52,6 @@ Reading
 
 Writing (each command is one operation, undoable as a whole)
   note TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
-  text TEXT [--color C] [--text-size S | --font-size PX] [--width W [--align A]] [--in FRAME] [--at X,Y]
-                                          --text-size: how big the words are, s m l xl (20 26 36 48 px);
-                                          --font-size: in px; --width: wraps at W, --align start middle end in it
-  shape KIND [LABEL] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--in FRAME] [--at X,Y]
-                                          KIND: rectangle, ellipse, …; --dash: draw solid dashed dotted;
-                                          --fill: none semi solid (a light tint) pattern (hatched)
   markdown TEXT | --md-file PATH [--in FRAME] [--at X,Y]
   board-card BOARD [--live] [--size WxH] [--in FRAME] [--at X,Y]
                                           a card for another board (its id: omq boards): its picture and an
@@ -84,9 +78,6 @@ Writing (each command is one operation, undoable as a whole)
   span CELL COLSxROWS | --auto            a cell's size in units, or rows following its contents
                                           (--auto again: off); the other cells move along
   columns BENTO N                         a bento grid's columns; its cells pack again
-  arrow FROM TO [--color C] [--line] [--label TEXT] [--bend N] [--dash D] [--text-size S]
-                                          --label: a word or two by its middle, which follows the arrow;
-                                          --bend: how far the middle bows out (+ right as it goes, - left)
   update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--font-size PX] [--dash D] [--fill F] [--bend N] [--label TEXT]
                                           --size: a shape's size (not a frame's; a cell: span);
                                           --label "": takes an arrow's label off
@@ -103,7 +94,8 @@ Writing (each command is one operation, undoable as a whole)
                                           about --width wide (2400): each brings what is in it and its title, a
                                           kanban's columns stay together; for a board that has spread out
   delete ID…                               only shapes an agent added
-  apply UNIT.json                          a unit of thought, drawn as written ({ origin, items }),
+  apply UNIT.json                          draws: shapes, words and arrows go on only this way, a unit of
+                                           thought at a time, as written ({ origin, items }, every size a number),
                                            as one operation; prints placed (see SKILL.md)
 
 Tickets (work people leave on the board for agents)
@@ -262,7 +254,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, align: { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
@@ -451,10 +443,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       }
       case 'note':
         done = await op((ops) => ops.note(args.join(' '), common)); break
-      case 'text':
-        done = await op((ops) => ops.text(args.join(' '), { ...common, fontSize: o['font-size'] == null ? undefined : Number(o['font-size']), align: o.align as 'start' | 'middle' | 'end' | undefined, ...(o.width ? { w: Number(o.width) } : {}) })); break
-      case 'shape':
-        done = await op((ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
+      // shapes, words and arrows have one way on: a unit with apply, every size a number
+      case 'text': case 'shape': case 'arrow':
+        throw new Error(`${cmd}: draw with omq apply, a unit ({ origin, items }, each item at its at, every size a number; see SKILL.md)`)
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = await op((ops) => ops.markdown(md, common)); break
@@ -495,8 +486,6 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       }
       case 'columns':
         done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
-      case 'arrow':
-        done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label, bend, dash, textSize })); break
       case 'update':
         done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, fontSize: o['font-size'] == null ? undefined : Number(o['font-size']), bend, label: o.label })); break
       case 'move': {
@@ -562,7 +551,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
       case 'apply': {
         const steps = JSON.parse(args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8'))
-        done = await operate((s, where) => applySteps(s, o.name, steps, where)); break
+        done = await operate((s, where) => applySteps(s, o.name, steps, { ...where, drawing: 'units' })); break
       }
       default:
         throw new Error(`unknown command "${cmd}" (see --help)`)

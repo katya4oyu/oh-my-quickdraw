@@ -105,12 +105,16 @@ describe('tools', () => {
 
   it('apply several steps as one operation, all or nothing', () => {
     const store = board()
-    const { ids } = tool('apply_steps').run(store, { steps: [
-      { do: 'shape', shape: 'rectangle', text: 'A', ref: 'a' },
-      { do: 'shape', shape: 'ellipse', text: 'B', ref: 'b' },
+    const { ids } = tool('apply_steps').run(store, { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 180, h: 100, ref: 'a' },
+      { do: 'shape', shape: 'ellipse', at: [300, 0], w: 180, h: 100, ref: 'b' },
       { do: 'arrow', from: '@a', to: '@b' },
     ] })
     expect(ids).toHaveLength(3)
+    // a plain list changes what is there; it adds nothing
+    expect(() => tool('apply_steps').run(store, { steps: [{ do: 'note', text: 'n' }] })).toThrow(/added in a unit/)
+    tool('apply_steps').run(store, { steps: [{ do: 'update', id: ids[0], color: 'green' }, { do: 'frame', title: 'Both', around: [ids[0], ids[1]] }] })
+    expect(store.get(ids[0]).props.color).toBe('green')
     expect(() => tool('delete_shapes').run(store, { ids: ['shape:nope'] })).toThrow(/no shape/)
   })
 })

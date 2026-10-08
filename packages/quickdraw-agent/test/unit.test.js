@@ -106,11 +106,30 @@ describe('a unit', () => {
   it('the board tool takes a unit and gives back placed', () => {
     const store = board()
     const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
-    const r = tool.run(store, { unit: 'u', origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', text: 'A', at: [10, 20], ref: 'a' }] }, { name: 'C' })
-    expect(r.placed).toEqual([expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100], lines: 1, fits: true })])
-    expect(r.ids).toHaveLength(1)
-    // the old way still works, and says nothing of placed
-    expect(tool.run(store, { steps: [{ do: 'note', text: 'n' }] }, { name: 'C' }).placed).toBeUndefined()
+    const r = tool.run(store, { unit: 'u', origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [10, 20], w: 180, h: 100, ref: 'a' },
+      { do: 'text', text: 'A', font_size: 16, w: 180, align: 'middle', at: [10, 50] },
+    ] }, { name: 'C' })
+    expect(r.placed).toEqual([expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100] }), expect.objectContaining({ at: [10, 50], font_size: 16, lines: 1 })])
+    expect(r.ids).toHaveLength(2)
+  })
+
+  it('drawn by an agent, a unit has one way to write each thing: every size a number, every word a text', () => {
+    const store = board()
+    const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
+    const one = (item) => () => tool.run(store, { origin: [0, 0], items: [item] }, { name: 'C' })
+    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0] })).toThrow(/w and h/)
+    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, text: 'A' })).toThrow(/holds no words/)
+    expect(one({ do: 'text', text: 'A', at: [0, 0] })).toThrow(/font_size in px/)
+    expect(one({ do: 'text', text: 'A', at: [0, 0], font_size: 16, text_size: 'l' })).toThrow(/not text_size/)
+    expect(one({ do: 'note', text: 'A', at: [0, 0] })).toThrow(/not in a unit/)
+    expect(one({ do: 'frame', title: 'F', at: [0, 0] })).toThrow(/w and h/)
+    expect(() => tool.run(store, { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'yes' },
+    ] }, { name: 'C' })).toThrow(/takes no label/)
+    expect(store.shapes()).toHaveLength(0)
   })
 
   it('a text in px, and wrapped at a width: placed gives its size, px and lines', () => {

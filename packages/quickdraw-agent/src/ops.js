@@ -793,9 +793,17 @@ export function runOp(store, name, fn, { area, prefer } = {}) {
 // `at` — nothing is placed in free space for it. It returns `placed`: what each
 // item became, where it is and how big, a label's lines and whether it fits, and
 // whether it lies inside the unit's frame — measured, never changed to fit.
-export function applySteps(store, name, steps, { area, prefer } = {}) {
-  if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer })
+//
+// `drawing: 'units'` (what agents get, through omq apply and the apply_steps
+// tool): a unit is the one way to add things, and in it every size is a number
+// (see UNIT_RULES); a plain list only changes what is there.
+export function applySteps(store, name, steps, { area, prefer, drawing } = {}) {
+  const strict = drawing === 'units'
+  if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer }, strict)
   if (!Array.isArray(steps)) throw new Error('steps must be an array, or a unit: { origin: [x, y], items: [steps] }')
+  if (strict) steps.forEach((s, i) => {
+    if (ADDS.has(s?.do) && !(s.do === 'frame' && s.around?.length)) throw new Error(`step ${i + 1} ${s.do}: things are added in a unit, { origin: [x, y], items: [...] }, each at its at; a list of steps only changes what is there`)
+  })
   return runOp(store, name, (ops) => runSteps(ops, steps, {}, (p) => pointOf(p, 'at')), { area, prefer }) // at: { x, y } or [x, y]
 }
 
@@ -848,10 +856,21 @@ function pointOf(v, what) {
 }
 // what puts something somewhere: it needs `at` in a unit (no free space is looked for)
 const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
+const ADDS = new Set([...PLACES, 'arrow'])
+// in a unit drawn by an agent, each item has one way to be written: every size a number, every word a text
+const UNIT_RULES = {
+  shape: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : s.text != null || s.label != null ? 'a shape holds no words: put them as a text item over it (at, font_size, w, align: middle)' : null),
+  text: (s) => (s.font_size == null && s.fontSize == null ? 'give its font_size in px' : null),
+  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : null),
+  frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
+  image: (s) => (s.w == null ? 'give its width, w' : null),
+  embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
+  pen: () => null, update: () => null, move: () => null, delete: () => null,
+}
 const needsAt = (s) => PLACES.has(s.do) && !(s.do === 'frame' && s.around?.length) && !(s.do === 'frame' && s.in) // a frame around shapes, or a bento cell: placed by what it holds
 
 // A unit (see applySteps): drawn as written, then measured.
-function applyUnit(store, name, unit, where) {
+function applyUnit(store, name, unit, where, strict = false) {
   const { items } = unit
   if (!Array.isArray(items) || !items.length) throw new Error('a unit needs items: [steps]')
   // (one that only encloses or joins what is there, with no position in it, may leave it out)
@@ -866,6 +885,12 @@ function applyUnit(store, name, unit, where) {
   const name_ = (i, s) => `item ${i + 1}${s.ref ? ` (${s.ref})` : ''}${s.do ? ` ${s.do}` : ''}`
   const steps = items.map((s, i) => {
     if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
+    if (strict) {
+      const rule = UNIT_RULES[s.do]
+      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit draws with shape, text, arrow, frame, image, embed, pen (and update, move, delete)`)
+      const why = (s.text_size ?? s.textSize) != null ? 'sizes are numbers here: font_size in px, not text_size' : s.in != null ? 'give in to the unit, not to an item' : rule(s)
+      if (why) throw new Error(`${name_(i, s)}: ${why}`)
+    }
     const at = pointOf(s.at, `${name_(i, s)}: at`)
     if (needsAt(s) && !at) throw new Error(`${name_(i, s)}: give it at: [x, y] (from the unit's origin) — in a unit nothing is put in free space`)
     return { ...s, at }

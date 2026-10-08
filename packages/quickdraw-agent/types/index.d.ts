@@ -124,9 +124,10 @@ export function boardToMarkdown(store: Store): string
 export function textOf(store: Store, shape: object): string
 /** `area`: where what has no place goes (see Rect); else `prefer`: near that page point (where people look), in free space; else right of everything. */
 export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect, prefer?: Point }): Operation<T>
-export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]>
+/** drawing 'units' (agents): things are added only in a unit, every size a number; a plain list only changes what is there. */
+export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point, drawing?: 'units' }): Operation<unknown[]>
 /** A unit drawn as written: positions are from `origin`; what it adds is where `at` says (no free space is looked for), then measured. */
-export function applySteps(store: Store, name: string, unit: Unit, opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]> & { unit?: string, placed: Placed[] }
+export function applySteps(store: Store, name: string, unit: Unit, opts?: { area?: Rect, prefer?: Point, drawing?: 'units' }): Operation<unknown[]> & { unit?: string, placed: Placed[] }
 /** Free space for a w × h box (and a frame's title above it), clear of every shape: at `prefer` (its top-left) if free, else the nearest free spot. */
 export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts?: { gap?: number, above?: number }): Point
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
