@@ -71,3 +71,10 @@ describe('hits', () => {
     ])
   })
 })
+
+describe('an arrow through words', () => {
+  it('is its line, not only its head', () => {
+    const d = readSvg(`<svg viewBox="0 0 500 500"><line x1="345" y1="430" x2="475" y2="300" stroke="#000" stroke-width="3" marker-end="url(#a)"/><text x="404" y="360" font-size="12" text-anchor="middle">connects</text></svg>`)
+    expect(d.hits).toEqual(['a line (line1) through words "connects" (text1)'])
+  })
+})

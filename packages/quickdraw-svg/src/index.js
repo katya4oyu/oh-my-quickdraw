@@ -315,11 +315,12 @@ function hitsOf(parts, boxes) {
     if (a.x < b.x + b.w - 2 && b.x < a.x + a.w - 2 && a.y < b.y + b.h - 3 && b.y < a.y + a.h - 3) hits.push(`words ${quote(a.p.text)} (${a.p.el}) on words ${quote(b.p.text)} (${b.p.el})`)
   }
   const open = (p) => { const a = p.points[0], b = p.points.at(-1); return Math.hypot(a[0] - b[0], a[1] - b[1]) > 1 }
-  const lines = [...new Map(parts.filter((p) => p.kind === 'stroke' && ['line', 'path', 'polyline', 'arrow'].includes(p.tag) && open(p)).map((p) => [p.el, p])).values()]
+  // (an arrow is its line and its head, both of its element)
+  const lines = parts.filter((p) => p.kind === 'stroke' && ['line', 'path', 'polyline', 'arrow'].includes(p.tag) && open(p))
   for (const l of lines) for (const t of texts) {
     if (l.points.some(([x, y]) => x > t.x + 2 && x < t.x + t.w - 2 && y > t.y + 2 && y < t.y + t.h - 2)) hits.push(`a line (${l.el}) through words ${quote(t.p.text)} (${t.p.el})`)
   }
-  return hits
+  return [...new Set(hits)]
 }
 
 // a text's lines: its own words, and each tspan placed with x, y or dy starts one
