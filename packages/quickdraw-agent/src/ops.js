@@ -177,10 +177,19 @@ function checkBend(bend) {
   return bend == null ? bend : Number(bend)
 }
 // a text's size on the page, estimated: its widest line, and a line's height per line
-function textBox(text, size = 'm') {
-  const fs = FONT_SIZES[size], lines = String(text).split('\n')
+function textBox(text, size = 'm', px = FONT_SIZES[size]) {
+  const fs = px, lines = String(text).split('\n')
   return { w: Math.max(...lines.map((l) => estimateWidth(`${fs}px sans-serif`, l))), h: Math.round(fs * 1.4) * lines.length }
 }
+// a font size in page px (a text's): drawn as the size s, scaled
+function checkFontSize(px) {
+  if (px == null) return px
+  const n = Number(px)
+  if (!(n >= 8 && n <= 160)) throw new Error(`a font size is a number of px, 8 to 160 (not "${px}")`)
+  return n
+}
+const ALIGNS = ['start', 'middle', 'end']
+const checkAlign = (a) => { if (a != null && !ALIGNS.includes(a)) throw new Error(`unknown align "${a}" (one of ${ALIGNS.join(', ')})`); return a }
 
 /**
  * Where an arrow's label goes (its top-left corner), for a label `w` × `h`: by
@@ -349,9 +358,14 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     note(text, opts = {}) {
       return add('note', { text: String(text), color: checkColor(opts.color) ?? 'yellow', size: checkSize(opts.textSize) ?? 'm', font: 'draw', scale: 1 }, 200, 200, opts)
     },
+    // fontSize: px (instead of textSize); w: wraps at that width (align: start, middle, end within it)
     text(text, opts = {}) {
-      const size = checkSize(opts.textSize) ?? 'm', { w, h } = textBox(text, size)
-      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, opts)
+      const px = checkFontSize(opts.fontSize)
+      const size = px ? 's' : checkSize(opts.textSize) ?? 'm', scale = px ? px / FONT_SIZES.s : 1
+      const est = textBox(text, size, FONT_SIZES[size] * scale)
+      const fixed = opts.w != null ? { autosize: false, w: Math.max(8, Number(opts.w)) } : { autosize: true }
+      const align = checkAlign(opts.align)
+      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size, font: 'draw', ...fixed, ...(align ? { align } : {}), scale }, fixed.w ?? est.w, est.h, opts)
     },
     shape(geo, label = '', opts = {}) {
       if (!GEO_IDS.includes(geo)) throw new Error(`unknown shape "${geo}" (one of ${GEO_IDS.join(', ')})`)
@@ -498,8 +512,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // text / label / markdown / frame title, and color; a text's size (textSize),
     // a shape's line style and fill, an arrow's line style, bend and label
     // (label: '' takes it off)
-    update(id, { text, color, w, h, textSize, dash, fill, bend, label } = {}) {
+    update(id, { text, color, w, h, textSize, fontSize, dash, fill, bend, label } = {}) {
       const s = need(id)
+      if (fontSize != null) {
+        if (s.type !== 'text' || isLabel(s)) throw new Error(`${id} (${s.type}) has no font size in px: only texts do (others: text_size)`)
+        store.update(id, { props: { size: 's', scale: checkFontSize(fontSize) / FONT_SIZES.s } })
+      }
       if (textSize != null) {
         checkSize(textSize)
         if (s.type === 'geo' && !isFrame(s) && !isLayout(s)) store.update(id, { props: { labelSize: textSize } })
@@ -784,7 +802,7 @@ export function applySteps(store, name, steps, { area, prefer } = {}) {
 // `at`: where a position given in a step is on the page; `label`: how an error names the step (a unit's items: all errors)
 function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
   const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
-  const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
+  const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, align: s.align, inFrame: r(s.in) })
   return steps.map((s, i) => {
     let out
     try {
@@ -803,7 +821,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
-        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
+        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
@@ -868,8 +886,10 @@ function applyUnit(store, name, unit, where) {
     }
     const b = box(rec)
     const fit = labelFit(rec)
+    const px = rec.type === 'text' ? Math.round(FONT_SIZES[rec.props.size] * (rec.props.scale || 1)) : null
     return { ...out, at: [b.x - base.x, b.y - base.y], size: [b.w, b.h],
       ...(fit ? { lines: fit.lines, fits: fit.fits } : {}),
+      ...(px ? { font_size: px, lines: Math.max(1, Math.round(b.h / (px * 1.32))) } : {}),
       ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}) }
   }).filter(Boolean)
   return { ...done, ...(unit.unit != null ? { unit: String(unit.unit) } : {}), placed }

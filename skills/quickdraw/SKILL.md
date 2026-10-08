@@ -62,7 +62,8 @@ Each command is one operation. Without `--at X,Y`, new shapes go in free space: 
 
 ```sh
 omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]
-omq text "Heading" [--text-size xl]            # how big the words are: s m l xl (also notes, shape labels)
+omq text "Heading" [--text-size xl]            # how big the words are: s m l xl = 20 26 36 48 px (also notes, shape labels)
+omq text "Relay" --font-size 16 [--width 220 --align middle]   # a text in px; --width: wraps at it, --align in it
 omq shape rectangle "Label" [--size 180x100]   # rectangle ellipse triangle diamond hexagon star cloud
                                                 # --dash draw|solid|dashed|dotted, --fill none|semi|solid|pattern
 omq markdown --md-file notes.md                # a Markdown card (write the file first; "\n" in quotes is not a newline)
@@ -168,7 +169,7 @@ omq apply unit.json      # or: … apply - < unit.json
 It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a shape's label: how many `lines` it wraps to and whether it `fits`; with `in`: whether it lies `inside` the frame; an arrow: its ends and its label's box. What does not fit is **left as you wrote it**: put it right in a later unit (`update ID --size`, `move`), or draw the next unit around it. A note is always 200 wide and grows down with its text: `placed` gives its real height.
 
 - `ref` names what a unit adds, and `"@ref"` points at it **in the same unit**; in later units use the ids `placed` gave.
-- Items are steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `pen` (`points` from the origin), `delete` (`ids`). Keys: `at: [x, y]`, `w`, `h`, `color`, `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes).
+- Items are steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `pen` (`points` from the origin), `delete` (`ids`). Keys: `at: [x, y]`, `w`, `h`, `color`, `text_size` (s m l xl = 20 26 36 48 px: a text, a note, a shape's or an arrow's label), `font_size` (a text, in px), `align` (a text with `w`: start, middle, end), `dash`, `fill` (shapes).
 - Whatever an item puts needs its `at` — except a `frame` `around` shapes (it encloses them; a unit of only that needs no origin) and a cell of a bento grid.
 - If any item fails, nothing of the unit is applied.
 

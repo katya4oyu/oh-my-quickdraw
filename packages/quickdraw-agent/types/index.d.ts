@@ -19,7 +19,8 @@ export type Fill = 'none' | 'semi' | 'solid' | 'pattern'
 
 export interface Operations {
   note(text: string, opts?: Placement & { textSize?: TextSize }): string
-  text(text: string, opts?: Placement & { textSize?: TextSize }): string
+  /** fontSize: in px, instead of textSize; w: wraps at that width, align within it */
+  text(text: string, opts?: Placement & { textSize?: TextSize, fontSize?: number, align?: 'start' | 'middle' | 'end' }): string
   /** `textSize`: its label's */
   shape(geo: GeoId, label?: string, opts?: Placement & { fill?: Fill, dash?: Dash, textSize?: TextSize }): string
   markdown(md: string, opts?: Placement): string
@@ -44,7 +45,7 @@ export interface Operations {
   /** `bend`: how far its middle bows out (+ right as it goes, - left); `label`: a text by its middle that follows it (its `textSize`, s by default) */
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
-  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
+  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, fontSize?: number, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', cols?: number, gap?: number, at?: Point }): string[]
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
@@ -90,6 +91,8 @@ export interface Placed {
   at?: [number, number], size?: [number, number]
   /** a shape's label: the lines it wraps to, and whether it fits the shape */
   lines?: number, fits?: boolean
+  /** a text's size in px */
+  font_size?: number
   /** with the unit's `in`: whether it lies inside that frame */
   inside?: boolean
   from?: string, to?: string, label?: { at: [number, number], size: [number, number] }

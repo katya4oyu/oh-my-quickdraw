@@ -43,7 +43,9 @@ Look the relation up in `patterns.md` and use its shape and its units (`apply` s
 ## 3. Place
 
 - **Reading order**: left to right, top to bottom; or from the centre outwards (mind map). The theme is where the eye lands first: top-left, or the centre.
-- **Levels of size**, with `text_size` (`--text-size`): the title `xl` (a `text`), headings `l`, the body `m` or `s` (shape labels are `s` unless set). Captions and an arrow's label stay `s`. Notes are big (200 × 200): use them for items people will move, and small shapes for the rest.
+- **Levels of size**, with `text_size` (`--text-size`): the title `xl` (a `text`), headings `l`, the body `m` or `s` (shape labels are `s` unless set). Captions and an arrow's label stay `s`.
+- **Sizes in pixels**, to plan by: `text_size` s m l xl are 20, 26, 36, 48 px. A shape's label is `s` (20 px) unless set, centred, wrapped at the shape's width less 12 on each side, its lines 1.3 × the size apart. A Latin letter is about 0.55 × the size wide, a CJK character about 1 ×: at 20 px a 12-letter name needs about 130 of width plus 24. A note is 200 wide, its words 20 px with 20 of margin; it grows down.
+- **Any size, as written**: a `text` takes `font_size` in px (8–160) instead of `text_size`, and `w` to wrap at that width with `align` (start, middle, end) in it. For finer levels than four (a title 34, a box's name 16, its detail 12), or a box with a name and a smaller detail: draw the shape with no label and put the texts in it yourself — the name at the shape's x, `w` its width, `align: middle`, then the detail under it. `placed` gives each text's size, px and lines. Notes are big (200 × 200): use them for items people will move, and small shapes for the rest.
 - **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. A shape with no `color` is **blue**: give `"color": "black"` to neutral shapes, or blue reads as an action. Say the legend once when it is not obvious.
 - **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided. Hand-drawn outlines (`"dash": "draw"`) by default; `dashed` for a proposal or a link that is not certain.
 - **Space**: 60–80 between shapes in a drawing, more between drawings. Crowding reads as noise: make room, or split into another frame.
@@ -57,7 +59,7 @@ Look the relation up in `patterns.md` and use its shape and its units (`apply` s
 
 Positions, a unit at a time:
 
-1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: a label of `n` characters needs about `n × 10` of width at `s` (CJK: `n × 20`), plus 30; a diamond or an ellipse about half as wide again.
+1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included, from the sizes in pixels above; a diamond or an ellipse about half as wide again as a rectangle for the same label.
 2. Draw one unit of thought per `apply` — the question, then its options, then the arrows and what was chosen — all with that `origin`, each item at its planned `at`. The board shows exactly what you wrote.
 3. Read the `placed` it prints before the next unit: a label with `fits: false`, a note that grew taller, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
 

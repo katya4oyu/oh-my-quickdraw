@@ -52,8 +52,9 @@ Reading
 
 Writing (each command is one operation, undoable as a whole)
   note TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
-  text TEXT [--color C] [--text-size S] [--in FRAME] [--at X,Y]
-                                          --text-size: how big the words are, s m l xl (a heading: l, xl)
+  text TEXT [--color C] [--text-size S | --font-size PX] [--width W [--align A]] [--in FRAME] [--at X,Y]
+                                          --text-size: how big the words are, s m l xl (20 26 36 48 px);
+                                          --font-size: in px; --width: wraps at W, --align start middle end in it
   shape KIND [LABEL] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--in FRAME] [--at X,Y]
                                           KIND: rectangle, ellipse, …; --dash: draw solid dashed dotted;
                                           --fill: none semi solid (a light tint) pattern (hatched)
@@ -86,7 +87,7 @@ Writing (each command is one operation, undoable as a whole)
   arrow FROM TO [--color C] [--line] [--label TEXT] [--bend N] [--dash D] [--text-size S]
                                           --label: a word or two by its middle, which follows the arrow;
                                           --bend: how far the middle bows out (+ right as it goes, - left)
-  update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--dash D] [--fill F] [--bend N] [--label TEXT]
+  update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--font-size PX] [--dash D] [--fill F] [--bend N] [--label TEXT]
                                           --size: a shape's size (not a frame's; a cell: span);
                                           --label "": takes an arrow's label off
   move ID (--to X,Y | --by DX,DY)
@@ -261,7 +262,7 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
+  'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, align: { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
@@ -448,8 +449,10 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         await log({ board: boardKey, op: 'undo:' + entry.op, at: new Date().toISOString(), name: o.name, command: 'undo', undone: entry.op })
         return out(JSON.stringify({ undone: entry.op, ...r }))
       }
-      case 'note': case 'text':
-        done = await op((ops) => ops[cmd as 'note' | 'text'](args.join(' '), common)); break
+      case 'note':
+        done = await op((ops) => ops.note(args.join(' '), common)); break
+      case 'text':
+        done = await op((ops) => ops.text(args.join(' '), { ...common, fontSize: o['font-size'] == null ? undefined : Number(o['font-size']), align: o.align as 'start' | 'middle' | 'end' | undefined, ...(o.width ? { w: Number(o.width) } : {}) })); break
       case 'shape':
         done = await op((ops) => ops.shape(args[0] as GeoId, args.slice(1).join(' '), common)); break
       case 'markdown': {
@@ -495,7 +498,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'arrow':
         done = await op((ops) => ops.arrow(args[0], args[1], { color, line: o.line, label: o.label, bend, dash, textSize })); break
       case 'update':
-        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, bend, label: o.label })); break
+        done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, fontSize: o['font-size'] == null ? undefined : Number(o['font-size']), bend, label: o.label })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break

@@ -112,4 +112,22 @@ describe('a unit', () => {
     // the old way still works, and says nothing of placed
     expect(tool.run(store, { steps: [{ do: 'note', text: 'n' }] }, { name: 'C' }).placed).toBeUndefined()
   })
+
+  it('a text in px, and wrapped at a width: placed gives its size, px and lines', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 220, h: 80 },
+      { do: 'text', text: 'Relay', font_size: 16, w: 220, align: 'middle', at: [0, 14] },
+      { do: 'text', text: 'shares every update with the other pages and keeps them', font_size: 12, w: 200, align: 'middle', at: [10, 40] },
+    ] })
+    const [, name, detail] = placed
+    expect(name).toMatchObject({ font_size: 16, size: [220, expect.any(Number)], lines: 1 })
+    expect(detail).toMatchObject({ font_size: 12, size: [200, expect.any(Number)] })
+    expect(detail.lines).toBeGreaterThan(1)
+    expect(store.get(name.id).props).toMatchObject({ size: 's', scale: 0.8, autosize: false, w: 220, align: 'middle' })
+    applySteps(store, 'C', [{ do: 'update', id: name.id, font_size: 30 }])
+    expect(store.get(name.id).props.scale).toBe(1.5)
+    expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', font_size: 2 }])).toThrow(/8 to 160/)
+    expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', align: 'left' }])).toThrow(/unknown align/)
+  })
 })

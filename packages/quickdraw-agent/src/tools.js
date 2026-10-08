@@ -17,7 +17,8 @@ const placement = {
   in: str('a frame id: put it in that frame\'s free space (a bento cell grows a row when full)'),
 }
 const span = str('a cell\'s size in grid units, COLSxROWS like 2x1')
-const textSize = { type: 'string', enum: SIZE_IDS, description: 'how big the words are: s, m, l, xl (a heading: l or xl)' }
+const textSize = { type: 'string', enum: SIZE_IDS, description: 'how big the words are: s, m, l, xl (20, 26, 36, 48 px; a heading: l or xl)' }
+const fontSize = { type: 'number', description: 'a text\'s size in px (8–160), instead of text_size' }
 const dash = { type: 'string', enum: DASH_IDS, description: 'line style: draw (hand-drawn), solid, dashed, dotted' }
 const fill = { type: 'string', enum: FILL_IDS, description: 'none; semi; solid (a light tint: for what matters most); pattern (hatched: undecided, out of scope)' }
 const bend = { type: 'number', description: 'how far the middle bows out, in page units: + to the right as it goes, - to the left; 0 straight' }
@@ -59,7 +60,7 @@ export const BOARD_TOOLS = [
     },
   },
   step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), text_size: textSize, ...placement }, ['text']),
-  step('add_text', 'text', 'A line of text, such as a heading (text_size l or xl).', { text: str(), text_size: textSize, ...placement }, ['text']),
+  step('add_text', 'text', 'Text, such as a heading (text_size l or xl), or words of any size (font_size in px). With w it wraps at that width, aligned by align (start, middle, end) — a name centred in a box: w the box\'s width, align middle.', { text: str(), text_size: textSize, font_size: fontSize, w: num, align: { type: 'string', enum: ['start', 'middle', 'end'] }, ...placement }, ['text']),
   step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, text_size: textSize, dash, fill, ...placement }, ['shape']),
   step('add_markdown', 'markdown', 'A Markdown card, for longer text.', { text: str('the Markdown'), w: num, ...placement }, ['text']),
   step('add_embed', 'embed', 'A web page, a link card or a small HTML page on the board. A page from an allowed site (YouTube, Vimeo, Figma, CodePen, Google Maps) plays live; any other URL shows as a link card (its title and picture), as does `link: true`. '
@@ -88,7 +89,7 @@ export const BOARD_TOOLS = [
     id: str('ticket id'), status: { type: 'string', enum: ['todo', 'doing', 'done', 'failed'] }, result: str('what came of it, in a line'),
   }, ['id', 'status']),
   step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card, ticket or frame title) or the color, or a shape\'s size (`w`, `h`: rectangles, diamonds and the like, for a label that does not fit); '
-    + 'how big the words are (text_size: a text, a note, a shape\'s label, an arrow\'s label); a shape\'s or an arrow\'s line style (dash), a shape\'s fill; an arrow\'s bend and label (label "" takes it off).', { id: str(), text: str(), color, w: num, h: num, text_size: textSize, dash, fill, bend, label }, ['id']),
+    + 'how big the words are (text_size: a text, a note, a shape\'s label, an arrow\'s label); a shape\'s or an arrow\'s line style (dash), a shape\'s fill; an arrow\'s bend and label (label "" takes it off).', { id: str(), text: str(), color, w: num, h: num, text_size: textSize, font_size: fontSize, dash, fill, bend, label }, ['id']),
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
   step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),
