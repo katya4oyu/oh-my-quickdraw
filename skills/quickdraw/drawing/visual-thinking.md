@@ -43,7 +43,7 @@ Look the relation up in `patterns.md` and use its shape and its units (`apply` s
 ## 3. Place
 
 - **Reading order**: left to right, top to bottom; or from the centre outwards (mind map). The theme is where the eye lands first: top-left, or the centre.
-- **Levels of size**, with `text_size` (`--text-size`): the title `xl` (a `text`), headings `l`, the body `m` or `s` (shape labels are `s` unless set). Captions and an arrow's label stay `s`. Notes are big (200 × 200): use them for items people will move, and small shapes for the rest.
+- **Levels of size**, as numbers (`font_size`, px): the title 34, headings 22, a box's name 16, details, captions and the word on an arrow 12–13. A few levels, used the same way throughout. Notes are big (200 × 200, words 20 px): use them for items people will move, and boxes with texts for the rest.
 - **Colour means something**: the kinds above, at most 3–4 colours in one drawing, the rest black or grey. A shape with no `color` is **blue**: give `"color": "black"` to neutral shapes, or blue reads as an action. Say the legend once when it is not obvious.
 - **Fill for weight**: `"fill": "solid"` (a light tint of the colour) for the one or two shapes that matter most; `"fill": "none"` for the rest; `"pattern"` (hatched) for what is out of scope or not yet decided. Hand-drawn outlines (`"dash": "draw"`) by default; `dashed` for a proposal or a link that is not certain.
 - **Space**: 60–80 between shapes in a drawing, more between drawings. Crowding reads as noise: make room, or split into another frame.
@@ -52,14 +52,14 @@ Look the relation up in `patterns.md` and use its shape and its units (`apply` s
   - a speaker or a role: a small SVG figure (`image person.svg --width 60`), next to what they said
   - emphasis that stays: `pen circle ID`, `pen underline ID`
   - a quote or an idea: a `cloud` shape; a highlight: a `star`
-  - the word on an arrow ("causes", "yes"): the arrow's `label` (it follows the arrow); arrows that would cross: `bend` one round the other
+  - the word on an arrow ("causes", "yes"): a `text` (12–13 px) by its middle; arrows that would cross: `bend` one round the other
   - an icon: write a small SVG (strokes only, `stroke-width` 4–6, round caps, black) and put it with `image`
 
 Positions, a unit at a time:
 
-1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: a label of `n` characters needs about `n × 10` of width at `s` (CJK: `n × 20`), plus 30; a diamond or an ellipse about half as wide again.
+1. Pick the drawing's origin in free space — in a joined session your `area`, else to the right of everything (`read --format json` gives positions and sizes). Plan where each part goes from it (the offsets in `patterns.md`), sizes included: each box big enough for its texts (`SKILL.md`, Drawing: a line's height and a letter's width), a diamond or an ellipse about half as wide again as a rectangle for the same words.
 2. Draw one unit of thought per `apply` — the question, then its options, then the arrows and what was chosen — all with that `origin`, each item at its planned `at`. The board shows exactly what you wrote.
-3. Read the `placed` it prints before the next unit: a label with `fits: false`, a note that grew taller, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
+3. Read the `placed` it prints before the next unit: its `hits` (arrows crossing, a line through words or over a shape, things on top of each other), a text that took more lines than planned, an item not `inside` its frame. Make room in the next unit, or `update`/`move` it, rather than drawing on and looking later.
 
 ## 4. Check
 

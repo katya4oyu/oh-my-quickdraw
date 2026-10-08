@@ -13,7 +13,7 @@ You are given material — meeting notes, a chat log, a document, a codebase, re
 
 Decide where each part goes before filling any of them:
 
-- A title: the theme as a `text` with `text_size: xl`, and the one message under it as a `text` (`m`).
+- A title: the theme as a `text` of 34 px, and the one message under it as a `text` of 18 px.
 - The parts: frames in reading order when each part is one diagram (it has its own size); a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists that will grow. Build each part, `frame --around` it, then line the frames up with `tidy FRAME,FRAME,…` (or `arrange`).
 - A conclusion at the end of the reading order: decisions, open points and next actions.
 

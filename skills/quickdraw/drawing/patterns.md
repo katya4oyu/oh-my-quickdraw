@@ -1,6 +1,6 @@
 # Diagram patterns
 
-Pick the pattern from the relation (`visual-thinking.md`, Think), then read only its file: what it is for, its shape, and its units: `apply` skeletons to adapt, one unit of thought each, drawn one after another with the same `origin` (replace the labels, widen the shapes for longer ones). `Q_ID` and the like: the id an earlier unit's `placed` gave for that ref.
+Pick the pattern from the relation (`visual-thinking.md`, Think), then read only its file: what it is for, its shape, and its units: `apply` skeletons to adapt, one unit of thought each, drawn one after another with the same `origin` (replace the words, widen the shapes for longer ones). `"@q"` and the like point at what an earlier unit named so.
 
 | Pattern | For | File |
 |---|---|---|

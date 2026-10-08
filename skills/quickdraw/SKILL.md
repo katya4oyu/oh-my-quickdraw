@@ -56,108 +56,37 @@ The commands below put things on the board; deciding **what** to draw and **how 
 
 `drawing/patterns.md` has the diagram patterns (flow, timeline, tree, 2x2, Venn, mind map…) with `apply` skeletons.
 
-## Put things on the board
+## Notes, cards and frames
 
-Each command is one operation. Without `--at X,Y`, new shapes go in free space: near what the person who asked was looking at, or by the people on the board, when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
+Shapes, words and arrows go on the board only with `apply` (next section). These commands put the rest; each is one operation. Without `--at X,Y` (the top-left corner in board coordinates; `read --format json` gives positions and sizes), they go in free space: near what the person who asked was looking at, or by the people on the board when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
 
 ```sh
-omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]
-omq text "Heading" [--text-size xl]            # how big the words are: s m l xl (also notes, shape labels)
-omq shape rectangle "Label" [--size 180x100]   # rectangle ellipse triangle diamond hexagon star cloud
-                                                # --dash draw|solid|dashed|dotted, --fill none|semi|solid|pattern
+omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]   # a sticky note: one idea people will move
 omq markdown --md-file notes.md                # a Markdown card (write the file first; "\n" in quotes is not a newline)
 omq frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses existing shapes
 omq frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
-omq board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
-                                                        # read lists the boards on cards: title, frames, how much is in them
 omq frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
                                                         # --title-inside: its title inside its top-left corner, not above
-omq arrow FROM_ID TO_ID [--line]                # follows the shapes when they move in later operations; --line: no arrowhead
-omq arrow FROM_ID TO_ID --label "causes" [--bend 40] [--dash dashed]   # a label by its middle (it follows the arrow); bend: + bows right as it goes, - left
+omq board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
+                                                        # read lists the boards on cards: title, frames, how much is in them
 ```
-
-`--at X,Y` is the top-left corner in board coordinates (`read --format json` gives positions and sizes).
-
-Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, green, light-green, light-red, red. A shape with no `--color` is blue; an arrow, black.
-
-## Images, videos and web pages
-
-```sh
-omq image shot.png [--width 600] [--in FRAME_ID]           # PNG, JPEG, GIF, WebP or SVG from the working directory (an icon or a small figure: write an SVG file, then put it)
-omq image stickers.png --split 4x3 [--frame "Stickers"]    # a sheet cut into its cells, one image each
-omq embed https://youtu.be/…                               # a video, a Figma file, a map: plays live on the board
-omq embed https://example.com/article [--title "…"]        # any other link: a card with its title and picture
-omq embed --html-file demo.html [--size 480x360]           # a small prototype or demo, self-contained
-```
-
-- Images are shrunk to keep the board light (1024 px at most); `--width` is how wide it is shown (400 by default).
-- `--split COLSxROWS` needs an even grid: equal cells, one item in each, nothing crossing the cell edges. `--inset 0.1` trims the edges of each cell (gutters or lines between cells).
-- A URL plays live only from allowed sites (YouTube, Vimeo, Figma, CodePen, Google Maps) and each viewer's browser decides; anything else shows as a link card. `--link` makes a card even for an allowed site.
-- An HTML page runs only when someone on the board presses **Run**, in a sandbox with no network: inline scripts, styles and `data:` images only. Keep it self-contained.
-
-## Point and mark: the laser and the pen
-
-Show what you mean the way people do on a whiteboard:
-
-```sh
-omq point ID --circle         # the laser pointer rings a shape: everyone sees it, then it fades (nothing stays)
-omq point 400,300             # or points at a spot
-omq pen circle ID             # the pen: a hand-drawn ring around a shape, red unless --color says (it stays)
-omq pen underline ID
-omq pen points "0,0 50,20 90,0"
-```
-
-Use the laser while you explain, or when you say where you put something; the pen to mark what should stay marked (a point in feedback, the part that needs changing). The laser needs a live board.
-
-## Gather frames: `tidy`
-
-Boards spread outwards as things are added. When one has, or you are asked to tidy it, gather the frames:
-
-```sh
-omq tidy                       # all frames, close together in reading order, in rows about 2400 wide
-omq tidy F1,F2 --at 0,0        # some of them, from a point; --gap 80, --width 1600
-```
-
-Each frame brings what is in it and its title (frames in it too: only the outermost are laid out); a kanban's columns stay together; what is in no frame stays where it is. Then `lint` what you moved.
-
-## Frames keep their size
-
-A frame never grows by itself: its size may be the point (a 16:9 slide), and a bigger frame would cover its neighbours. Work as a person would:
-
-- **Not sure how big it gets** (usually): build in free space — add without `--in` — then enclose it with `frame --around`, and line frames up with `arrange` (it counts their titles).
-- **The frame's size is given** (it exists, or has an aspect like 16:9): build in free space, then `omq fit FRAME_ID ID,ID,…` — it shrinks the frame's contents and those shapes together, keeping their layout, to fit inside. It never enlarges; if things would get too small to read, it refuses: use a bigger frame, or several.
-- `--in FRAME_ID` is for a few items: when the frame is full it refuses rather than piling them up.
-- **It will keep growing** (ideas, findings, a plan filled in over time): use a bento grid instead (below).
-
-## Work that grows: a bento grid
-
-A bento grid is an area whose frames (cells) pack themselves with no gaps. Widen or lengthen one and the cells after it move along; the grid grows downwards to hold them. So you never have to move the neighbours of a frame that got crowded.
-
-```sh
-omq bento [--cols 4] [--width 1200] [--at X,Y]   # the grid; prints its id
-omq frame "Ideas" --in GRID_ID --span 2x2        # a cell at the end, 2 columns × 2 rows of units
-omq frame "Notes" --in GRID_ID --auto            # a cell whose rows follow what is in it
-omq note "First idea" --in CELL_ID               # fill a cell; when it is full it grows a row
-omq span CELL_ID 3x1                             # a cell's size in units: the others move along
-omq span CELL_ID --auto                          # rows follow its contents (again: off)
-omq columns GRID_ID 6                            # the grid's columns; its cells pack again
-```
-
-- Plan the cells first (one per topic), give the main one more span, then fill them with `--in CELL_ID`.
-- A cell's size is its span: `update --size` refuses it. `move` a cell onto another's place to reorder; moved out of the grid, it is a plain frame again.
-- `read` lists each grid's cells in order ("bento cell 2×1"); `tidy` moves a grid as one, its cells with it.
 
 ## Drawing: `apply`, one unit of thought at a time
 
+Shapes, words and arrows go on the board only this way, as an SVG is written: you choose every position and every size as a number, and the board shows exactly that. Nothing is moved, resized, wrapped or placed for you.
+
 Draw as a person draws at a whiteboard: one **unit of thought** per `apply` — a question; then its options and the arrows to them; then what was chosen — so the people watching see the drawing grow, piece by piece. Never a whole drawing, or a frame full of it, in one `apply`.
 
-A unit has an `origin` and `items`. The origin is a board point you pick in free space (with `"in": FRAME_ID`, a point in that frame, from its top-left). Every `at` in the unit is `[x, y]` from the origin, and is exactly where the item goes: nothing is moved, resized or put elsewhere for it. Keep one origin for a whole drawing, and its units' `at`s are the drawing's own coordinates.
+A unit has an `origin` and `items`. The origin is a board point you pick in free space (with `"in": FRAME_ID`, a point in that frame, from its top-left). Every `at` in the unit is `[x, y]` from the origin. Keep one origin for a whole drawing, and its units' `at`s are the drawing's own coordinates.
 
 ```json
 { "unit": "the question and its options", "origin": [1200, 0], "items": [
-  { "do": "shape", "shape": "diamond", "text": "Which first?", "color": "red", "w": 240, "h": 160, "at": [0, 60], "ref": "q" },
-  { "do": "shape", "shape": "rectangle", "text": "Sample data first", "color": "green", "w": 240, "h": 90, "at": [360, 0], "ref": "a" },
-  { "do": "arrow", "from": "@q", "to": "@a" }
+  { "do": "shape", "shape": "diamond", "color": "red", "w": 240, "h": 160, "at": [0, 60], "ref": "q" },
+  { "do": "text", "text": "Which first?", "font_size": 16, "color": "red", "w": 240, "align": "middle", "at": [0, 129] },
+  { "do": "shape", "shape": "rectangle", "color": "green", "w": 240, "h": 80, "at": [360, 0], "ref": "a" },
+  { "do": "text", "text": "Sample data first", "font_size": 16, "color": "green", "w": 240, "align": "middle", "at": [360, 18] },
+  { "do": "text", "text": "2 weeks · fewer tickets", "font_size": 12, "color": "grey", "w": 240, "align": "middle", "at": [360, 46] },
+  { "do": "arrow", "from": "@q", "to": "@a", "from_at": [246, 140], "to_at": [354, 40] }
 ] }
 ```
 
@@ -165,21 +94,26 @@ A unit has an `origin` and `items`. The origin is a board point you pick in free
 omq apply unit.json      # or: … apply - < unit.json
 ```
 
-It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a shape's label: how many `lines` it wraps to and whether it `fits`; with `in`: whether it lies `inside` the frame; an arrow: its ends and its label's box. What does not fit is **left as you wrote it**: put it right in a later unit (`update ID --size`, `move`), or draw the next unit around it. A note is always 200 wide and grows down with its text: `placed` gives its real height.
+Each item has one way to be written:
 
-- `ref` names what a unit adds, and `"@ref"` points at it **in the same unit**; in later units use the ids `placed` gave.
-- Items are steps: `note`, `text`, `shape` (`shape`, `text`), `markdown` (`text`), `embed` (`url` or `html`, `link`, `title`), `ticket` (`title`, `body`, `to`), `frame` (`title`, `aspect`, `around`; in a bento grid: `in`, `span` like "2x1", `auto`), `layout` (a bento grid: `cols`, `w`), `arrow` (`from`, `to`, `label`, `bend`, `dash`, `line`), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `pen` (`points` from the origin), `delete` (`ids`). Keys: `at: [x, y]`, `w`, `h`, `color`, `text_size` (s m l xl: a text, a note, a shape's or an arrow's label), `dash`, `fill` (shapes).
-- Whatever an item puts needs its `at` — except a `frame` `around` shapes (it encloses them; a unit of only that needs no origin) and a cell of a bento grid.
-- If any item fails, nothing of the unit is applied.
+- `shape` — `shape` (rectangle ellipse triangle diamond hexagon star cloud), `w`, `h`, `color`, `fill` (none semi solid pattern), `dash` (draw solid dashed dotted). A box: it holds no words.
+- `text` — `text`, `font_size` in px, `color`; `w` to wrap at that width, with `align` (start middle end) in it. Every word on the board is a text. Sizes: a title 34, a heading 22, a box's name 16, a detail, a caption or the word on an arrow 12–13. A line is 1.32 × `font_size` tall; a Latin letter about 0.55 × `font_size` wide, a CJK character about 1 ×. A box's name: at the box's x, `w` its width, `align: "middle"`, its top (box height − lines × line height) / 2 down; a detail under it, smaller and grey.
+- `arrow` — `from`, `to` (the shapes it joins), `from_at`, `to_at` (where its two ends are, `[x, y]` from the origin: at the edges of those shapes, a few px off them), `bend` (how far the middle bows out; 0 straight), `dash`, `line` (no arrowhead), `color`. A diamond's corners and an ellipse's ends are at the middles of its box's sides: run arrows to and from there. It is drawn from end to end exactly; when a shape moves later, its end stays at the same spot on it. The word on it is a `text` by its middle. Plan the ends so arrows do not cross each other or run over other shapes.
+- `frame` — `title`, `w`, `h` (or `around`: the shapes it encloses, then it needs no `at`), `aspect`.
+- `pen` (`points` from the origin), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `delete` (`ids`).
 
-Changes that are not drawing (`update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete` on what is there) can still go as a plain list of steps, without origin or `at`: `[{ "do": "update", "id": "…", "color": "green" }, …]`; in such a list, what is added without `at` goes in free space.
+`ref` names what an item adds, and `"@ref"` points at it — in the same unit or any later one (the last thing you named so on this board): give the things of a drawing distinct refs. If any item breaks a rule or fails, nothing of the unit is applied, and the error says which item and why.
+
+It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its two `ends`; and `hits`, what it runs into as drawn — `crosses arrow @x` (arrows crossing), `over text "…" @y` / `on arrow @x` (a line through words), `over rectangle @z` / `under arrow @x` (a line over a shape it does not join), `overlaps …` (shapes or texts on top of each other, a text across a box's edge). Nothing is changed to fit: when there are `hits`, a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`, or delete and draw it again), or draw the next unit around it.
+
+A plain list of steps, with no origin, only changes what is there: `[{ "do": "update", "id": "…", "color": "green" }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 
 ## Change and tidy
 
 ```sh
-omq update ID --text "New text" [--color green]   # notes, text, shape labels, Markdown, tickets (title, then details), frame titles
-omq update ID --size 240x100                     # a shape's size (a rectangle, a diamond…), for a label that does not fit
-omq update ID --text-size l | --dash dashed | --fill solid | --bend 40 | --label "…"   # style; --label "" takes an arrow's off
+omq update ID --text "New text" [--color green]   # texts, notes, Markdown, tickets (title, then details), frame titles
+omq update ID --size 240x100                     # a shape's size (a rectangle, a diamond…)
+omq update ID --font-size 16 | --dash dashed | --fill solid | --bend 40   # a text's size in px; style
 omq move ID --to X,Y        # or --by DX,DY; moving a frame moves what is in it
 omq arrange ID,ID,ID --layout grid|row|column [--cols 4] [--gap 24] [--at X,Y]
 omq fit FRAME_ID [ID,ID,…]  # shrink the frame's contents (and these) together to fit inside it
@@ -213,9 +147,9 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 ## Good habits
 
 - Read, then write; re-read after bigger changes to check the result.
-- Draw first, then check: once a piece of work is done, `omq lint` (or `lint --frame ID`, `lint --ids ID,…` for just what you made) lists what reads badly — shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. `omq lint --fix` fixes what needs no judgement itself, as one operation (`undo` reverts it), on what agents made only: labels too big for their shapes, shapes or frames on top of each other, what hangs over a frame's edge. Fix the rest (an arrow across a shape) with `move`, `arrange` or `fit`, and lint again. Leave what people made where it is.
+- Draw first, then check: once a piece of work is done, `omq lint` (or `lint --frame ID`, `lint --ids ID,…` for just what you made) lists what reads badly — shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. `omq lint --fix` fixes what needs no judgement itself, as one operation (`undo` reverts it), on what agents made only: shapes or frames on top of each other, what hangs over a frame's edge. Fix the rest (an arrow across a shape) with `move`, `arrange` or `fit`, and lint again. Leave what people made where it is.
 - Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
-- Draw a unit of thought per `apply`, and read its `placed` before the next: where things ended up, how tall a note grew, which label does not fit.
+- Draw a unit of thought per `apply`, and read its `placed` before the next: where things ended up, how many lines each text took.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).
 - **Comments** (live boards): a frame may have a thread — what was meant or asked about that drawing, and people's answers; `read` ends with them. Before you change a drawing, read its thread and follow what was agreed. When you cannot decide on your own what a drawing should say or stress (what to leave out, what to make stand out, what to do when text does not fit), ask in its thread — `omq comment FRAME_ID "…"`, saying what you did meanwhile — and go on; people answer there. `omq comments [--frame ID]` lists the threads.

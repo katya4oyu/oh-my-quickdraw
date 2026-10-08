@@ -12,7 +12,7 @@
 // agent's operations reroute their own (ops.js), so nothing is done twice.
 import { pageBounds } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
-import { route, shapeAt, isLabel, labelsFollow } from './ops.js'
+import { linkRoute, shapeAt, isLabel, labelsFollow } from './ops.js'
 
 const isLine = (s) => s?.typeName === 'shape' && (s.type === 'arrow' || s.type === 'line')
 const isTitle = (s) => !!s?.isFrameTitle
@@ -26,10 +26,9 @@ export function arrowEnds(store, arrow) {
   return a && b && a.id !== b.id ? { from: a.id, to: b.id } : null
 }
 
-/** Where a linked arrow goes now, from edge to edge: { x, y, dx, dy }, or null when an end is gone. */
+/** Where a linked arrow goes now: its written ends where they are on its shapes, else edge to edge; { x, y, dx, dy }, or null when an end is gone. */
 export function arrowRoute(store, arrow) {
-  const a = arrow.link && store.get(arrow.link.from), b = arrow.link && store.get(arrow.link.to)
-  return a && b ? route(store, [pageBounds(a), pageBounds(b)]) : null
+  return linkRoute(store, arrow)
 }
 
 const unlinked = (s) => { const { link, ...rest } = s; return rest }

@@ -17,7 +17,8 @@ const placement = {
   in: str('a frame id: put it in that frame\'s free space (a bento cell grows a row when full)'),
 }
 const span = str('a cell\'s size in grid units, COLSxROWS like 2x1')
-const textSize = { type: 'string', enum: SIZE_IDS, description: 'how big the words are: s, m, l, xl (a heading: l or xl)' }
+const textSize = { type: 'string', enum: SIZE_IDS, description: 'how big the words are: s, m, l, xl (20, 26, 36, 48 px; a heading: l or xl)' }
+const fontSize = { type: 'number', description: 'a text\'s size in px (8–160), instead of text_size' }
 const dash = { type: 'string', enum: DASH_IDS, description: 'line style: draw (hand-drawn), solid, dashed, dotted' }
 const fill = { type: 'string', enum: FILL_IDS, description: 'none; semi; solid (a light tint: for what matters most); pattern (hatched: undecided, out of scope)' }
 const bend = { type: 'number', description: 'how far the middle bows out, in page units: + to the right as it goes, - to the left; 0 straight' }
@@ -59,8 +60,6 @@ export const BOARD_TOOLS = [
     },
   },
   step('add_note', 'note', 'A sticky note. Keep it to a line or two; longer text goes in a Markdown card.', { text: str(), text_size: textSize, ...placement }, ['text']),
-  step('add_text', 'text', 'A line of text, such as a heading (text_size l or xl).', { text: str(), text_size: textSize, ...placement }, ['text']),
-  step('add_shape', 'shape', 'A shape with an optional label.', { shape: { type: 'string', enum: GEO_IDS }, text: str('its label'), w: num, h: num, text_size: textSize, dash, fill, ...placement }, ['shape']),
   step('add_markdown', 'markdown', 'A Markdown card, for longer text.', { text: str('the Markdown'), w: num, ...placement }, ['text']),
   step('add_embed', 'embed', 'A web page, a link card or a small HTML page on the board. A page from an allowed site (YouTube, Vimeo, Figma, CodePen, Google Maps) plays live; any other URL shows as a link card (its title and picture), as does `link: true`. '
     + '`html` is a self-contained page (inline scripts and styles, no network) that runs only when a viewer presses Run: for a small prototype or a demo.', {
@@ -80,7 +79,6 @@ export const BOARD_TOOLS = [
     id: str('cell (frame) id'), span, auto: { type: 'boolean' },
   }, ['id']),
   step('set_columns', 'columns', 'Changes how many columns a bento grid has; its cells pack again.', { id: str('bento grid id'), cols: num }, ['id', 'cols']),
-  step('add_arrow', 'arrow', 'An arrow between two shapes; it follows them when they move later.', { from: str('shape id'), to: str('shape id'), color, line: { type: 'boolean', description: 'a line, no arrowhead' }, label, text_size: textSize, dash, bend }, ['from', 'to']),
   step('add_ticket', 'ticket', 'A ticket: work for an agent to take later (`to` an agent\'s name, or any agent). It goes in the Todo column of the board\'s kanban if there is one.', {
     title: str('what to do, in a line'), body: str('details'), to: str('the agent it is for; omit for any agent'), w: num, ...placement,
   }, ['title']),
@@ -88,7 +86,7 @@ export const BOARD_TOOLS = [
     id: str('ticket id'), status: { type: 'string', enum: ['todo', 'doing', 'done', 'failed'] }, result: str('what came of it, in a line'),
   }, ['id', 'status']),
   step('update_shape', 'update', 'Changes the text (of a note, text, shape label, Markdown card, ticket or frame title) or the color, or a shape\'s size (`w`, `h`: rectangles, diamonds and the like, for a label that does not fit); '
-    + 'how big the words are (text_size: a text, a note, a shape\'s label, an arrow\'s label); a shape\'s or an arrow\'s line style (dash), a shape\'s fill; an arrow\'s bend and label (label "" takes it off).', { id: str(), text: str(), color, w: num, h: num, text_size: textSize, dash, fill, bend, label }, ['id']),
+    + 'how big the words are (text_size: a text, a note, a shape\'s label, an arrow\'s label); a shape\'s or an arrow\'s line style (dash), a shape\'s fill; an arrow\'s bend and label (label "" takes it off).', { id: str(), text: str(), color, w: num, h: num, text_size: textSize, font_size: fontSize, dash, fill, bend, label }, ['id']),
   step('move_shape', 'move', 'Moves a shape to x,y or by dx,dy. Moving a frame moves what is in it.', { id: str(), x: num, y: num, dx: num, dy: num }, ['id']),
   step('arrange_shapes', 'arrange', 'Lays shapes out in a grid, row or column.', { ids: ids('shapes to lay out'), layout: { type: 'string', enum: ['grid', 'row', 'column'] }, cols: { type: 'number', description: 'columns of a grid (otherwise about square)' }, gap: num, at: point }, ['ids']),
   step('fit_frame', 'fit', 'Puts what is in a frame, and the shapes named, inside it: shrunk together (never enlarged) to fit, keeping their layout. The frame keeps its size. Build things in free space first, then fit them in.', { frame: str('frame id'), ids: ids('shapes to bring in, besides what is already in it') }, ['frame']),
@@ -102,12 +100,12 @@ export const BOARD_TOOLS = [
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
-    description: 'Several steps as one operation (one undo), all or nothing. '
-      + 'Each step is { do: note|text|shape|markdown|embed|ticket|status|frame|layout|span|columns|arrow|update|move|arrange|fit|tidy|pen|delete, …the fields of that tool }. '
-      + 'A step may name what it adds with ref: "a", and later steps point at it as "@a". '
-      + 'To draw: one unit of thought per call (a question, its options, the arrows between them) as `items`, with an `origin` [x, y] (in `in`: from that frame\'s top-left): '
-      + 'each item\'s `at` [x, y] is from the origin, and is where it goes — nothing is moved or looked for. It gives back `placed`: each item\'s id, at, size (a note is 200 wide and grows down), '
-      + 'a label\'s lines and whether it fits, and whether it lies inside the frame. What does not fit is left as written: fix it in the next call. `steps` instead of `items`: the old way, things placed in free space.',
+    description: 'Draws on the board: the one way to add shapes, words and arrows. One unit of thought per call (a question; then its options and the arrows to them; then what was chosen), so people see the drawing grow. '
+      + '`items` are steps { do: shape|text|arrow|frame|image|embed|pen|update|move|delete, …the fields of that step }, each with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left); it goes exactly there, nothing is moved or looked for. '
+      + 'Every size is a number: a shape gives w and h and holds no words; words are text items with font_size in px (a box\'s name: at the box\'s x, w its width, align middle; a detail under it, smaller); an arrow joins two shapes (from, to) with its ends where you write them, from_at and to_at [x, y] from the origin at the shapes\' edges (a straight line, or bowed by bend), and takes no label (put the word as a text by it). '
+      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one. '
+      + 'It gives back `placed`: each item\'s id, at, size, a text\'s px and lines, whether it lies inside the frame, and `hits`: what it runs into as drawn (an arrow crossing another, a line through words or over a shape it does not join, things on top of each other). Nothing is changed: put hits right in the next call. '
+      + '`steps` instead of `items` (no origin): changes to what is there only — update, move, arrange, fit, tidy, status, delete, frame around shapes.',
     inputSchema: object({
       unit: str('what this unit of thought is, in a few words'),
       origin: { type: 'array', items: num, minItems: 2, maxItems: 2, description: '[x, y]: the board point (with in: the point in that frame) every at in items is from' },
@@ -116,7 +114,7 @@ export const BOARD_TOOLS = [
       steps: { type: 'array', items: { type: 'object', properties: { do: str(), ref: str() }, required: ['do'] } },
     }),
     run(store, { steps, ...unit }, { name: who = 'Agent', area, prefer } = {}) {
-      const { op, diff, result, focus, area: grown, placed } = applySteps(store, who, unit.items ? unit : steps, { area, prefer })
+      const { op, diff, result, focus, area: grown, placed } = applySteps(store, who, unit.items ? unit : steps, { area, prefer, drawing: 'units' })
       return { op, diff, focus, ids: [...new Set([result].flat(Infinity).filter((v) => typeof v === 'string'))], ...(placed ? { placed } : {}), ...(grown ? { area: grown } : {}) }
     },
   },

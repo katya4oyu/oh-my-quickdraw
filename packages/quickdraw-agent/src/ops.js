@@ -13,6 +13,7 @@ import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'qu
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
 import { estimateWidth } from './measure.js'
 import { labelFit } from './lint.js'
+import { hitsOf } from './hits.js'
 
 const GAP = 40
 const PAD = 24 // inside a frame's edges
@@ -177,10 +178,19 @@ function checkBend(bend) {
   return bend == null ? bend : Number(bend)
 }
 // a text's size on the page, estimated: its widest line, and a line's height per line
-function textBox(text, size = 'm') {
-  const fs = FONT_SIZES[size], lines = String(text).split('\n')
+function textBox(text, size = 'm', px = FONT_SIZES[size]) {
+  const fs = px, lines = String(text).split('\n')
   return { w: Math.max(...lines.map((l) => estimateWidth(`${fs}px sans-serif`, l))), h: Math.round(fs * 1.4) * lines.length }
 }
+// a font size in page px (a text's): drawn as the size s, scaled
+function checkFontSize(px) {
+  if (px == null) return px
+  const n = Number(px)
+  if (!(n >= 8 && n <= 160)) throw new Error(`a font size is a number of px, 8 to 160 (not "${px}")`)
+  return n
+}
+const ALIGNS = ['start', 'middle', 'end']
+const checkAlign = (a) => { if (a != null && !ALIGNS.includes(a)) throw new Error(`unknown align "${a}" (one of ${ALIGNS.join(', ')})`); return a }
 
 /**
  * Where an arrow's label goes (its top-left corner), for a label `w` × `h`: by
@@ -349,9 +359,14 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     note(text, opts = {}) {
       return add('note', { text: String(text), color: checkColor(opts.color) ?? 'yellow', size: checkSize(opts.textSize) ?? 'm', font: 'draw', scale: 1 }, 200, 200, opts)
     },
+    // fontSize: px (instead of textSize); w: wraps at that width (align: start, middle, end within it)
     text(text, opts = {}) {
-      const size = checkSize(opts.textSize) ?? 'm', { w, h } = textBox(text, size)
-      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size, font: 'draw', autosize: true, scale: 1 }, w, h, opts)
+      const px = checkFontSize(opts.fontSize)
+      const size = px ? 's' : checkSize(opts.textSize) ?? 'm', scale = px ? px / FONT_SIZES.s : 1
+      const est = textBox(text, size, FONT_SIZES[size] * scale)
+      const fixed = opts.w != null ? { autosize: false, w: Math.max(8, Number(opts.w)) } : { autosize: true }
+      const align = checkAlign(opts.align)
+      return add('text', { text: String(text), color: checkColor(opts.color) ?? 'black', size, font: 'draw', ...fixed, ...(align ? { align } : {}), scale }, fixed.w ?? est.w, est.h, opts)
     },
     shape(geo, label = '', opts = {}) {
       if (!GEO_IDS.includes(geo)) throw new Error(`unknown shape "${geo}" (one of ${GEO_IDS.join(', ')})`)
@@ -487,10 +502,17 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // shapes it keeps `link` and is re-routed when they move in an operation.
     // `bend`: how far its middle bows out (+ to the right as it goes, - to the
     // left); `dash`; `label`: a word or two by its middle, which follows it
+    // fromAt, toAt: where its ends are (page points on or by those shapes), as
+    // written; kept as where on each shape they are, so they stay there when it moves
     arrow(from, to, opts = {}) {
-      const g = route(store, [from, to].map((e) => (typeof e === 'string' ? pageBounds(need(e)) : { x: e.x, y: e.y, w: 0, h: 0 })))
+      const ends = [from, to].map((e) => (typeof e === 'string' ? pageBounds(need(e)) : { x: e.x, y: e.y, w: 0, h: 0 }))
+      const written = opts.fromAt && opts.toAt
+      if ((opts.fromAt || opts.toAt) && !written) throw new Error('give both ends, from_at and to_at, or neither')
+      if (written && (typeof from !== 'string' || typeof to !== 'string')) throw new Error('an arrow with written ends joins two shapes')
+      const at = written ? [opts.fromAt, opts.toAt].map((p, i) => onShape(p, ends[i], i ? 'to_at' : 'from_at', i ? to : from)) : null
+      const g = written ? { x: at[0].x, y: at[0].y, dx: at[1].x - at[0].x, dy: at[1].y - at[0].y } : route(store, ends)
       const id = newId()
-      const link = typeof from === 'string' && typeof to === 'string' ? { link: { from, to } } : {}
+      const link = typeof from === 'string' && typeof to === 'string' ? { link: { from, to, ...(at ? { at: { from: at[0].on, to: at[1].on } } : {}) } } : {}
       put({ id, type: opts.line ? 'line' : 'arrow', x: g.x, y: g.y, ...link, props: { dx: g.dx, dy: g.dy, bend: checkBend(opts.bend) ?? 0, color: checkColor(opts.color) ?? 'black', size: 'm', dash: checkDash(opts.dash) ?? 'solid' } })
       if (opts.label) setLabel(id, opts.label, opts)
       return id
@@ -498,8 +520,12 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // text / label / markdown / frame title, and color; a text's size (textSize),
     // a shape's line style and fill, an arrow's line style, bend and label
     // (label: '' takes it off)
-    update(id, { text, color, w, h, textSize, dash, fill, bend, label } = {}) {
+    update(id, { text, color, w, h, textSize, fontSize, dash, fill, bend, label } = {}) {
       const s = need(id)
+      if (fontSize != null) {
+        if (s.type !== 'text' || isLabel(s)) throw new Error(`${id} (${s.type}) has no font size in px: only texts do (others: text_size)`)
+        store.update(id, { props: { size: 's', scale: checkFontSize(fontSize) / FONT_SIZES.s } })
+      }
       if (textSize != null) {
         checkSize(textSize)
         if (s.type === 'geo' && !isFrame(s) && !isLayout(s)) store.update(id, { props: { labelSize: textSize } })
@@ -662,6 +688,14 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       focus = { x: x0, y: y0 }
       return boxes.flatMap((b) => b.fs.map((f) => f.id))
     },
+    // a ref an agent gave what it added, kept with it, to point at it later as '@ref'
+    name(id, ref) {
+      const s = typeof id === 'string' && store.get(id)
+      if (s?.typeName === 'shape' && s.agent) store.update(id, { agent: { ...s.agent, ref: String(ref) } })
+    },
+    named(ref) {
+      return store.shapes().filter((s) => s.agent?.name === name && s.agent.ref === ref).sort((a, b) => b.z - a.z)[0]?.id
+    },
     // only what an agent added; a frame goes with its title, its members stay
     delete(ids) {
       for (const id of ids) {
@@ -687,9 +721,8 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
   function reroute() {
     for (const s of store.shapes()) {
       if (!s.link || !isLine(s)) continue
-      const a = store.get(s.link.from), b = store.get(s.link.to)
-      if (!a || !b) continue
-      const g = route(store, [pageBounds(a), pageBounds(b)])
+      const g = linkRoute(store, s)
+      if (!g) continue
       if (Math.abs(g.x - s.x) + Math.abs(g.y - s.y) + Math.abs(g.dx - s.props.dx) + Math.abs(g.dy - s.props.dy) > 0.5) {
         store.update(s.id, { x: g.x, y: g.y, props: { dx: g.dx, dy: g.dy } })
       }
@@ -707,6 +740,26 @@ function withTitle(store, s) {
   const tb = pageBounds(t)
   const x = Math.min(b.x, tb.x), y = Math.min(b.y, tb.y)
   return { x, y, w: Math.max(b.x + b.w, tb.x + tb.w) - x, h: Math.max(b.y + b.h, tb.y + tb.h) - y }
+}
+
+// a written end: a page point on a shape (or by it: within reach of its box),
+// and where on the shape it is, as fractions of its box (so it follows the shape)
+const REACH = 24
+function onShape(p, b, what, id) {
+  const x = Number(p?.x), y = Number(p?.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`${what} is a point, [x, y]`)
+  if (x < b.x - REACH || x > b.x + b.w + REACH || y < b.y - REACH || y > b.y + b.h + REACH) throw new Error(`${what} (${Math.round(x)}, ${Math.round(y)} on the page) is not on or by ${id} (${Math.round(b.x)}, ${Math.round(b.y)}, ${Math.round(b.w)} × ${Math.round(b.h)}): put it at the shape's edge`)
+  return { x, y, on: [b.w ? (x - b.x) / b.w : 0, b.h ? (y - b.y) / b.h : 0] }
+}
+
+/** Where a linked arrow goes now: its written ends where they are on its shapes, else edge to edge; null when an end is gone. */
+export function linkRoute(store, s) {
+  const a = s.link && store.get(s.link.from), b = s.link && store.get(s.link.to)
+  if (!a || !b) return null
+  const ra = pageBounds(a), rb = pageBounds(b)
+  if (!s.link.at) return route(store, [ra, rb])
+  const [p, q] = [[ra, s.link.at.from], [rb, s.link.at.to]].map(([r, [fx, fy]]) => ({ x: r.x + fx * r.w, y: r.y + fy * r.h }))
+  return { x: p.x, y: p.y, dx: q.x - p.x, dy: q.y - p.y }
 }
 
 // the segment between two rects' centres, cut at their edges (plus a gap)
@@ -775,16 +828,25 @@ export function runOp(store, name, fn, { area, prefer } = {}) {
 // `at` — nothing is placed in free space for it. It returns `placed`: what each
 // item became, where it is and how big, a label's lines and whether it fits, and
 // whether it lies inside the unit's frame — measured, never changed to fit.
-export function applySteps(store, name, steps, { area, prefer } = {}) {
-  if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer })
+//
+// `drawing: 'units'` (what agents get, through omq apply and the apply_steps
+// tool): a unit is the one way to add things, and in it every size is a number
+// (see UNIT_RULES); a plain list only changes what is there.
+export function applySteps(store, name, steps, { area, prefer, drawing } = {}) {
+  const strict = drawing === 'units'
+  if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer }, strict)
   if (!Array.isArray(steps)) throw new Error('steps must be an array, or a unit: { origin: [x, y], items: [steps] }')
+  if (strict) steps.forEach((s, i) => {
+    if (ADDS.has(s?.do) && !(s.do === 'frame' && s.around?.length)) throw new Error(`step ${i + 1} ${s.do}: things are added in a unit, { origin: [x, y], items: [...] }, each at its at; a list of steps only changes what is there`)
+  })
   return runOp(store, name, (ops) => runSteps(ops, steps, {}, (p) => pointOf(p, 'at')), { area, prefer }) // at: { x, y } or [x, y]
 }
 
 // `at`: where a position given in a step is on the page; `label`: how an error names the step (a unit's items: all errors)
 function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
-  const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
-  const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, inFrame: r(s.in) })
+  // '@a': what this list named a, else what this agent named a before on this board (the latest)
+  const r = (v) => (typeof v === 'string' && v.startsWith('@') ? refs[v.slice(1)] ?? ops.named(v.slice(1)) ?? (() => { throw new Error(`unknown ref ${v}`) })() : v)
+  const opts = (s) => ({ color: s.color, at: at(s.at), w: s.w, h: s.h, fill: s.fill, dash: s.dash, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, align: s.align, inFrame: r(s.in) })
   return steps.map((s, i) => {
     let out
     try {
@@ -802,8 +864,8 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'layout': out = ops.layout({ cols: s.cols, w: s.w, gap: s.gap }, { at: at(s.at) }); break
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
-        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
-        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
+        case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize, fromAt: at(pointOf(s.from_at, 'from_at')), toAt: at(pointOf(s.to_at, 'to_at')) }); break
+        case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
@@ -816,7 +878,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
       if (label && !e.message.startsWith(label(i, s))) e.message = `${label(i, s)}: ${e.message}`
       throw e
     }
-    if (s.ref) refs[s.ref] = out
+    if (s.ref) { refs[s.ref] = out; ops.name(out, s.ref) }
     return out
   })
 }
@@ -830,10 +892,21 @@ function pointOf(v, what) {
 }
 // what puts something somewhere: it needs `at` in a unit (no free space is looked for)
 const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
+const ADDS = new Set([...PLACES, 'arrow'])
+// in a unit drawn by an agent, each item has one way to be written: every size a number, every word a text
+const UNIT_RULES = {
+  shape: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : s.text != null || s.label != null ? 'a shape holds no words: put them as a text item over it (at, font_size, w, align: middle)' : null),
+  text: (s) => (s.font_size == null && s.fontSize == null ? 'give its font_size in px' : null),
+  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : s.from_at == null || s.to_at == null ? 'give where its ends are, from_at and to_at [x, y] (from the origin), at the edges of the shapes it joins' : null),
+  frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
+  image: (s) => (s.w == null ? 'give its width, w' : null),
+  embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
+  pen: () => null, update: () => null, move: () => null, delete: () => null,
+}
 const needsAt = (s) => PLACES.has(s.do) && !(s.do === 'frame' && s.around?.length) && !(s.do === 'frame' && s.in) // a frame around shapes, or a bento cell: placed by what it holds
 
 // A unit (see applySteps): drawn as written, then measured.
-function applyUnit(store, name, unit, where) {
+function applyUnit(store, name, unit, where, strict = false) {
   const { items } = unit
   if (!Array.isArray(items) || !items.length) throw new Error('a unit needs items: [steps]')
   // (one that only encloses or joins what is there, with no position in it, may leave it out)
@@ -848,6 +921,12 @@ function applyUnit(store, name, unit, where) {
   const name_ = (i, s) => `item ${i + 1}${s.ref ? ` (${s.ref})` : ''}${s.do ? ` ${s.do}` : ''}`
   const steps = items.map((s, i) => {
     if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
+    if (strict) {
+      const rule = UNIT_RULES[s.do]
+      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit draws with shape, text, arrow, frame, image, embed, pen (and update, move, delete)`)
+      const why = (s.text_size ?? s.textSize) != null ? 'sizes are numbers here: font_size in px, not text_size' : s.in != null ? 'give in to the unit, not to an item' : rule(s)
+      if (why) throw new Error(`${name_(i, s)}: ${why}`)
+    }
     const at = pointOf(s.at, `${name_(i, s)}: at`)
     if (needsAt(s) && !at) throw new Error(`${name_(i, s)}: give it at: [x, y] (from the unit's origin) — in a unit nothing is put in free space`)
     return { ...s, at }
@@ -856,6 +935,7 @@ function applyUnit(store, name, unit, where) {
   const done = runOp(store, name, (ops) => runSteps(ops, steps, refs, (p) => (p ? { x: base.x + p.x, y: base.y + p.y } : p), name_), where)
   // what each item became, as it ended up (a note is 200 wide and grows down; arrows follow their shapes)
   const fb = frame && pageBounds(store.get(frame.id))
+  const hit = (id) => { const h = hitsOf(store, id); return h.length ? { hits: h } : {} } // what it runs into, as drawn
   const placed = steps.map((s, i) => {
     const id = done.result[i]
     const rec = typeof id === 'string' ? store.get(id) : null
@@ -864,13 +944,15 @@ function applyUnit(store, name, unit, where) {
     if (isLine(rec)) {
       const label = store.shapes().find((l) => l.labelOf === id)
       const lb = label && box(label)
-      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}) }
+      return { ...out, ...(rec.link ? { from: rec.link.from, to: rec.link.to } : {}), ends: [[round(rec.x - base.x), round(rec.y - base.y)], [round(rec.x + rec.props.dx - base.x), round(rec.y + rec.props.dy - base.y)]], ...(lb ? { label: { at: [lb.x - base.x, lb.y - base.y], size: [lb.w, lb.h] } } : {}), ...hit(id) }
     }
     const b = box(rec)
     const fit = labelFit(rec)
+    const px = rec.type === 'text' ? Math.round(FONT_SIZES[rec.props.size] * (rec.props.scale || 1)) : null
     return { ...out, at: [b.x - base.x, b.y - base.y], size: [b.w, b.h],
       ...(fit ? { lines: fit.lines, fits: fit.fits } : {}),
-      ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}) }
+      ...(px ? { font_size: px, lines: Math.max(1, Math.round(b.h / (px * 1.32))) } : {}),
+      ...(fb ? { inside: b.x >= fb.x - 1 && b.y >= fb.y - 1 && b.x + b.w <= fb.x + fb.w + 1 && b.y + b.h <= fb.y + fb.h + 1 } : {}), ...hit(id) }
   }).filter(Boolean)
   return { ...done, ...(unit.unit != null ? { unit: String(unit.unit) } : {}), placed }
 }

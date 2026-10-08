@@ -19,7 +19,8 @@ export type Fill = 'none' | 'semi' | 'solid' | 'pattern'
 
 export interface Operations {
   note(text: string, opts?: Placement & { textSize?: TextSize }): string
-  text(text: string, opts?: Placement & { textSize?: TextSize }): string
+  /** fontSize: in px, instead of textSize; w: wraps at that width, align within it */
+  text(text: string, opts?: Placement & { textSize?: TextSize, fontSize?: number, align?: 'start' | 'middle' | 'end' }): string
   /** `textSize`: its label's */
   shape(geo: GeoId, label?: string, opts?: Placement & { fill?: Fill, dash?: Dash, textSize?: TextSize }): string
   markdown(md: string, opts?: Placement): string
@@ -42,9 +43,10 @@ export interface Operations {
   /** A bento grid's columns; its cells pack again. */
   columns(id: string, cols: number): string
   /** `bend`: how far its middle bows out (+ right as it goes, - left); `label`: a text by its middle that follows it (its `textSize`, s by default) */
-  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
+  /** fromAt, toAt: where its ends are, page points at the edges of the two shapes it joins (as written; they stay at those spots on the shapes) */
+  arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize, fromAt?: Point, toAt?: Point }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
-  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
+  update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, fontSize?: number, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
   arrange(ids: string[], opts?: { layout?: 'grid' | 'row' | 'column', cols?: number, gap?: number, at?: Point }): string[]
   /** Shrinks the frame's contents and `ids` together (never enlarging) into the frame, keeping their layout. */
@@ -90,9 +92,16 @@ export interface Placed {
   at?: [number, number], size?: [number, number]
   /** a shape's label: the lines it wraps to, and whether it fits the shape */
   lines?: number, fits?: boolean
+  /** a text's size in px */
+  font_size?: number
   /** with the unit's `in`: whether it lies inside that frame */
   inside?: boolean
-  from?: string, to?: string, label?: { at: [number, number], size: [number, number] }
+  from?: string, to?: string
+  /** what it runs into as drawn: "crosses arrow @x", "over text \"…\" @y", "on arrow @x", "under arrow @x", "overlaps rectangle @z" */
+  hits?: string[]
+  /** an arrow's two ends, from the origin */
+  ends?: [[number, number], [number, number]]
+  label?: { at: [number, number], size: [number, number] }
 }
 
 export interface BoardDescription {
@@ -121,9 +130,10 @@ export function boardToMarkdown(store: Store): string
 export function textOf(store: Store, shape: object): string
 /** `area`: where what has no place goes (see Rect); else `prefer`: near that page point (where people look), in free space; else right of everything. */
 export function runOp<T>(store: Store, name: string, fn: (ops: Operations) => T, opts?: { area?: Rect, prefer?: Point }): Operation<T>
-export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]>
+/** drawing 'units' (agents): things are added only in a unit, every size a number; a plain list only changes what is there. */
+export function applySteps(store: Store, name: string, steps: Step[], opts?: { area?: Rect, prefer?: Point, drawing?: 'units' }): Operation<unknown[]>
 /** A unit drawn as written: positions are from `origin`; what it adds is where `at` says (no free space is looked for), then measured. */
-export function applySteps(store: Store, name: string, unit: Unit, opts?: { area?: Rect, prefer?: Point }): Operation<unknown[]> & { unit?: string, placed: Placed[] }
+export function applySteps(store: Store, name: string, unit: Unit, opts?: { area?: Rect, prefer?: Point, drawing?: 'units' }): Operation<unknown[]> & { unit?: string, placed: Placed[] }
 /** Free space for a w × h box (and a frame's title above it), clear of every shape: at `prefer` (its top-left) if free, else the nearest free spot. */
 export function freeSpot(store: Store, w: number, h: number, prefer: Point, opts?: { gap?: number, above?: number }): Point
 /** Reverts what nobody changed since the diff; the rest is reported as skipped. */
@@ -135,6 +145,8 @@ export interface LintIssue { kind: 'overlap' | 'frames-overlap' | 'outside-frame
 /** Layout problems: shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. Narrowed to a frame, some shapes or an area. */
 /** What to check; `words`: how fixes are named, as the board tools (default) or as omq commands ('cli'). */
 export interface LintScope { frame?: string, ids?: string[], area?: Rect, words?: 'tools' | 'cli' }
+/** Where a linked arrow goes now: its written ends where they are on its shapes, else edge to edge. */
+export function linkRoute(store: Store, arrow: object): { x: number, y: number, dx: number, dy: number } | null
 export function lintBoard(store: Store, scope?: LintScope): LintIssue[]
 /** A shape's label as the core lays it out: the lines it wraps to, and whether it fits the shape; null for what has no label. */
 export function labelFit(shape: object): { lines: number, fits: boolean } | null

@@ -106,10 +106,109 @@ describe('a unit', () => {
   it('the board tool takes a unit and gives back placed', () => {
     const store = board()
     const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
-    const r = tool.run(store, { unit: 'u', origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', text: 'A', at: [10, 20], ref: 'a' }] }, { name: 'C' })
-    expect(r.placed).toEqual([expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100], lines: 1, fits: true })])
-    expect(r.ids).toHaveLength(1)
-    // the old way still works, and says nothing of placed
-    expect(tool.run(store, { steps: [{ do: 'note', text: 'n' }] }, { name: 'C' }).placed).toBeUndefined()
+    const r = tool.run(store, { unit: 'u', origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [10, 20], w: 180, h: 100, ref: 'a' },
+      { do: 'text', text: 'A', font_size: 16, w: 180, align: 'middle', at: [10, 50] },
+    ] }, { name: 'C' })
+    expect(r.placed).toEqual([expect.objectContaining({ ref: 'a', at: [10, 20], size: [180, 100] }), expect.objectContaining({ at: [10, 50], font_size: 16, lines: 1 })])
+    expect(r.ids).toHaveLength(2)
+  })
+
+  it('drawn by an agent, a unit has one way to write each thing: every size a number, every word a text', () => {
+    const store = board()
+    const tool = BOARD_TOOLS.find((t) => t.name === 'apply_steps')
+    const one = (item) => () => tool.run(store, { origin: [0, 0], items: [item] }, { name: 'C' })
+    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0] })).toThrow(/w and h/)
+    expect(one({ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, text: 'A' })).toThrow(/holds no words/)
+    expect(one({ do: 'text', text: 'A', at: [0, 0] })).toThrow(/font_size in px/)
+    expect(one({ do: 'text', text: 'A', at: [0, 0], font_size: 16, text_size: 'l' })).toThrow(/not text_size/)
+    expect(one({ do: 'note', text: 'A', at: [0, 0] })).toThrow(/not in a unit/)
+    expect(one({ do: 'frame', title: 'F', at: [0, 0] })).toThrow(/w and h/)
+    expect(() => tool.run(store, { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', label: 'yes' },
+    ] }, { name: 'C' })).toThrow(/takes no label/)
+    expect(() => tool.run(store, { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b' },
+    ] }, { name: 'C' })).toThrow(/from_at and to_at/)
+    expect(store.shapes()).toHaveLength(0)
+  })
+
+  it('a text in px, and wrapped at a width: placed gives its size, px and lines', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 220, h: 80 },
+      { do: 'text', text: 'Relay', font_size: 16, w: 220, align: 'middle', at: [0, 14] },
+      { do: 'text', text: 'shares every update with the other pages and keeps them', font_size: 12, w: 200, align: 'middle', at: [10, 40] },
+    ] })
+    const [, name, detail] = placed
+    expect(name).toMatchObject({ font_size: 16, size: [220, expect.any(Number)], lines: 1 })
+    expect(detail).toMatchObject({ font_size: 12, size: [200, expect.any(Number)] })
+    expect(detail.lines).toBeGreaterThan(1)
+    expect(store.get(name.id).props).toMatchObject({ size: 's', scale: 0.8, autosize: false, w: 220, align: 'middle' })
+    applySteps(store, 'C', [{ do: 'update', id: name.id, font_size: 30 }])
+    expect(store.get(name.id).props.scale).toBe(1.5)
+    expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', font_size: 2 }])).toThrow(/8 to 160/)
+    expect(() => applySteps(store, 'C', [{ do: 'text', text: 'x', align: 'left' }])).toThrow(/unknown align/)
+  })
+
+  it('an arrow goes exactly where its ends are written, and they stay at those spots when a shape moves', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [100, 100], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 200, h: 100, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [400, 200], w: 200, h: 100, ref: 'b' },
+      { do: 'arrow', from: '@a', to: '@b', from_at: [204, 30], to_at: [396, 270] },
+    ] }, { drawing: 'units' })
+    const arrow = placed[2]
+    expect(arrow.ends).toEqual([[204, 30], [396, 270]])
+    expect(store.get(arrow.id)).toMatchObject({ x: 304, y: 130, props: { dx: 192, dy: 240 } })
+    applySteps(store, 'C', [{ do: 'move', id: placed[1].id, dx: 0, dy: 100 }])
+    const moved = store.get(arrow.id)
+    expect([moved.x, moved.y, moved.x + moved.props.dx, moved.y + moved.props.dy]).toEqual([304, 130, 496, 470]) // the same spot on b, 100 lower
+    expect(() => applySteps(store, 'C', { origin: [100, 100], items: [
+      { do: 'arrow', from: placed[0].id, to: placed[1].id, from_at: [600, 600], to_at: [396, 370] },
+    ] }, { drawing: 'units' })).toThrow(/from_at .* is not on or by/)
+  })
+
+  it('a ref points at what the same agent named so before, in an earlier unit', () => {
+    const store = board()
+    applySteps(store, 'C', { origin: [0, 0], items: [{ do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'q' }] }, { drawing: 'units' })
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [300, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'arrow', from: '@q', to: '@a', from_at: [104, 30], to_at: [296, 30] },
+    ] }, { drawing: 'units' })
+    expect(placed[1].from).toBe(store.shapes().find((s) => s.agent?.ref === 'q').id)
+    // another agent's names are not this one's
+    expect(() => applySteps(store, 'D', [{ do: 'update', id: '@q', color: 'red' }])).toThrow(/unknown ref @q/)
+  })
+
+  it('placed says what each item runs into, as drawn: arrows crossing, an arrow over a shape, words on a line, overlaps', () => {
+    const store = board()
+    const { placed } = applySteps(store, 'C', { origin: [0, 0], items: [
+      { do: 'shape', shape: 'rectangle', at: [0, 0], w: 100, h: 60, ref: 'a' },
+      { do: 'shape', shape: 'rectangle', at: [400, 0], w: 100, h: 60, ref: 'b' },
+      { do: 'shape', shape: 'rectangle', at: [0, 300], w: 100, h: 60, ref: 'c' },
+      { do: 'shape', shape: 'rectangle', at: [400, 300], w: 100, h: 60, ref: 'd' },
+      { do: 'shape', shape: 'rectangle', at: [200, 0], w: 100, h: 60, ref: 'mid' },
+      { do: 'arrow', from: '@a', to: '@b', from_at: [104, 30], to_at: [396, 30], ref: 'ab' },
+      { do: 'arrow', from: '@a', to: '@d', from_at: [104, 60], to_at: [396, 300], ref: 'ad' },
+      { do: 'arrow', from: '@c', to: '@b', from_at: [104, 300], to_at: [396, 60], ref: 'cb' },
+      { do: 'text', text: 'sends', font_size: 12, at: [130, 24], ref: 'word' },
+      { do: 'text', text: 'Box C', font_size: 16, w: 100, align: 'middle', at: [0, 320], ref: 'inC' },
+      { do: 'text', text: 'half out', font_size: 16, at: [70, 345], ref: 'edge' },
+    ] })
+    const by = Object.fromEntries(placed.map((p) => [p.ref, p.hits ?? []]))
+    expect(by.ab).toEqual(expect.arrayContaining(['over rectangle @mid', 'over text "sends" @word']))
+    expect(by.ad).toContain('crosses arrow @cb')
+    expect(by.cb).toContain('crosses arrow @ad')
+    expect(by.ad.some((h) => h.includes('@ab'))).toBe(false) // they start at the same box side: meeting, not crossing
+    expect(by.word).toContain('on arrow @ab')
+    expect(by.mid).toContain('under arrow @ab')
+    expect(by.inC).toEqual([]) // a name in its box
+    expect(by.edge).toEqual(expect.arrayContaining(['overlaps rectangle @c']))
+    expect(by.a).toEqual([])
   })
 })

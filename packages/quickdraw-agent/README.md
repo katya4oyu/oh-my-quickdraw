@@ -22,11 +22,11 @@ undoDiff(store, diff) // later: reverts what nobody changed since
 | --- | --- |
 | `read_board` | The board as a Markdown outline (frames, shapes, connections, with ids), or as data |
 | `check_board` | Layout problems in a frame, some shapes, or the work area (by default): to call once a piece of work is done; with `fix`, it fixes what needs no judgement first |
-| `add_note`, `add_text`, `add_shape`, `add_markdown`, `add_embed`, `add_frame`, `add_arrow` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
+| `add_note`, `add_markdown`, `add_embed`, `add_frame` | Puts one thing on the board, in free space, in a frame (`in`), or `at` a point |
 | `add_bento`, `set_span`, `set_columns` | A bento grid ([`quickdraw-layouts`](../quickdraw-layouts)): frames (cells, `add_frame` with `in` the grid and `span`) that pack themselves; a full cell grows a row when something is put `in` it, and the cells after it move along |
 | `update_shape`, `move_shape`, `arrange_shapes` | Changes text or color, moves (a frame brings its members), lays out |
 | `delete_shapes` | Only what an agent added |
-| `apply_steps` | Several steps as one operation; a step names what it adds (`ref`) and later ones point at it (`"@ref"`). As a unit (`origin`, `items`): drawn as written, every `at` from the origin, and `placed` says where each item ended up, how big, and whether its label fits |
+| `apply_steps` | The one way to put shapes, words and arrows: a unit (`origin`, `items`), drawn as written — every `at` from the origin, every size a number (a shape's `w`/`h`, a text's `font_size` in px; a shape holds no words, an arrow no label) — and `placed` says where each item ended up, how big, and a text's lines. A plain list of steps only changes what is there |
 
 A writing tool is one operation and returns `{ op, ids, diff, focus }`: keep `diff` to undo it, show a cursor at `focus`.
 
@@ -66,6 +66,6 @@ Example: [`examples/quickdraw-agent`](../../examples/quickdraw-agent).
 
 ## Arrows that follow
 
-An arrow may have a **label**: a text by its middle with `labelOf: <arrow id>` (`add_arrow`'s `label`, `update_shape`'s `label`), just clear of the line — on the side a bent arrow bows to, else above it (right of one going up or down). It follows its arrow wherever the arrow goes (an agent's operations and `bindArrows` both put it back by the middle), and goes when the arrow is deleted; `describeBoard` gives it with the arrow (`label`), not as a loose text, and lint does not count the arrow running across it. `labelSpot` and `labelsFollow` are the pieces.
+An arrow may have a **label**: a text by its middle with `labelOf: <arrow id>` (`update_shape`'s `label`; agents drawing with `apply_steps` put the word as a text instead), just clear of the line — on the side a bent arrow bows to, else above it (right of one going up or down). It follows its arrow wherever the arrow goes (an agent's operations and `bindArrows` both put it back by the middle), and goes when the arrow is deleted; `describeBoard` gives it with the arrow (`label`), not as a loose text, and lint does not count the arrow running across it. `labelSpot` and `labelsFollow` are the pieces.
 
 An arrow between two shapes keeps them as `link: { from, to }` (an agent's always does) and is drawn again, edge to edge, when either moves or changes size; an agent's operations do it for their own. On a page, `bindArrows(editor)` does it for people too: a shape dragged or resized takes its arrows along at once; an arrow drawn (or its end dragged) so that both ends land on shapes is linked to them once let go, and dragged off one is linked no more; a shape removed leaves its arrows, unlinked. Each page handles its own people's edits. `arrowEnds(store, arrow)` and `arrowRoute(store, arrow)` are the pieces.
