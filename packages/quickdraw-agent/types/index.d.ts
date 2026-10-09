@@ -47,6 +47,7 @@ export interface Operations {
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize, fromAt?: Point, toAt?: Point }): string
   group(ids: string[], opts?: { name?: string }): string
   ungroup(idOrGroup: string): string[]
+  link(from: string, to: string, opts?: { color?: ColorId, dash?: Dash, bend?: number, label?: string, textSize?: TextSize }): string
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
   update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, fontSize?: number, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string

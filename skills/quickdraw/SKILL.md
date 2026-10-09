@@ -61,7 +61,7 @@ The commands below put things on the board; deciding **what** to draw and **how 
 
 ## Notes, cards and frames
 
-Shapes, words and arrows go on the board only as an SVG (next section). These commands put the rest; each is one operation. Without `--at X,Y` (the top-left corner in board coordinates; `read --format json` gives positions and sizes), they go in free space: near what the person who asked was looking at, or by the people on the board when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
+Shapes, words and arrows go on the board only as an SVG (next section); `link` is the one arrow outside it, for joining things that are already on the board (two frames, two drawings, a note and a card). These commands put the rest; each is one operation. Without `--at X,Y` (the top-left corner in board coordinates; `read --format json` gives positions and sizes), they go in free space: near what the person who asked was looking at, or by the people on the board when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
 
 ```sh
 omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]   # a sticky note: one idea people will move
@@ -70,6 +70,7 @@ omq frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses exi
 omq frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
 omq frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
                                                         # --title-inside: its title inside its top-left corner, not above
+omq link FROM_ID TO_ID [--label "then"]          # an arrow with a word by its middle between two things already there (frames, notes, cards); it follows them when they move
 omq group ID,ID,… [--as "name"]                # shapes people select and move as one (notes, cards, pen strokes; not frames); ungroup ID takes it apart
 omq board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
                                                         # read lists the boards on cards: title, frames, how much is in them
@@ -118,7 +119,7 @@ One SVG is one drawing (one frame). A drawing that grows over time (a meeting, a
 
 To change a drawing: `omq draw --show FRAME_ID > d.svg`, edit it, `omq draw d.svg --replace FRAME_ID`. What people drew in it stays.
 
-`apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `group`, `ungroup`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
+`apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `link`, `group`, `ungroup`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 
 ## Change and tidy
 

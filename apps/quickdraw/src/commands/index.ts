@@ -92,6 +92,9 @@ Writing (each command is one operation, undoable as a whole)
   group ID,ID,… [--as TEXT]                 shapes selected and moved as one (not frames); moving one moves the
                                           rest. A drawing's top-level <g> is a group already. Prints the group's id
   ungroup ID                                takes a group apart (its id, or a member's); the shapes stay where they are
+  link FROM TO [--label TEXT] [--bend N] [--dash D] [--color C]
+                                          an arrow with a word by its middle between two things already on the
+                                          board (frames, notes, cards): it follows them when they move
   move ID (--to X,Y | --by DX,DY)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
@@ -279,7 +282,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'graph', 'tag', 'archive', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'group', 'ungroup', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'graph', 'tag', 'archive', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'group', 'ungroup', 'link', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -550,6 +553,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       case 'ungroup':
         if (!args[0]) throw new Error('ungroup needs a group id, or the id of a member')
         done = await op((ops) => ops.ungroup(args[0])); break
+      case 'link':
+        if (!args[0] || !args[1]) throw new Error('link needs two ids: link FROM TO [--label TEXT]')
+        done = await op((ops) => ops.link(args[0], args[1], { color, ...style, bend, label: o.label })); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break
