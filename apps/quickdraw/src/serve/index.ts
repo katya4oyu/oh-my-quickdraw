@@ -82,6 +82,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
 
   function locate(pathname: string): string | null {
     if (pathname === '/') return join(web, 'index.html')
+    if (pathname === '/graph') return join(web, 'graph.html')
     if (pathname === '/protocol.js') return protocol
     if (pathname === '/versions.js') return join(web, 'versions.js')
     const b = pathname.match(/^\/b\/([^/]+)(\/view)?$/)
@@ -111,7 +112,10 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
     const withAgents = (b: BoardInfo) => ({ ...b, agents: rooms.get(b.id) ? agentsIn(rooms.get(b.id)!).length : 0 })
     try {
       if (pathname === '/api/boards') {
-        if (req.method === 'GET') return json(res, 200, boards.list({ archived: new URL(req.url ?? '/', 'http://x').searchParams.get('archived') === '1' }).map(withAgents))
+        if (req.method === 'GET') {
+          const q = new URL(req.url ?? '/', 'http://x').searchParams, tag = q.get('tag')?.toLowerCase()
+          return json(res, 200, boards.list({ archived: q.get('archived') === '1' }).filter((b) => !tag || b.tags?.some((t) => t.toLowerCase() === tag)).map(withAgents))
+        }
         if (req.method !== 'POST') return json(res, 405, { error: 'GET or POST' })
         const b = await body(30_000_000) // a JSON file may carry images
         const t = typeof b.title === 'string' ? b.title : undefined
@@ -122,6 +126,12 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
           return json(res, 201, boards.createFrom(t ?? 'Imported', [...parsed.shapes, ...Object.values(parsed.assets)] as never))
         }
         return json(res, 201, boards.create(t))
+      }
+      // the boards (archived ones too), their tags, and which boards their cards show: for the graph page
+      if (pathname === '/api/graph') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'GET' })
+        const g = boards.graph()
+        return json(res, 200, { ...g, boards: g.boards.map(withAgents) })
       }
       const t = pathname.match(/^\/api\/boards\/([^/]+)\/thumbnail$/)
       if (t) {
@@ -155,6 +165,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
         const b = await body()
         if (typeof b.title === 'string') boards.rename(id, b.title)
         if (typeof b.archived === 'boolean') boards.archive(id, b.archived)
+        if (Array.isArray(b.tags)) boards.setTags(id, b.tags.filter((t: unknown) => typeof t === 'string'))
         return json(res, 200, boards.get(id))
       }
       if (!m[3]) {
