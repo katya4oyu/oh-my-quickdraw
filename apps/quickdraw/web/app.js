@@ -29,7 +29,7 @@ export const icon = (name) => {
 
 /** The bar over the page: the app's name, the two views (this one current), and this page's own controls. */
 export function bar(current, ...controls) {
-  const tab = (href, label) => el('a', { href, textContent: label, ...(current === label ? { ariaCurrent: 'page' } : {}) })
+  const tag = pickedTag(), tab = (href, label) => el('a', { href: href + (tag ? '?tag=' + encodeURIComponent(tag) : ''), textContent: label, ...(current === label ? { ariaCurrent: 'page' } : {}) })
   return el('header', { className: 'bar' },
     el('span', { className: 'brand', textContent: 'Quickdraw' }),
     el('nav', { className: 'tabs', ariaLabel: 'Views' }, tab('/', 'Boards'), tab('/graph', 'Graph')),
@@ -40,6 +40,26 @@ export function bar(current, ...controls) {
 /** A tag, as a chip: the same wherever a tag shows. */
 export const chip = (tag, { on = false, onclick, remove = false } = {}) =>
   el('button', { type: 'button', className: 'chip' + (on ? ' on' : ''), title: remove ? `Show all boards` : `Boards tagged ${tag}`, onclick }, tag, remove ? el('span', { className: 'x', textContent: '×' }) : null)
+
+/** The tag picked to narrow the boards down (?tag= in the page's address, kept when going to the other view). */
+export const pickedTag = () => new URLSearchParams(location.search).get('tag')
+export function setPickedTag(tag) {
+  history.replaceState(null, '', tag ? '?tag=' + encodeURIComponent(tag) : location.pathname)
+  for (const a of document.querySelectorAll('.tabs a')) a.search = tag ? '?tag=' + encodeURIComponent(tag) : '' // the other view, narrowed the same
+}
+
+/** The tags of these boards as a row to pick from (one at a time; All: every board). */
+export function tagBar(boards, current, onPick) {
+  const tags = new Map()
+  for (const b of boards) for (const t of b.tags ?? []) { const k = t.toLowerCase(); tags.set(k, { t: tags.get(k)?.t ?? t, n: (tags.get(k)?.n ?? 0) + 1 }) }
+  const sorted = [...tags.values()].sort((a, b) => b.n - a.n || a.t.localeCompare(b.t))
+  const on = (t) => !!current && t.toLowerCase() === current.toLowerCase()
+  const row = el('nav', { className: 'tagbar', ariaLabel: 'Tags' },
+    el('button', { type: 'button', className: 'chip all' + (current ? '' : ' on'), textContent: 'All', onclick: () => onPick(null) }),
+    ...sorted.map(({ t, n }) => el('button', { type: 'button', className: 'chip' + (on(t) ? ' on' : ''), textContent: t, title: `${n} board${n === 1 ? '' : 's'}`, onclick: () => onPick(on(t) ? null : t) })))
+  row.hidden = !sorted.length
+  return row
+}
 
 export const thumbnailUrl = (b) => (b.thumbnailAt ? `/api/boards/${b.id}/thumbnail?at=${encodeURIComponent(b.thumbnailAt)}` : null)
 export const when = (b) => new Date(b.createdAt).toLocaleDateString()

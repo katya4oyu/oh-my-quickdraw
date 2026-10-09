@@ -7,9 +7,13 @@
   <link rel="stylesheet" href="/app.css" />
   <style>
     html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-    canvas { position: fixed; left: 0; right: 0; bottom: 0; top: calc(var(--bar) + env(safe-area-inset-top)); width: 100%; height: calc(100% - var(--bar) - env(safe-area-inset-top)); touch-action: none; display: block; }
+    :root { --tags: 0px; }
+    body.tagged { --tags: 44px; }
+    @media (pointer: coarse) { body.tagged { --tags: 52px; } }
+    .tagbar { position: fixed; left: 0; right: 0; }
+    canvas { position: fixed; left: 0; right: 0; bottom: 0; top: calc(var(--bar) + var(--tags) + env(safe-area-inset-top)); width: 100%; height: calc(100% - var(--bar) - var(--tags) - env(safe-area-inset-top)); touch-action: none; display: block; }
     #q { width: 220px; }
-    @media (max-width: 600px) { #q { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + env(safe-area-inset-top) + 8px); width: auto; z-index: 15; box-shadow: var(--shadow); } #q.closed { display: none; } }
+    @media (max-width: 600px) { #q { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + var(--tags) + env(safe-area-inset-top) + 8px); width: auto; z-index: 15; box-shadow: var(--shadow); } #q.closed { display: none; } }
     @media (min-width: 601px) { #search-toggle { display: none; } }
     .legend { display: grid; gap: 8px; font-size: var(--t-s); color: var(--muted); }
     .legend span { display: flex; align-items: center; gap: 10px; }
@@ -57,12 +61,13 @@
     // shows at the bottom, to open; a double tap opens it. Drag a card to move
     // it, drag the background (one finger) to move about, pinch or the wheel
     // to zoom. Far out, the cards keep their names readable.
-    import { $, el, bar, chip, icon, thumbnailUrl, when, agentsText } from '/app.js'
+    import { $, el, bar, chip, icon, thumbnailUrl, when, agentsText, pickedTag, setPickedTag, tagBar } from '/app.js'
     if (!matchMedia('(pointer: coarse)').matches) $('hint').textContent = 'Click a board to see what it links to · double-click to open'
     else $('hint').textContent = 'Tap a board to see what it links to · tap twice to open'
     const search = el('input', { className: 'field closed', id: 'q', type: 'search', placeholder: 'Find a board or tag', ariaLabel: 'Find a board or tag', autocomplete: 'off' })
     const btn = (name, label, id) => { const b = el('button', { className: 'btn icon', type: 'button', title: label, ariaLabel: label, id }); b.append(icon(name)); return b }
-    $('top').replaceWith(bar('Graph', search, btn('search', 'Find', 'search-toggle'), btn('fit', 'Show all', 'fit'), btn('filter', 'What to show', 'filter')))
+    $('top').replaceWith(bar('Graph', search, btn('search', 'Find', 'search-toggle'), btn('fit', 'Show all', 'fit'), btn('filter', 'What to show', 'filter')), el('div', { id: 'tagbar' }))
+    let tag = pickedTag() // only the boards with this tag (and the lines between them)
     const canvas = $('c'), ctx = canvas.getContext('2d')
     const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
     // a card as on the board list: the picture 16:10, then title, when, tags
@@ -84,7 +89,10 @@
     async function load() {
       const g = await fetch('/api/graph').then((r) => r.json())
       const showTags = $('tags').checked, showArchived = $('archived').checked, showMentions = $('mentions').checked
-      const boards = g.boards.filter((b) => showArchived || !b.archivedAt)
+      const shown = g.boards.filter((b) => showArchived || !b.archivedAt)
+      $('tagbar').replaceWith(Object.assign(tagBar(shown, tag, (t) => { tag = t; setPickedTag(t); place.clear(); pick(null); load() }), { id: 'tagbar' }))
+      document.body.classList.toggle('tagged', !$('tagbar').hidden)
+      const boards = shown.filter((b) => !tag || (b.tags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase()))
       const ids = new Set(boards.map((b) => b.id))
       const tagNodes = new Map()
       nodes = boards.map((b) => ({ id: b.id, kind: 'board', label: b.title, board: b, w: CARD.w, h: CARD.pic + CARD.body }))
