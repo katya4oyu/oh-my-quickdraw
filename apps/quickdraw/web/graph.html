@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Graph — Quickdraw</title>
   <style>
-    :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #d8d8d4; --accent: #1971c2; --tag: #2f9e44; --panel: #fffffff0; color-scheme: light dark; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #3a3a3d; --accent: #4dabf7; --tag: #69db7c; --panel: #2c2c2ef0; } }
+    :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0; --edge: #9a9aa0; --accent: #1971c2; --tag: #2f9e44; --card: #ffffff; --panel: #fffffff0; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #333336; --edge: #6e6e73; --accent: #4dabf7; --tag: #69db7c; --card: #2c2c2e; --panel: #2c2c2ef0; } }
+    [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
     canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
     .panel { position: fixed; top: 12px; left: 12px; display: grid; gap: 8px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 220px; }
@@ -16,11 +17,6 @@
     input[type=search] { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
     label { display: flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; }
     .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-    .tip { position: fixed; pointer-events: none; display: grid; gap: 4px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; max-width: 240px; box-shadow: 0 6px 20px #0002; }
-    .tip img { width: 220px; aspect-ratio: 16 / 10; object-fit: contain; border-radius: 6px; background: var(--line); }
-    .tip .t { font-weight: 600; }
-    .tip .m { color: var(--muted); font-size: 12px; }
-    [hidden] { display: none !important; }
     .empty { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
   </style>
 </head>
@@ -33,22 +29,33 @@
     <label><input type="checkbox" id="archived" /> Archived boards</label>
     <span class="count" id="count"></span>
   </div>
-  <div class="tip" id="tip" hidden></div>
   <div class="empty" id="empty" hidden>No boards yet.</div>
   <script type="module">
-    // The boards as a graph, like a notes app's graph view: each board a node,
-    // an arrow where a board shows another on a card (boards in boards), and
-    // its tags as small nodes joining the boards that carry them. Laid out by
-    // a small force simulation (nodes push apart, links pull together); drag
-    // a node, drag the background to move about, the wheel to zoom. Hover a
-    // board for its picture and its neighbours; click it to open it; click a
-    // tag for the boards tagged so.
+    // The boards as a graph, like a notes app's graph view: each board is its
+    // card from the board list (its picture, title and tags), an arrow runs
+    // from a board to each board it shows on a card (boards in boards), and
+    // its tags are small labels joining the boards that carry them. Laid out
+    // by a small force simulation (cards push apart and never overlap, links
+    // pull together); drag a card, drag the background to move about, the
+    // wheel to zoom. Hover a card for its neighbours; click it to open the
+    // board; click a tag for the boards tagged so.
     const $ = (id) => document.getElementById(id)
     const canvas = $('c'), ctx = canvas.getContext('2d')
     const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
+    const CARD = { w: 176, thumb: 110, info: 46 } // as on the board list: the picture 16:10, then its title and tags
     let nodes = [], links = [], byId = new Map()
     let view = { x: 0, y: 0, k: 1 }, hover = null, drag = null, heat = 1
     const place = new Map() // where each node was, so a refresh keeps the picture
+    const pictures = new Map() // thumbnail URL -> Image
+    const picture = (b) => {
+      if (!b.thumbnailAt) return null
+      const url = `/api/boards/${b.id}/thumbnail?at=${encodeURIComponent(b.thumbnailAt)}`
+      let img = pictures.get(url)
+      if (!img) { img = new Image(); img.src = url; pictures.set(url, img) }
+      return img.complete && img.naturalWidth ? img : null
+    }
+    ctx.font = '11px system-ui, sans-serif'
+    const textW = (t, font) => { ctx.font = font; return ctx.measureText(t).width }
 
     async function load() {
       const g = await fetch('/api/graph').then((r) => r.json())
@@ -56,30 +63,28 @@
       const boards = g.boards.filter((b) => showArchived || !b.archivedAt)
       const ids = new Set(boards.map((b) => b.id))
       const tagNodes = new Map()
-      nodes = boards.map((b) => ({ id: b.id, kind: 'board', label: b.title, board: b }))
+      nodes = boards.map((b) => ({ id: b.id, kind: 'board', label: b.title, board: b, w: CARD.w, h: CARD.thumb + CARD.info }))
       links = g.links.filter((l) => ids.has(l.from) && ids.has(l.to)).map((l) => ({ a: l.from, b: l.to, kind: 'card' }))
       if (showTags) for (const b of boards) for (const t of b.tags ?? []) {
         const key = 'tag:' + t.toLowerCase()
-        if (!tagNodes.has(key)) tagNodes.set(key, { id: key, kind: 'tag', label: t })
+        if (!tagNodes.has(key)) tagNodes.set(key, { id: key, kind: 'tag', label: t, w: textW('#' + t, '12px system-ui, sans-serif') + 18, h: 24 })
         links.push({ a: b.id, b: key, kind: 'tag' })
       }
       nodes.push(...tagNodes.values())
       byId = new Map(nodes.map((n) => [n.id, n]))
-      const degree = new Map()
-      for (const l of links) for (const id of [l.a, l.b]) degree.set(id, (degree.get(id) ?? 0) + 1)
       nodes.forEach((n, i) => {
-        const was = place.get(n.id), a = i * 2.4, r = 40 + 18 * Math.sqrt(i)
-        Object.assign(n, { x: was?.x ?? Math.cos(a) * r, y: was?.y ?? Math.sin(a) * r, vx: 0, vy: 0, degree: degree.get(n.id) ?? 0 })
-        n.r = n.kind === 'tag' ? 4 : 6 + 2.2 * Math.sqrt(n.degree)
+        const was = place.get(n.id), a = i * 2.4, r = 120 + 60 * Math.sqrt(i)
+        Object.assign(n, { x: was?.x ?? Math.cos(a) * r, y: was?.y ?? Math.sin(a) * r, vx: 0, vy: 0 })
       })
       for (const l of links) { l.na = byId.get(l.a); l.nb = byId.get(l.b) }
-      $('count').textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${links.filter((l) => l.kind === 'card').length} card link${links.filter((l) => l.kind === 'card').length === 1 ? '' : 's'}${showTags ? ` · ${tagNodes.size} tag${tagNodes.size === 1 ? '' : 's'}` : ''}`
+      const cardLinks = links.filter((l) => l.kind === 'card').length
+      $('count').textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${cardLinks} board${cardLinks === 1 ? '' : 's'} in boards${showTags ? ` · ${tagNodes.size} tag${tagNodes.size === 1 ? '' : 's'}` : ''}`
       $('empty').hidden = nodes.length > 0
       heat = 1
-      if (!place.size) { for (let i = 0; i < 300; i++) step(); fit() } // settled, and all in view, before it is first shown
+      if (!place.size) { for (let i = 0; i < 400; i++) step(); fit() } // settled, and all in view, before it is first shown
     }
 
-    // ---- the simulation: a step pushes nodes apart, pulls linked ones together, and draws all to the middle
+    // ---- the simulation: cards push apart (and never overlap), linked ones pull together, all drawn to the middle
     function step() {
       const alpha = heat
       for (let i = 0; i < nodes.length; i++) {
@@ -88,13 +93,19 @@
           const q = nodes[j]
           let dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy
           if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1 }
-          const f = (5000 * alpha) / d2, d = Math.sqrt(d2)
+          const d = Math.sqrt(d2), f = (30000 * alpha) / d2
           p.vx -= (dx / d) * f; p.vy -= (dy / d) * f; q.vx += (dx / d) * f; q.vy += (dy / d) * f
+          // apart: overlapping boxes (with a margin) are pushed out along the shorter way
+          const ox = (p.w + q.w) / 2 + GAP - Math.abs(dx), oy = (p.h + q.h) / 2 + GAP - Math.abs(dy)
+          if (ox > 0 && oy > 0) {
+            if (ox < oy) { const s = Math.sign(dx) || 1; p.x -= (s * ox) / 2; q.x += (s * ox) / 2 }
+            else { const s = Math.sign(dy) || 1; p.y -= (s * oy) / 2; q.y += (s * oy) / 2 }
+          }
         }
       }
       for (const l of links) {
         const { na: p, nb: q } = l, dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1
-        const rest = l.kind === 'tag' ? 80 : 140, f = (d - rest) * 0.04 * alpha
+        const rest = l.kind === 'tag' ? 170 : 340, f = (d - rest) * 0.06 * alpha
         p.vx += (dx / d) * f; p.vy += (dy / d) * f; q.vx -= (dx / d) * f; q.vy -= (dy / d) * f
       }
       for (const n of nodes) {
@@ -104,15 +115,29 @@
         n.x += n.vx; n.y += n.vy
         place.set(n.id, { x: n.x, y: n.y })
       }
+      separate()
       heat = Math.max(0.02, heat * 0.985)
     }
 
-    // the view that shows all of it, with room for the names
+    // nothing on top of anything: boxes still overlapping (with room for the lines between) are pushed apart
+    const GAP = 56
+    function separate() {
+      for (let pass = 0; pass < 3; pass++) for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const p = nodes[i], q = nodes[j], dx = q.x - p.x, dy = q.y - p.y
+        const ox = (p.w + q.w) / 2 + GAP - Math.abs(dx), oy = (p.h + q.h) / 2 + GAP - Math.abs(dy)
+        if (ox <= 0 || oy <= 0) continue
+        const mp = p === drag?.node ? 0 : q === drag?.node ? 1 : 0.5 // what is held stays put
+        if (ox < oy) { const s = Math.sign(dx) || 1; p.x -= s * ox * mp; q.x += s * ox * (1 - mp) }
+        else { const s = Math.sign(dy) || 1; p.y -= s * oy * mp; q.y += s * oy * (1 - mp) }
+      }
+    }
+
+    // the view that shows all of it
     function fit() {
       if (!nodes.length) return
-      const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y)
-      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
-      view.k = Math.min(2, Math.max(0.3, Math.min((canvas.clientWidth - 160) / (x1 - x0 + 1), (canvas.clientHeight - 160) / (y1 - y0 + 1)) * 0.85))
+      const x0 = Math.min(...nodes.map((n) => n.x - n.w / 2)), x1 = Math.max(...nodes.map((n) => n.x + n.w / 2))
+      const y0 = Math.min(...nodes.map((n) => n.y - n.h / 2)), y1 = Math.max(...nodes.map((n) => n.y + n.h / 2))
+      view.k = Math.min(1.2, Math.max(0.15, Math.min((canvas.clientWidth - 80) / (x1 - x0), (canvas.clientHeight - 80) / (y1 - y0)) * 0.95))
       view.x = -(x0 + x1) / 2; view.y = -(y0 + y1) / 2
     }
 
@@ -120,47 +145,80 @@
     const toScreen = (x, y) => [canvas.clientWidth / 2 + (x + view.x) * view.k, canvas.clientHeight / 2 + (y + view.y) * view.k]
     const toWorld = (sx, sy) => [(sx - canvas.clientWidth / 2) / view.k - view.x, (sy - canvas.clientHeight / 2) / view.k - view.y]
     const query = () => $('q').value.trim().toLowerCase()
+    // where the line from a node's middle towards (tx, ty) leaves its box
+    function edgeOf(n, tx, ty) {
+      const dx = tx - n.x, dy = ty - n.y
+      const t = Math.min(Math.abs((n.w / 2) / (dx || 1e-9)), Math.abs((n.h / 2) / (dy || 1e-9)), 1)
+      return [n.x + dx * t, n.y + dy * t]
+    }
+    function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r) }
+    function fitText(t, max) {
+      if (ctx.measureText(t).width <= max) return t
+      while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1)
+      return t + '…'
+    }
     function draw() {
       const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight
       if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
-      const fg = css('--fg'), muted = css('--muted'), line = css('--line'), accent = css('--accent'), tagc = css('--tag')
+      const c = { fg: css('--fg'), muted: css('--muted'), line: css('--line'), edge: css('--edge'), accent: css('--accent'), tag: css('--tag'), card: css('--card') }
       const q = query()
       const near = new Set(hover ? [hover.id, ...links.filter((l) => l.a === hover.id || l.b === hover.id).flatMap((l) => [l.a, l.b])] : [])
-      const found = (n) => !q || n.label.toLowerCase().includes(q)
+      const found = (n) => !q || n.label.toLowerCase().includes(q) || (n.board?.tags ?? []).some((t) => t.toLowerCase().includes(q))
       const lit = (n) => (hover ? near.has(n.id) : found(n))
+      // links under the cards, from box edge to box edge
       for (const l of links) {
-        const [x1, y1] = toScreen(l.na.x, l.na.y), [x2, y2] = toScreen(l.nb.x, l.nb.y)
+        const [ax, ay] = edgeOf(l.na, l.nb.x, l.nb.y), [bx, by] = edgeOf(l.nb, l.na.x, l.na.y)
+        const [x1, y1] = toScreen(ax, ay), [x2, y2] = toScreen(bx, by)
         const on = hover ? l.a === hover.id || l.b === hover.id : found(l.na) || found(l.nb)
         ctx.globalAlpha = on ? 1 : 0.15
-        ctx.strokeStyle = l.kind === 'tag' ? tagc : on && hover ? accent : muted
-        ctx.lineWidth = l.kind === 'tag' ? 0.8 : 1.4
+        ctx.strokeStyle = l.kind === 'tag' ? c.tag : on && hover ? c.accent : c.edge
+        ctx.lineWidth = l.kind === 'tag' ? 1 : 1.6
         ctx.setLineDash(l.kind === 'tag' ? [3, 4] : [])
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
-        if (l.kind === 'card') { // its head at the edge of the board it shows
-          const a = Math.atan2(y2 - y1, x2 - x1), r = l.nb.r * view.k + 2, hx = x2 - Math.cos(a) * r, hy = y2 - Math.sin(a) * r
+        if (l.kind === 'card') { // its head at the card it shows
+          const a = Math.atan2(y2 - y1, x2 - x1), s = Math.max(5, 10 * view.k)
           ctx.setLineDash([]); ctx.beginPath()
-          ctx.moveTo(hx, hy); ctx.lineTo(hx - 8 * Math.cos(a - 0.4), hy - 8 * Math.sin(a - 0.4))
-          ctx.moveTo(hx, hy); ctx.lineTo(hx - 8 * Math.cos(a + 0.4), hy - 8 * Math.sin(a + 0.4)); ctx.stroke()
+          ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(a - 0.45), y2 - s * Math.sin(a - 0.45))
+          ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(a + 0.45), y2 - s * Math.sin(a + 0.45)); ctx.stroke()
         }
       }
       ctx.setLineDash([])
       for (const n of nodes) {
-        const [x, y] = toScreen(n.x, n.y), r = Math.max(2.5, n.r * view.k)
-        ctx.globalAlpha = lit(n) ? 1 : 0.2
-        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2)
-        if (n.kind === 'tag') { ctx.fillStyle = tagc; ctx.fill() }
-        else { ctx.fillStyle = n.board.archivedAt ? line : n === hover ? accent : fg; ctx.fill(); if (n.board.archivedAt) { ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.stroke() } }
-        // names: up close, the ones lit, and what is hovered
-        if (view.k > 0.7 || n === hover || near.has(n.id) || (q && found(n))) {
-          ctx.fillStyle = n.kind === 'tag' ? tagc : muted
-          ctx.font = `${n === hover ? 600 : 400} ${n.kind === 'tag' ? 11 : 12}px system-ui, sans-serif`
-          ctx.textAlign = 'center'
-          const name = n.kind === 'tag' ? '#' + n.label : n.label
-          ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.strokeStyle = css('--bg') // a halo of the paper, so a line under it does not cut it
-          ctx.strokeText(name, x, y + r + 13)
-          ctx.fillText(name, x, y + r + 13)
+        const [cx, cy] = toScreen(n.x, n.y), nw = n.w * view.k, nh = n.h * view.k, x = cx - nw / 2, y = cy - nh / 2
+        ctx.globalAlpha = lit(n) ? 1 : 0.25
+        if (n.kind === 'tag') {
+          roundRect(x, y, nw, nh, nh / 2)
+          ctx.fillStyle = c.card; ctx.fill()
+          ctx.strokeStyle = c.tag; ctx.lineWidth = 1; ctx.stroke()
+          if (view.k > 0.3) { ctx.fillStyle = c.tag; ctx.font = `${12 * view.k}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('#' + n.label, cx, cy + 0.5) }
+          continue
+        }
+        // a board: its card, as on the board list
+        const b = n.board, r = 10 * view.k, th = CARD.thumb * view.k
+        if (b.archivedAt) ctx.globalAlpha *= 0.55
+        ctx.save()
+        roundRect(x, y, nw, nh, r); ctx.fillStyle = c.card; ctx.fill(); ctx.clip()
+        ctx.fillStyle = c.line; ctx.fillRect(x, y, nw, th)
+        const img = picture(b)
+        if (img) { // contain, as the list shows it
+          const s = Math.min(nw / img.naturalWidth, th / img.naturalHeight), iw = img.naturalWidth * s, ih = img.naturalHeight * s
+          ctx.drawImage(img, x + (nw - iw) / 2, y + (th - ih) / 2, iw, ih)
+        } else if (view.k > 0.45) {
+          ctx.fillStyle = c.muted; ctx.font = `${11 * view.k}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText('Open it to see it here', cx, y + th / 2)
+        }
+        ctx.restore()
+        roundRect(x, y, nw, nh, r)
+        ctx.strokeStyle = n === hover ? c.accent : c.line; ctx.lineWidth = n === hover ? 2 : 1; ctx.stroke()
+        if (view.k > 0.3) {
+          const pad = 10 * view.k
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+          ctx.fillStyle = n === hover ? c.accent : c.fg; ctx.font = `${14 * view.k}px system-ui, sans-serif`
+          ctx.fillText(fitText(b.title, nw - pad * 2), x + pad, y + th + 20 * view.k)
+          const meta = [b.archivedAt ? 'archived' : '', ...(b.tags ?? []).map((t) => '#' + t)].filter(Boolean).join(' ')
+          if (meta) { ctx.fillStyle = c.muted; ctx.font = `${11 * view.k}px system-ui, sans-serif`; ctx.fillText(fitText(meta, nw - pad * 2), x + pad, y + th + 37 * view.k) }
         }
       }
       ctx.globalAlpha = 1
@@ -172,35 +230,15 @@
       requestAnimationFrame(frame)
     }
 
-    // ---- pointer: hover, drag a node or the view, click to open, wheel to zoom
+    // ---- pointer: hover, drag a card or the view, click to open, wheel to zoom
     const nodeAt = (sx, sy) => {
       const [x, y] = toWorld(sx, sy)
-      let best = null, bd = Infinity
-      for (const n of nodes) { const d = Math.hypot(n.x - x, n.y - y), hit = n.r + 6 / view.k; if (d < hit && d < bd) { best = n; bd = d } }
-      return best
-    }
-    function tip(n, sx, sy) {
-      const t = $('tip')
-      if (!n || drag) { t.hidden = true; return }
-      if (n.kind === 'tag') {
-        const count = links.filter((l) => l.b === n.id).length
-        t.replaceChildren(Object.assign(document.createElement('span'), { className: 't', textContent: '#' + n.label }), Object.assign(document.createElement('span'), { className: 'm', textContent: `${count} board${count === 1 ? '' : 's'} · click for the list` }))
-      } else {
-        const b = n.board, parts = []
-        if (b.thumbnailAt) parts.push(Object.assign(document.createElement('img'), { src: `/api/boards/${b.id}/thumbnail?at=${encodeURIComponent(b.thumbnailAt)}`, alt: '' }))
-        parts.push(Object.assign(document.createElement('span'), { className: 't', textContent: b.title }))
-        const meta = [b.archivedAt ? 'archived' : '', (b.tags ?? []).map((x) => '#' + x).join(' '), b.agents ? `${b.agents === 1 ? 'an AI' : b.agents + ' AIs'} here` : ''].filter(Boolean).join(' · ')
-        if (meta) parts.push(Object.assign(document.createElement('span'), { className: 'm', textContent: meta }))
-        t.replaceChildren(...parts)
-      }
-      t.hidden = false
-      t.style.left = Math.min(sx + 16, innerWidth - t.offsetWidth - 8) + 'px'
-      t.style.top = Math.min(sy + 16, innerHeight - t.offsetHeight - 8) + 'px'
+      for (let i = nodes.length - 1; i >= 0; i--) { const n = nodes[i]; if (Math.abs(x - n.x) <= n.w / 2 && Math.abs(y - n.y) <= n.h / 2) return n }
+      return null
     }
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId)
-      const n = nodeAt(e.offsetX, e.offsetY)
-      drag = { node: n, sx: e.offsetX, sy: e.offsetY, vx: view.x, vy: view.y, moved: false }
+      drag = { node: nodeAt(e.offsetX, e.offsetY), sx: e.offsetX, sy: e.offsetY, vx: view.x, vy: view.y, moved: false }
     })
     canvas.addEventListener('pointermove', (e) => {
       if (drag) {
@@ -211,7 +249,6 @@
       }
       hover = nodeAt(e.offsetX, e.offsetY)
       canvas.style.cursor = hover ? 'pointer' : 'grab'
-      tip(hover, e.clientX, e.clientY)
     })
     canvas.addEventListener('pointerup', () => {
       const d = drag
@@ -219,18 +256,17 @@
       if (!d || d.moved || !d.node) return
       location.href = d.node.kind === 'tag' ? '/?tag=' + encodeURIComponent(d.node.label) : '/b/' + d.node.id
     })
-    canvas.addEventListener('pointerleave', () => { hover = null; tip(null) })
+    canvas.addEventListener('pointerleave', () => { hover = null })
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault()
       const [wx, wy] = toWorld(e.offsetX, e.offsetY)
-      view.k = Math.min(4, Math.max(0.2, view.k * Math.exp(-e.deltaY * 0.0015)))
+      view.k = Math.min(3, Math.max(0.1, view.k * Math.exp(-e.deltaY * 0.0015)))
       const [nx, ny] = toWorld(e.offsetX, e.offsetY)
       view.x += nx - wx; view.y += ny - wy
     }, { passive: false })
 
     $('tags').onchange = load
     $('archived').onchange = load
-    $('q').oninput = () => {}
     addEventListener('focus', load) // boards may have changed elsewhere
     load().then(() => requestAnimationFrame(frame))
   </script>
