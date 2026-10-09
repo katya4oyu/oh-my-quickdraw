@@ -1,6 +1,6 @@
 # Flow (sequence, with decisions)
 
-One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
+One SVG, drawn with `omq draw` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
 Steps in order, 260 apart, centred on one line; a diamond for a choice.
 

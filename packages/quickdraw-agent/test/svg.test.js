@@ -30,7 +30,7 @@ describe('an SVG drawn on the board', () => {
     const { result: [[frame, ...parts]] } = applySteps(store, 'C', [{ do: 'svg', svg, at: [0, 0] }])
     let md = boardToMarkdown(store)
     expect(md).toContain(`## Page to relay (drawn from an SVG; id ${frame})`)
-    expect(md).toContain(`omq svg --show ${frame}`)
+    expect(md).toContain(`omq draw --show ${frame}`)
     expect(md).toContain('Page (id')
     expect(md).not.toContain('(drawing)')
     store.remove([parts[2]]) // someone rubs out the second box

@@ -1,6 +1,6 @@
 # Decision (issue → options → chosen)
 
-One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
+One SVG, drawn with `omq draw` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
 The core of most meetings: a question, the options with what each costs, the one chosen. The question on the left, options in a column, the chosen one green and bold, the dropped ones grey, the reason in a smaller grey text under the option's name. A question in a diamond: its words about half the diamond's width, on two lines.
 

@@ -13,7 +13,7 @@ You are given material — meeting notes, a chat log, a document, a codebase, re
 
 Decide where each part goes before filling any of them:
 
-- A title: the theme in 34 px and the one message under it in 18 px, as a small SVG of its own (`omq svg`) at the top.
+- A title: the theme in 34 px and the one message under it in 18 px, as a small SVG of its own (`omq draw`) at the top.
 - The parts: an SVG per part, in reading order (each is its own frame, its own size; `--at` beside the last), or a bento grid (`omq bento`, one cell per part, the main part with more span) when parts are lists of notes that will grow. Line the frames up with `tidy FRAME,FRAME,…` (or `arrange`).
 - A conclusion at the end of the reading order: decisions, open points and next actions.
 

@@ -94,15 +94,15 @@ Writing (each command is one operation, undoable as a whole)
                                           about --width wide (2400): each brings what is in it and its title, a
                                           kanban's columns stay together; for a board that has spread out
   delete ID…                               only shapes an agent added
-  svg FILE [--at X,Y] [--in FRAME] [--write chars|lines]
+  draw FILE.svg [--at X,Y] [--in FRAME] [--write chars|lines]
                                            draws: shapes, words and arrows go on only this way. An SVG as by
                                            hand, as one operation: a frame its size, its outlines with the pen
                                            and its words as texts, in the order written (a <g> drawn together);
                                            on a live board a stroke at a time (joined: while you go on). The SVG
                                            is kept with it: omq read gives it back with what people changed since.
                                            Prints hits: words past their box, words on words, a line through words
-  svg FILE --replace FRAME                 that drawing again from the SVG, changed: only what changed is redrawn
-  svg --show FRAME                         the SVG a drawing was drawn from
+  draw FILE.svg --replace FRAME            that drawing again from the SVG, changed: only what changed is redrawn
+  draw --show FRAME                        the SVG a drawing was drawn from
   apply STEPS.json                         changes what is there, as one operation: [{ "do": "move", … }, …]
                                            (update, move, arrange, fit, tidy, status, delete, frame around)
 
@@ -268,7 +268,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'svg', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -468,9 +468,9 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
       }
       case 'note':
         done = await op((ops) => ops.note(args.join(' '), common)); break
-      // shapes, words and arrows have one way on: an SVG, with omq svg
+      // shapes, words and arrows have one way on: an SVG, with omq draw
       case 'text': case 'shape': case 'arrow':
-        throw new Error(`${cmd}: shapes, words and arrows are drawn as an SVG: write one, and draw it with omq svg FILE (see SKILL.md)`)
+        throw new Error(`${cmd}: shapes, words and arrows are drawn as an SVG: write one, and draw it with omq draw FILE (see SKILL.md)`)
       case 'markdown': {
         const md = o['md-file'] ? await readFile(o['md-file'], 'utf8') : args.join(' ')
         done = await op((ops) => ops.markdown(md, common)); break
@@ -574,14 +574,14 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         board.relay!.status('waiting')
         board.relay!.activity('waiting', 'on the tickets')
         return await watchTickets(board, (e) => out(JSON.stringify(e)), { for: o.mine ? o.name : o.to, signal })
-      case 'svg': {
+      case 'draw': {
         if (o.show) { // the SVG a drawing was drawn from
           const f = store.get(o.show) as { svg?: { asset?: string } } | undefined
           const src = f?.svg?.asset ? (store.asset(f.svg.asset) as { src?: string } | null)?.src : undefined
           if (!src) throw new Error(`${o.show} is not a drawing from an SVG (omq read shows which frames are)`)
           return out(src)
         }
-        if (!args[0]) throw new Error('svg needs a file: omq svg drawing.svg [--at X,Y] [--write chars|lines]')
+        if (!args[0]) throw new Error('draw needs an SVG file: omq draw drawing.svg [--at X,Y] [--write chars|lines]')
         const source = args[0] === '-' ? await ctx.stdin() : await readFile(args[0], 'utf8')
         const { readSvg } = await import('quickdraw-svg')
         const d = readSvg(source) // what it will be, to say so (the operation reads it again)
@@ -589,7 +589,7 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await operate((s, where) => runOp(s, o.name, (ops) => ops.svg(source, { at: point(o.at), inFrame: o.in, write, replace: o.replace }), where), { live, background: live && ctx.session })
         const strokes = d.parts.filter((p) => p.kind === 'stroke'), length = strokes.reduce((n, p) => n + p.points.reduce((m, q, i, a) => m + (i ? Math.hypot(q[0] - a[i - 1][0], q[1] - a[i - 1][1]) : 0), 0), 0)
         const frame = [done.result].flat()[0] as string
-        await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: `svg ${args[0]}`, diff: done.diff })
+        await log({ board: boardKey, op: done.op, at: new Date().toISOString(), name: o.name, command: `draw ${args[0]}`, diff: done.diff })
         const f = store.get(frame) ?? null
         return out(jsonLines({
           op: done.op, frame, ...(f ? { at: `${Math.round((f as { x: number }).x)},${Math.round((f as { y: number }).y)}` } : {}), size: `${d.w}x${d.h}`,

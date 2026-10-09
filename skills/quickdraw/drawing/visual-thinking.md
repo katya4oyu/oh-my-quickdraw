@@ -58,14 +58,14 @@ Look the relation up in `patterns.md` and use its shape and its units (SVG skele
 Positions, as numbers:
 
 1. Plan the drawing in its own coordinates (the SVG's `viewBox`): where each part goes (the offsets in `patterns.md`), sizes included — each box big enough for its words (`SKILL.md`, Drawing: a letter's width), a diamond or an ellipse about half as wide again as a box for the same words.
-2. Write it as one SVG, a unit of thought per `<g>` in reading order — the question, then its options, then the arrows and what was chosen — and draw it with `omq svg` (in a joined session it goes in your `area`, else in free space; `--at X,Y` puts it elsewhere). People see it drawn a unit at a time.
-3. Read the `hits` it prints (words past their box, words on words, a line through words) and fix the SVG: `omq svg FILE --replace FRAME_ID` redraws only what changed.
+2. Write it as one SVG, a unit of thought per `<g>` in reading order — the question, then its options, then the arrows and what was chosen — and draw it with `omq draw` (in a joined session it goes in your `area`, else in free space; `--at X,Y` puts it elsewhere). People see it drawn a unit at a time.
+3. Read the `hits` it prints (words past their box, words on words, a line through words) and fix the SVG: `omq draw FILE --replace FRAME_ID` redraws only what changed.
 
 ## 4. Check
 
 Once a drawing is done (not after every step):
 
-1. `hits` (from `omq svg`) are fixed. An overlap you meant (a Venn) can stay.
+1. `hits` (from `omq draw`) are fixed. An overlap you meant (a Venn) can stay.
 2. `omq look --frame FRAME_ID`: a small picture of it as drawn. Go through it with these questions, and fix what fails:
    - Can the theme be read in three seconds?
    - Does the eye know where to start and where to go next?
