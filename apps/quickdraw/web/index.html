@@ -36,11 +36,18 @@
     .menu button:hover { background: var(--line); }
     h2 { font-size: 15px; color: var(--muted); font-weight: 500; margin: 32px 0 4px; }
     .error { color: #c92a2a; font-size: 14px; }
+    header { display: flex; align-items: baseline; gap: 16px; margin: 0 0 20px; }
+    header h1 { margin: 0; }
+    header a { color: var(--accent); font-size: 14px; text-decoration: none; }
+    .tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 40px 8px 12px; }
+    .tag { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+    .tag:hover, .tag.on { color: var(--accent); border-color: var(--accent); }
+    #filter { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
   </style>
 </head>
 <body>
   <main>
-    <h1>Boards</h1>
+    <header><h1>Boards</h1><a href="/graph">Graph</a></header>
     <form id="new">
       <input name="title" placeholder="New board title" aria-label="New board title" autocomplete="off" />
       <button>Create</button>
@@ -48,6 +55,7 @@
     <div class="tools">
       <button class="plain" id="from-file" type="button">New from a JSON file…</button>
       <input id="file" type="file" accept="application/json,.json" hidden />
+      <span id="filter" hidden></span>
       <span class="error" id="error"></span>
     </div>
     <ul id="boards"></ul>
@@ -59,7 +67,7 @@
   </main>
   <script type="module">
     // The boards on this server: open, make (empty, from a JSON file, as a
-    // copy), rename, archive and bring back. Boards save themselves as they change.
+    // copy), rename, tag, archive and bring back; find them by tag. Boards save themselves as they change.
     const $ = (id) => document.getElementById(id)
     const el = (tag, props = {}, ...children) => { const e = Object.assign(document.createElement(tag), props); e.append(...children); return e }
     const api = async (method, path, body) => {
@@ -70,6 +78,9 @@
     }
     const fail = (e) => { $('error').textContent = e.message }
     const open = (b) => { location.href = '/b/' + b.id }
+    let tag = new URLSearchParams(location.search).get('tag') // the boards with this tag only
+    const filterBy = (t) => { tag = t; history.replaceState(null, '', t ? '?tag=' + encodeURIComponent(t) : location.pathname); show() }
+    const tagsOf = (b) => b.tags ?? []
 
     function row(b, archived) {
       const meta = [b.agents ? `✦ ${b.agents === 1 ? 'AI' : b.agents + ' AIs'} here` : '', new Date(b.createdAt).toLocaleDateString()].filter(Boolean).join(' · ')
@@ -82,18 +93,23 @@
         ? [['Bring back', () => api('PATCH', '/api/boards/' + b.id, { archived: false }).then(show, fail)]]
         : [
             ['Rename…', () => { const t = prompt('Board title', b.title); if (t != null) api('PATCH', '/api/boards/' + b.id, { title: t }).then(show, fail) }],
+            ['Tags…', () => { const t = prompt('Tags, separated by commas', tagsOf(b).join(', ')); if (t != null) api('PATCH', '/api/boards/' + b.id, { tags: t.split(',') }).then(show, fail) }],
             ['Duplicate', () => api('POST', '/api/boards', { from: b.id }).then(show, fail)],
             ['Archive', () => api('PATCH', '/api/boards/' + b.id, { archived: true }).then(show, fail)],
           ]
+      const tags = tagsOf(b).length ? el('span', { className: 'tags' }, ...tagsOf(b).map((t) => el('button', { type: 'button', className: 'tag' + (tag && t.toLowerCase() === tag.toLowerCase() ? ' on' : ''), textContent: t, title: 'Boards tagged ' + t, onclick: () => filterBy(t) }))) : ''
       const menu = el('div', { className: 'menu' }, ...actions.map(([label, run]) => el('button', { type: 'button', textContent: label, onclick: (e) => { e.target.closest('details').open = false; run() } })))
-      return el('li', {}, link, el('details', {}, el('summary', { textContent: '…', title: 'More' }), menu))
+      return el('li', {}, link, tags, el('details', {}, el('summary', { textContent: '…', title: 'More' }), menu))
     }
 
     async function show() {
       $('error').textContent = ''
-      const [boards, archived] = await Promise.all([api('GET', '/api/boards'), api('GET', '/api/boards?archived=1')])
+      const q = tag ? '?tag=' + encodeURIComponent(tag) : ''
+      const [boards, archived] = await Promise.all([api('GET', '/api/boards' + q), api('GET', '/api/boards?archived=1' + (tag ? '&tag=' + encodeURIComponent(tag) : ''))])
+      $('filter').hidden = !tag
+      if (tag) $('filter').replaceChildren(el('span', { textContent: 'Tagged ' + tag }), el('button', { type: 'button', className: 'plain', textContent: 'Show all', onclick: () => filterBy(null) }))
       $('boards').replaceChildren(...boards.toReversed().map((b) => row(b)))
-      if (!boards.length) $('boards').append(el('li', { className: 'empty', textContent: 'No boards yet.' }))
+      if (!boards.length) $('boards').append(el('li', { className: 'empty', textContent: tag ? 'No boards with this tag.' : 'No boards yet.' }))
       $('archived-boards').replaceChildren(...archived.map((b) => row(b, true)))
       if (!archived.length) $('archived').hidden = true
       $('show-archived').hidden = !archived.length
