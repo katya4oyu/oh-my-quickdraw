@@ -37,6 +37,7 @@ Add a package only when a concrete extension or example is ready to be named; th
 | [`quickdraw-export`](packages/quickdraw-export) | Board or selection as a JSON file | No | — |
 | [`quickdraw-import`](packages/quickdraw-import) | Validated JSON import | No | — |
 | [`quickdraw-frames`](packages/quickdraw-frames) | Frames: membership, aspect ratios, content export | No | — |
+| [`quickdraw-groups`](packages/quickdraw-groups) | Groups: shapes selected and moved as one (Cmd/Ctrl+G); a drawing's top-level `<g>` is one | No | `quickdraw-frames` |
 | [`quickdraw-layouts`](packages/quickdraw-layouts) | Layouts that keep themselves: a bento grid of frames that packs itself again as cells change | No | `quickdraw-frames` |
 | [`quickdraw-markdown`](packages/quickdraw-markdown) | Markdown cards drawn on the canvas | **Yes** — `registerShapeType` ([katya4oyu/quickdraw#2](https://github.com/katya4oyu/quickdraw/pull/2)) | — |
 | [`quickdraw-agent`](packages/quickdraw-agent) | What agents can do on a board: reading, undoable operations, and the same as tools for any agent runtime | No (Markdown cards need the fork, like `quickdraw-markdown`) | `quickdraw-frames`, `quickdraw-layouts`, `quickdraw-markdown`, `quickdraw-embed`, `quickdraw-tickets`, `quickdraw-boards` |

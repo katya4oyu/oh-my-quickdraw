@@ -1,0 +1,22 @@
+{
+  "name": "quickdraw-groups",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Groups for Quickdraw: shapes that are selected and moved as one, built from plain records with no core change.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  },
+  "license": "MIT"
+}

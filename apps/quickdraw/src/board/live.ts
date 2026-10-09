@@ -8,6 +8,7 @@
 // drawing still going on can be stopped (undo does, first).
 import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
+import { bindGroups } from 'quickdraw-groups'
 import { bindLayouts, settled } from 'quickdraw-layouts'
 
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
@@ -18,6 +19,7 @@ export function copyOf(store: StoreType): StoreType {
   const copy = new Store()
   copy.loadSnapshot({ document: { store: Object.fromEntries(store.all().map((r) => [r.id, structuredClone(r)])) } })
   bindFrames(copy)
+  bindGroups(copy)
   bindLayouts(copy)
   return copy
 }

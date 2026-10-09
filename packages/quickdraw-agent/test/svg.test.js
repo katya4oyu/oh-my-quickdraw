@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Store, pageBounds } from '@quickdrawjs/core'
 import { bindFrames } from 'quickdraw-frames'
+import { bindGroups } from 'quickdraw-groups'
 import { applySteps, BOARD_TOOLS, boardToMarkdown, describeBoard, installMeasure, undoDiff } from '../src/index.js'
 
 installMeasure() // Node has no canvas to measure text with
@@ -10,6 +11,42 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><titl
   <rect x="20" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="30" y="85" font-size="16">Page</text>
   <rect x="260" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="270" y="85" font-size="16">Relay</text>
   <line x1="140" y1="80" x2="260" y2="80" stroke="#1d1d1d" marker-end="url(#a)"/></svg>`
+
+const grouped = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><title>Two ideas</title>
+  <g id="ask"><rect x="20" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="30" y="85" font-size="16">Ask</text></g>
+  <g id="make"><rect x="260" y="40" width="120" height="80" fill="none" stroke="#4263eb"/><text x="270" y="85" font-size="16">Make</text></g></svg>`
+
+describe('a top-level <g> of an SVG is a group', () => {
+  it('its strokes and words are selected and moved as one, named by its id; read says so', () => {
+    const store = board(); bindGroups(store)
+    const { result: [[frame, ...parts]] } = applySteps(store, 'C', [{ do: 'svg', svg: grouped, at: [0, 0] }])
+    const gs = describeBoard(store).groups
+    expect(gs.map((g) => [g.name, g.members.length])).toEqual([['ask', 2], ['make', 2]])
+    expect(store.get(parts[0]).groupId).toBe(`group:${frame}:ask`)
+    const x = store.get(parts[2]).x
+    store.update(parts[0], { x: store.get(parts[0]).x + 50 }) // one stroke of "ask" moved
+    expect(store.get(parts[1]).x).toBe(store.get(parts[1]).x) // its word followed
+    expect(store.get(parts[2]).x).toBe(x) // "make" stayed
+    expect(boardToMarkdown(store)).toContain('## Groups')
+  })
+
+  it('stays a group when the drawing is drawn again', () => {
+    const store = board(); bindGroups(store)
+    const { result: [[frame]] } = applySteps(store, 'C', [{ do: 'svg', svg: grouped, at: [0, 0] }])
+    applySteps(store, 'C', [{ do: 'svg', svg: grouped.replace('>Make<', '>Build<'), replace: frame }])
+    expect(describeBoard(store).groups.map((g) => [g.id, g.members.length])).toEqual([[`group:${frame}:ask`, 2], [`group:${frame}:make`, 2]])
+  })
+})
+
+describe('group and ungroup', () => {
+  it('group notes, then ungroup them', () => {
+    const store = board(); bindGroups(store)
+    const { result: [a, b, g] } = applySteps(store, 'C', [{ do: 'note', text: 'a' }, { do: 'note', text: 'b' }, { do: 'group', ids: ['@a', '@b'], name: 'pair' }].map((s, i) => (i < 2 ? { ...s, ref: 'ab'[i] } : s)))
+    expect(describeBoard(store).groups).toEqual([{ id: g, name: 'pair', members: [a, b] }])
+    applySteps(store, 'C', [{ do: 'ungroup', id: a }])
+    expect(describeBoard(store).groups).toBeUndefined()
+  })
+})
 
 describe('an SVG drawn again', () => {
   it('keeps the SVG\'s order: a fill drawn again stays under what follows it', () => {
