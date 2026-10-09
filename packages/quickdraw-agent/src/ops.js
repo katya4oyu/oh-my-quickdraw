@@ -4,6 +4,7 @@
 // Shapes the agent adds carry `agent: { name, op }`; it may move and edit
 // anything, but delete only what an agent added.
 import { newId, pageBounds, scaleShape, COLOR_IDS, GEO_IDS, SIZE_IDS, DASH_IDS, FILL_IDS, FONT_SIZES } from '@quickdrawjs/core'
+import { groupable, groups as boardGroups, groupShapes, ungroup } from 'quickdraw-groups'
 import { createFrame, frameTitle, freeSpot, inFrame, isFrame, renameFrame } from 'quickdraw-frames'
 export { freeSpot } // free space for something, by where it is wanted (quickdraw-frames)
 import { createMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
@@ -91,6 +92,7 @@ export function describeBoard(store) {
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
     ...(s.svg?.el ? { svg: s.svg.el } : {}), // the SVG element it was drawn from
+    ...(s.groupId ? { group: s.groupId } : {}),
     // who made it (an agent, or a person whose page marked it), and who changed it last if not them
     ...((s.made?.by ?? s.agent?.name) ? { by: s.made?.by ?? s.agent.name } : {}),
     ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
@@ -103,12 +105,13 @@ export function describeBoard(store) {
     const label = labels.get(s.id)
     return { id: s.id, type: s.type, ...(from ? { from: from.id } : {}), ...(to ? { to: to.id } : {}), ...(label ? { label: label.props.text, label_id: label.id } : {}) }
   })
-  return { ...(layouts.length ? { layouts } : {}), frames, items, arrows }
+  const grouped = boardGroups(store).map((g) => ({ ...g, ...(store.get(g.members[0])?.frameId ? { frame: store.get(g.members[0]).frameId } : {}) }))
+  return { ...(layouts.length ? { layouts } : {}), frames, items, arrows, ...(grouped.length ? { groups: grouped } : {}) }
 }
 
 // The board as a Markdown outline, for reading and summarizing.
 export function boardToMarkdown(store) {
-  const { layouts = [], frames, items, arrows } = describeBoard(store)
+  const { layouts = [], frames, items, arrows, groups = [] } = describeBoard(store)
   const byId = new Map(items.map((it) => [it.id, it]))
   const line = (it) => {
     const text = String(it.text ?? '').trim()
@@ -161,6 +164,15 @@ export function boardToMarkdown(store) {
   if (links.length) {
     const name = (id) => (String(byId.get(id)?.text ?? '').split('\n')[0].slice(0, 40) || id)
     out.push('## Connections', '', ...links.map((a) => `- ${name(a.from)} → ${name(a.to)}${a.label ? ` ("${a.label.replace(/\s*\n\s*/g, ' / ')}", arrow ${a.id})` : ''}`), '')
+  }
+  if (groups.length) {
+    const byId = new Map(items.map((i) => [i.id, i]))
+    out.push('## Groups', '', 'Selected and moved as one: `omq ungroup ID` takes one apart.', '')
+    for (const g of groups) {
+      const words = g.members.map((m) => byId.get(m)?.text).filter(Boolean).slice(0, 6).map((t) => String(t).split('\n')[0].slice(0, 30))
+      out.push(`- ${g.name ? `${g.name} ` : ''}(${g.id}): ${g.members.length} shapes${words.length ? ` — ${words.join(', ')}` : ''}`)
+    }
+    out.push('')
   }
   if (!frames.length && !items.length) out.push('(empty board)', '')
   return out.join('\n')
@@ -718,8 +730,31 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       })
       const gone = [...kept.values()].flat()
       if (gone.length) store.remove(gone) // what the new SVG no longer draws so
+      // a top-level <g> is a group (by its id, else g1, g2…): its members are selected and moved as one
+      const made = new Map()
+      d.parts.forEach((p, i) => { const g = d.groups[p.unit]; if (g) made.set(g, [...(made.get(g) ?? []), ids[i]]) })
+      const inGroup = new Map([...made].filter(([, m]) => m.length > 1).flatMap(([g, m]) => m.map((id) => [id, g])))
+      for (const id of ids) {
+        const s = store.get(id), g = inGroup.get(id), gid = g && `group:${frame}:${g}`
+        if (!s || (s.groupId ?? null) === (gid ?? null)) continue
+        if (gid) store.update(id, { groupId: gid, groupSelf: id, groupName: g })
+        else if (String(s.groupId).startsWith(`group:${frame}:`)) { const { groupId, groupName, groupSelf, ...rest } = s; store.put(rest) }
+      }
       focus = o
       return [frame, ...ids]
+    },
+    // shapes selected and moved as one: a group of two or more (not frames), with a name if you give one.
+    // Returns the group's id (ungroup takes it, or the id of a member)
+    group(ids, { name } = {}) {
+      const list = ids.map(need)
+      for (const s of list) if (!groupable(s)) throw new Error(`${s.id} (${s.type}) cannot be in a group: frames, their titles and arrows' labels cannot`)
+      const id = groupShapes(store, ids, { name })
+      focus = { x: Math.min(...list.map((s) => s.x)), y: Math.min(...list.map((s) => s.y)) }
+      return id
+    },
+    ungroup(idOrGroup) {
+      need(store.get(idOrGroup) ? idOrGroup : (boardGroups(store).find((g) => g.id === idOrGroup)?.members[0] ?? idOrGroup))
+      return ungroup(store, idOrGroup)
     },
     // Lays frames out close together, in reading order, in rows from `at` (by
     // default where the first of them is) no wider than `width`: a board that
@@ -935,6 +970,8 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize, fromAt: at(pointOf(s.from_at, 'from_at')), toAt: at(pointOf(s.to_at, 'to_at')) }); break
+        case 'group': out = ops.group((s.ids ?? []).map(r), { name: s.name }); break
+        case 'ungroup': out = ops.ungroup(r(s.id ?? s.group)); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
@@ -974,7 +1011,7 @@ const UNIT_RULES = {
   frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
   image: (s) => (s.w == null ? 'give its width, w' : null),
   embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
-  pen: () => null, update: () => null, move: () => null, delete: () => null,
+  pen: () => null, group: () => null, ungroup: () => null, update: () => null, move: () => null, delete: () => null,
 }
 const needsAt = (s) => PLACES.has(s.do) && !(s.do === 'frame' && s.around?.length) && !(s.do === 'frame' && s.in) // a frame around shapes, or a bento cell: placed by what it holds
 

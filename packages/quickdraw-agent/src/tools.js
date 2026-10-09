@@ -118,10 +118,14 @@ export const BOARD_TOOLS = [
   step('tidy_frames', 'tidy', 'Gathers frames close together in reading order, in rows (about `width` wide) from `at` or where the first one is: for a board that has spread out, or when asked to tidy up. Each frame brings what is in it and its title; a kanban\'s columns stay together; what is in no frame stays put. By default all the frames.', {
     ids: ids('frames to lay out (default: all)'), at: point, gap: num, width: { type: 'number', description: 'how wide a row may get (default 2400)' },
   }),
+  step('group_shapes', 'group', 'Groups two or more shapes (notes, cards, images, pen strokes; not frames) so people select and move them as one, and moving one moves the rest. `name` says what they are. A drawing from draw_svg already has a group for each top-level <g>. Gives back the group\'s id.', {
+    ids: ids('the shapes to group'), name: str('what the group is, a few words'),
+  }, ['ids']),
+  step('ungroup_shapes', 'ungroup', 'Takes a group apart (its id, or the id of a member): its shapes stay where they are.', { id: str('a group\'s id, or a member\'s') }, ['id']),
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
-    description: 'Changes what is there, as one step: `steps` [{ do: update|move|arrange|fit|tidy|status|delete|frame (around shapes), …the fields of that step }]. Shapes, words and arrows are drawn as an SVG with draw_svg, not here. '
+    description: 'Changes what is there, as one step: `steps` [{ do: update|move|group|ungroup|arrange|fit|tidy|status|delete|frame (around shapes), …the fields of that step }]. Shapes, words and arrows are drawn as an SVG with draw_svg, not here. '
       + 'Or a unit that puts frames, images, embeds and pen strokes exactly where written: `items` with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left), every size a number; it gives back `placed` (each item\'s id, at, size, whether it lies inside the frame). '
       + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one.',
     inputSchema: object({

@@ -13,6 +13,7 @@ installMeasure() // before the core lays out any text
 
 const { Store } = await import('@quickdrawjs/core')
 const { bindFrames } = await import('quickdraw-frames')
+const { bindGroups } = await import('quickdraw-groups')
 const { bindLayouts } = await import('quickdraw-layouts')
 const { registerMarkdown } = await import('quickdraw-markdown')
 const { registerEmbed } = await import('quickdraw-embed')
@@ -53,6 +54,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     const relay = await connectRelay(ydoc, url, { name, color })
     bindYjs(store, ydoc) // the doc already holds the board: the store loads it
     bindFrames(store)
+    bindGroups(store)
     bindLayouts(store)
     bindKanban(store)
     const { bindMembers } = await import('quickdraw-members')
@@ -69,6 +71,7 @@ export async function openBoard({ url, file, name = 'Agent', color }: BoardSourc
     : data ? [...(data.shapes || []), ...Object.values(data.assets || {})] : [] // quickdraw-export's format
   store.loadSnapshot({ document: { store: Object.fromEntries(records.map((r) => [r.id, r])) } })
   bindFrames(store)
+  bindGroups(store)
   bindLayouts(store)
   bindKanban(store)
   return {

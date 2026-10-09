@@ -89,6 +89,9 @@ Writing (each command is one operation, undoable as a whole)
   update ID [--text TEXT] [--color C] [--size WxH] [--text-size S] [--font-size PX] [--dash D] [--fill F] [--bend N] [--label TEXT]
                                           --size: a shape's size (not a frame's; a cell: span);
                                           --label "": takes an arrow's label off
+  group ID,ID,… [--as TEXT]                 shapes selected and moved as one (not frames); moving one moves the
+                                          rest. A drawing's top-level <g> is a group already. Prints the group's id
+  ungroup ID                                takes a group apart (its id, or a member's); the shapes stay where they are
   move ID (--to X,Y | --by DX,DY)
   arrange ID,ID,… [--layout grid|row|column] [--cols N] [--gap N] [--at X,Y]   frames count with their titles
   fit FRAME [ID,…]                          shrinks the frame's contents and the shapes named, together,
@@ -257,7 +260,7 @@ async function exportPng(store: Store, o: Options): Promise<string[]> {
 }
 
 const OPTIONS = {
-  board: { type: 'string' }, file: { type: 'string' }, server: { type: 'string' }, name: { type: 'string', default: 'Agent' },
+  board: { type: 'string' }, file: { type: 'string' }, server: { type: 'string' }, name: { type: 'string', default: 'Agent' }, as: { type: 'string' },
   format: { type: 'string' }, out: { type: 'string' }, color: { type: 'string' }, in: { type: 'string' },
   at: { type: 'string' }, size: { type: 'string' }, aspect: { type: 'string' }, around: { type: 'string' },
   text: { type: 'string' }, to: { type: 'string' }, by: { type: 'string' }, layout: { type: 'string' },
@@ -276,7 +279,7 @@ const OPTIONS = {
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'graph', 'tag', 'archive', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'graph', 'tag', 'archive', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'group', 'ungroup', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -542,6 +545,11 @@ export async function runCommand(ctx: CommandContext, argv: string[], out: (s: s
         done = await op((ops) => ops.columns(args[0], Number(args[1] ?? o.cols))); break
       case 'update':
         done = await op((ops) => ops.update(args[0], { text: o.text, color, ...(size ? { w: size[0], h: size[1] } : {}), ...style, fontSize: o['font-size'] == null ? undefined : Number(o['font-size']), bend, label: o.label })); break
+      case 'group':
+        done = await op((ops) => ops.group(args.join(',').split(',').filter(Boolean), { name: o.as })); break
+      case 'ungroup':
+        if (!args[0]) throw new Error('ungroup needs a group id, or the id of a member')
+        done = await op((ops) => ops.ungroup(args[0])); break
       case 'move': {
         const to = point(o.to), by = pair(o.by, 'offset')
         done = await op((ops) => ops.move(args[0], to ?? { dx: by?.[0] ?? 0, dy: by?.[1] ?? 0 })); break

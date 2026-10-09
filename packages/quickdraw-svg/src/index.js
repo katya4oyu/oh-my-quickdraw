@@ -129,7 +129,7 @@ const decls = (s) => Object.fromEntries(String(s ?? '').split(';').map((d) => { 
 
 /**
  * Reads an SVG into what to draw. Positions are the SVG's own (its viewBox's
- * top-left is 0, 0). Returns { w, h, title, units: [name], parts, dropped }
+ * top-left is 0, 0). Returns { w, h, title, units: [name], groups: [a top-level <g>'s name, else null, per unit], parts, dropped }
  * where each part is
  *   { kind: 'stroke', el, unit, points: [[x, y], …], color, size }
  *   { kind: 'text', el, unit, text, at: [x, y] (top-left), fontSize, color, w?, align? }
@@ -216,7 +216,7 @@ export function readSvg(source) {
   const units = []
   let depth = 0, group = null
   for (const r of recs) {
-    if (r.open) { if (depth++ === 0) { group = { name: r.open, recs: [] }; units.push(group) } continue }
+    if (r.open) { if (depth++ === 0) { group = { name: r.open, recs: [], g: true }; units.push(group) } continue }
     if (r.close) { if (--depth === 0) group = null; continue }
     if (isPage(r)) continue
     if (group) { group.recs.push(r); continue }
@@ -285,7 +285,7 @@ export function readSvg(source) {
   })
   for (const p of parts) p.sig = signature(p)
   const boxes = recs.filter((r) => r.box && !isPage(r) && r.tag === 'rect').map((r) => ({ el: r.el, x: r.box[0], y: r.box[1], w: r.box[2], h: r.box[3] }))
-  return { w: W, h: H, title, dark, units: units.map((u) => u.name), parts, dropped, hits: hitsOf(parts, boxes) }
+  return { w: W, h: H, title, dark, units: units.map((u) => u.name), groups: units.map((u) => (u.g ? u.name : null)), parts, dropped, hits: hitsOf(parts, boxes) }
 }
 
 // what a part is, as drawn: the same element drawn the same way has the same signature

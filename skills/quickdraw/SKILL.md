@@ -70,6 +70,7 @@ omq frame "Sprint 12" [--aspect 16:9] [--around ID,ID]   # --around encloses exi
 omq frame "Later" --size 800x500 [--at X,Y]      # a frame of a given size, empty
 omq frame "Step 1" --size 400x300 --in FRAME_ID   # a frame in a frame (frames nest; --around takes in frames too)
                                                         # --title-inside: its title inside its top-left corner, not above
+omq group ID,ID,… [--as "name"]                # shapes people select and move as one (notes, cards, pen strokes; not frames); ungroup ID takes it apart
 omq board-card BOARD_ID [--live]                  # another board in this one: a card (its picture, Open), --live a window onto it
                                                         # read lists the boards on cards: title, frames, how much is in them
 ```
@@ -87,7 +88,7 @@ omq draw --show FRAME_ID > drawing.svg     # the SVG a drawing was drawn from (t
 Write the SVG so it draws well:
 
 - `viewBox="0 0 W H"` in px (up to about 1400 wide); its `<title>` is the drawing's frame title.
-- **In reading order, a unit of thought per top-level `<g>`** — a question; then its options and the arrows to them; then what was chosen. It is drawn in that order, so people see the thinking grow.
+- **In reading order, a unit of thought per top-level `<g>`** (each `<g>` becomes a group too: people select and move it as one, and `read` lists it by its `id`, so give it a name) — a question; then its options and the arrows to them; then what was chosen. It is drawn in that order, so people see the thinking grow.
 - Shapes: `rect` (`rx` rounds it), `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`. Their outline is drawn: give `stroke` and `fill="none"` (a fill is not drawn; a shape with only a fill gets its outline in that colour). `stroke-width`: 1.5 thin, 3 normal, 5 bold.
 - An arrow: a `line` or `path` with `marker-end` (any marker; the board draws the head). Its ends a few px off the shapes it joins; plan them so arrows do not cross each other or run over shapes.
 - Words: `<text x y font-size fill>` — `y` is the baseline; `text-anchor="middle"` centres it on `x`. One line per `text` (or `<tspan x="…" dy="…">` per line). Sizes: a title 34, a heading 22, a box's name 16, a detail or the word on an arrow 12–13. The board's letters are hand-drawn and wide: a Latin letter about 0.56 × `font-size`, a CJK character 1 ×; leave room.
@@ -117,7 +118,7 @@ One SVG is one drawing (one frame). A drawing that grows over time (a meeting, a
 
 To change a drawing: `omq draw --show FRAME_ID > d.svg`, edit it, `omq draw d.svg --replace FRAME_ID`. What people drew in it stays.
 
-`apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
+`apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `group`, `ungroup`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 
 ## Change and tidy
 

@@ -31,7 +31,7 @@ import { accept, BINARY, CLOSE, frame, PING, PONG, reader } from './websocket.ts
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' }
 
 // what the page imports, served at /_/<name>/src/…
-const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-layouts', 'quickdraw-tickets', 'quickdraw-members', 'quickdraw-comments', 'quickdraw-gif', 'quickdraw-clipboard', 'quickdraw-boards', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice', 'quickdraw-svg']
+const PACKAGES = ['@quickdrawjs/core', 'quickdraw-agent', 'quickdraw-yjs', 'quickdraw-export', 'quickdraw-import', 'quickdraw-frames', 'quickdraw-groups', 'quickdraw-layouts', 'quickdraw-tickets', 'quickdraw-members', 'quickdraw-comments', 'quickdraw-gif', 'quickdraw-clipboard', 'quickdraw-boards', 'quickdraw-markdown', 'quickdraw-embed', 'quickdraw-toolbar', 'quickdraw-screenshare', 'quickdraw-presence', 'quickdraw-voice', 'quickdraw-svg']
 
 function packageRoot(name: string): string {
   let dir = dirname(createRequire(import.meta.url).resolve(name))

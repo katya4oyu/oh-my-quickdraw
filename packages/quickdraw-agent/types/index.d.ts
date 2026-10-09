@@ -45,6 +45,8 @@ export interface Operations {
   /** `bend`: how far its middle bows out (+ right as it goes, - left); `label`: a text by its middle that follows it (its `textSize`, s by default) */
   /** fromAt, toAt: where its ends are, page points at the edges of the two shapes it joins (as written; they stay at those spots on the shapes) */
   arrow(from: string | Point, to: string | Point, opts?: { color?: ColorId, line?: boolean, dash?: Dash, bend?: number, label?: string, textSize?: TextSize, fromAt?: Point, toAt?: Point }): string
+  group(ids: string[], opts?: { name?: string }): string
+  ungroup(idOrGroup: string): string[]
   /** `w`, `h`: a shape's size (rectangles, diamonds…; not frames); `label`: an arrow's ('' takes it off) */
   update(id: string, change: { text?: string, color?: ColorId, w?: number, h?: number, textSize?: TextSize, fontSize?: number, dash?: Dash, fill?: Fill, bend?: number, label?: string }): string
   move(id: string, to: { x?: number, y?: number, dx?: number, dy?: number }): string
