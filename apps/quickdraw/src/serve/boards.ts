@@ -4,13 +4,19 @@
 // A board is saved as it changes; besides that it can be renamed, archived
 // (hidden from the list, kept), copied, made from a JSON file, and keep
 // versions: whole-board snapshots, made by hand or before an AI request, that
-// can be restored over it or opened as a board of their own.
+// can be restored over it or opened as a board of their own. Boards have tags
+// (to group and find them), and link to the boards their cards show
+// (quickdraw-boards): together, a graph of the boards.
 import { randomBytes } from 'node:crypto'
 import { existsSync, renameSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import * as Y from 'yjs'
 
-export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string, thumbnailAt?: string }
+export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string, thumbnailAt?: string, tags?: string[] }
+/** the boards and how they hang together: a board's cards for other boards (links), and its tags */
+/** a link from a board to another: it shows it on a card (quickdraw-boards), or names it (its page URL, …/b/ID, in a note, a text, a link card, Markdown) */
+export interface BoardLink { from: string, to: string, kind: 'card' | 'mention' }
+export interface BoardGraph { boards: BoardInfo[], links: BoardLink[] }
 export interface Thumbnail { data: Uint8Array, type: string, at: string }
 export interface VersionInfo { id: number, name: string, at: string, auto: boolean }
 type Rec = { id: string } & Record<string, unknown>
@@ -26,6 +32,12 @@ export interface Boards {
   duplicate(id: string, title?: string): BoardInfo
   rename(id: string, title: string): BoardInfo
   archive(id: string, archived: boolean): BoardInfo
+  /** its tags, as given (trimmed, without #, each once whatever its case; up to 20 of 40 characters) */
+  setTags(id: string, tags: string[]): BoardInfo
+  /** the boards a board shows on cards (quickdraw-boards) and names by their page URL, read from what it holds now */
+  links(id: string): { to: string, kind: 'card' | 'mention' }[]
+  /** every board (archived ones too) and the links between them */
+  graph(): BoardGraph
   state(id: string): Uint8Array
   append(id: string, update: Uint8Array): void
   /** keeps the board as it is now; automatic versions beyond the last 20 are let go */
@@ -62,7 +74,8 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
   `)
   const columns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
   if (!columns.includes('archived_at')) db.exec('ALTER TABLE boards ADD COLUMN archived_at TEXT')
-  const COLS = 'id, title, created_at AS createdAt, archived_at AS archivedAt, (SELECT at FROM thumbnails WHERE board = boards.id) AS thumbnailAt'
+  if (!columns.includes('tags')) db.exec('ALTER TABLE boards ADD COLUMN tags TEXT')
+  const COLS = 'id, title, created_at AS createdAt, archived_at AS archivedAt, tags, (SELECT at FROM thumbnails WHERE board = boards.id) AS thumbnailAt'
   const listQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NULL ORDER BY created_at, id`)
   const listArchivedQ = db.prepare(`SELECT ${COLS} FROM boards WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, id`)
   const getQ = db.prepare(`SELECT ${COLS} FROM boards WHERE id = ?`)
@@ -70,6 +83,8 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
   const thumbQ = db.prepare('SELECT data, type, at FROM thumbnails WHERE board = ?')
   const renameQ = db.prepare('UPDATE boards SET title = ? WHERE id = ?')
   const archiveQ = db.prepare('UPDATE boards SET archived_at = ? WHERE id = ?')
+  const tagsQ = db.prepare('UPDATE boards SET tags = ? WHERE id = ?')
+  const lastSeqQ = db.prepare('SELECT max(seq) AS seq FROM updates WHERE board = ?')
   const saveQ = db.prepare('INSERT INTO versions (board, name, at, auto, state) VALUES (?, ?, ?, ?, ?)')
   const versionsQ = db.prepare('SELECT id, name, at, auto FROM versions WHERE board = ? ORDER BY id DESC')
   const versionQ = db.prepare('SELECT state FROM versions WHERE board = ? AND id = ?')
@@ -102,8 +117,14 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
     } catch (e) { if (!inTx) db.exec('ROLLBACK'); throw e }
     return Y.mergeUpdates(good)
   }
-  // no null fields: archivedAt and thumbnailAt only when there are
-  const clean = (b: BoardInfo | undefined) => b && Object.fromEntries(Object.entries(b).filter(([, v]) => v != null)) as unknown as BoardInfo
+  // no null fields: archivedAt, thumbnailAt and tags only when there are
+  const clean = (b: BoardInfo | undefined) => {
+    if (!b) return b
+    const tags = typeof b.tags === 'string' ? JSON.parse(b.tags) as string[] : []
+    return Object.fromEntries(Object.entries({ ...b, tags: tags.length ? tags : null }).filter(([, v]) => v != null)) as unknown as BoardInfo
+  }
+  // the links of a board as of its last update, kept until it changes
+  const linked = new Map<string, { seq: number | null, to: { to: string, kind: 'card' | 'mention' }[] }>()
   const need = (id: string) => {
     const b = boards.get(id)
     if (!b) throw new Error('no such board')
@@ -155,6 +176,36 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
       need(id)
       archiveQ.run(archived ? new Date().toISOString() : null, id)
       return need(id)
+    },
+    setTags(id, tags) {
+      need(id)
+      const seen = new Set<string>(), keep: string[] = []
+      for (const t of tags) {
+        const tag = String(t).replace(/^#+/, '').replace(/\s+/g, ' ').trim().slice(0, 40)
+        if (tag && !seen.has(tag.toLowerCase())) { seen.add(tag.toLowerCase()); keep.push(tag) }
+      }
+      tagsQ.run(keep.length ? JSON.stringify(keep.slice(0, 20)) : null, id)
+      return need(id)
+    },
+    links(id) {
+      need(id)
+      const seq = (lastSeqQ.get(id) as { seq: number | null }).seq
+      const hit = linked.get(id)
+      if (hit && hit.seq === seq) return hit.to
+      const cards = new Set<string>(), named = new Set<string>()
+      if (seq != null) for (const r of Object.values(recordsOf(state(id)))) {
+        if (r.type === 'boardcard' && typeof (r.props as { board?: unknown })?.board === 'string') { cards.add((r.props as { board: string }).board); continue }
+        // a board named by its page URL anywhere in what a shape holds (a note, a text, a link card, Markdown)
+        if (r.typeName === 'shape') for (const m of JSON.stringify(r.props ?? {}).matchAll(/\/b\/([a-z0-9]{4,32})(?![a-z0-9])/g)) named.add(m[1])
+      }
+      const to = [...[...cards].map((b) => ({ to: b, kind: 'card' as const })), ...[...named].filter((b) => !cards.has(b)).map((b) => ({ to: b, kind: 'mention' as const }))].filter((l) => l.to !== id)
+      linked.set(id, { seq, to })
+      return to
+    },
+    graph() {
+      const all = [...boards.list(), ...boards.list({ archived: true })]
+      const ids = new Set(all.map((b) => b.id))
+      return { boards: all, links: all.flatMap((b) => boards.links(b.id).filter((l) => ids.has(l.to)).map((l) => ({ from: b.id, ...l }))) }
     },
     saveVersion(id, name, auto = false) {
       need(id)

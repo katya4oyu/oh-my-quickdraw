@@ -716,6 +716,40 @@ describe('managing boards', () => {
     a.close()
   })
 
+  it('tags boards, finds them by tag, and gives the graph: boards, their tags and the boards their cards show', async () => {
+    const url = await start()
+    const base = httpOf(url), id = url.split('/').pop()!
+    const other = (await send(base, 'POST', '/api/boards', { title: 'Research' })).body
+    expect((await send(base, 'PATCH', `/api/boards/${id}`, { tags: ['#Try', 'try', '  ux  research ', ''] })).body.tags).toEqual(['Try', 'ux research'])
+    expect((await send(base, 'GET', '/api/boards?tag=TRY')).body.map((b: { id: string }) => b.id)).toEqual([id])
+    // a card for the other board, on this one
+    const doc = new Y.Doc()
+    doc.getMap('quickdraw').set('shape:card', { id: 'shape:card', typeName: 'shape', type: 'boardcard', x: 0, y: 0, rot: 0, z: 1, props: { board: other.id, title: 'Research', w: 320, h: 220, live: false } })
+    // and the other board, named by its page URL in a note on it: a link of another kind
+    const third = (await send(base, 'POST', '/api/boards', { title: 'Notes' })).body
+    doc.getMap('quickdraw').set('shape:n', note('shape:n', `see ${base}/b/${third.id} for more`))
+    const a = await open(url)
+    a.send(pack(UPDATE, Y.encodeStateAsUpdate(doc)))
+    await new Promise((r) => setTimeout(r, 50))
+    await send(base, 'PATCH', `/api/boards/${other.id}`, { archived: true })
+    const g = (await send(base, 'GET', '/api/graph')).body
+    expect(g.boards.map((b: { id: string }) => b.id).sort()).toEqual([id, other.id, third.id].sort()) // archived ones too
+    expect(g.boards.find((b: { id: string }) => b.id === other.id).archivedAt).toBeTruthy()
+    expect(g.links).toEqual([{ from: id, to: other.id, kind: 'card' }, { from: id, to: third.id, kind: 'mention' }])
+    expect((await send(base, 'PATCH', `/api/boards/${id}`, { tags: [] })).body.tags).toBeUndefined()
+    // the same from the command line
+    const { main } = await import('../src/commands/index.ts')
+    const run = async (...argv: string[]) => { const out: string[] = []; await main([...argv, '--server', base], (s) => out.push(s)); return JSON.parse(out.join('\n')) }
+    expect((await run('tag', 'try,ux', '--board', id)).tags).toEqual(['try', 'ux'])
+    expect((await run('tag', 'TRY', '--remove', '--board', id)).tags).toEqual(['ux'])
+    expect((await run('boards', '--tag', 'ux')).map((b: { id: string }) => b.id)).toEqual([id])
+    expect((await run('archive', '--board', id)).archivedAt).toBeTruthy()
+    expect((await run('archive', '--back', '--board', id)).archivedAt).toBeUndefined()
+    const lines = await run('graph', '--archived')
+    expect(lines.find((b: { id: string }) => b.id === id)).toMatchObject({ shows: [`Research (${other.id})`], names: [`Notes (${third.id})`] })
+    a.close()
+  })
+
   it('keeps versions, restores one over the board for everyone on it, or opens it as a board', async () => {
     const url = await start()
     const base = httpOf(url), id = url.split('/').pop()!

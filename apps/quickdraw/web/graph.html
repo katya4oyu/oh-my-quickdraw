@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Graph — Quickdraw</title>
+  <link rel="stylesheet" href="/app.css" />
+  <style>
+    html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+    :root { --tags: 0px; }
+    body.tagged { --tags: 44px; }
+    @media (pointer: coarse) { body.tagged { --tags: 52px; } }
+    .tagbar { position: fixed; left: 0; right: 0; }
+    canvas { position: fixed; left: 0; right: 0; bottom: 0; top: calc(var(--bar) + var(--tags) + env(safe-area-inset-top)); width: 100%; height: calc(100% - var(--bar) - var(--tags) - env(safe-area-inset-top)); touch-action: none; display: block; }
+    #q { width: 220px; }
+    @media (max-width: 600px) { #q { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + var(--tags) + env(safe-area-inset-top) + 8px); width: auto; z-index: 15; box-shadow: var(--shadow); } #q.closed { display: none; } }
+    @media (min-width: 601px) { #search-toggle { display: none; } }
+    .legend { display: grid; gap: 8px; font-size: var(--t-s); color: var(--muted); }
+    .legend span { display: flex; align-items: center; gap: 10px; }
+    .legend svg { flex: none; }
+    .count { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+    /* what is picked: a card at the bottom, with what to do with it */
+    .picked { position: fixed; z-index: 12; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); width: min(560px, calc(100% - 24px)); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .picked .pic { width: 96px; aspect-ratio: 16 / 10; object-fit: contain; border-radius: 8px; background: var(--line); display: block; }
+    .picked .pic.none { display: grid; place-items: center; color: var(--muted); font-size: 10px; text-align: center; }
+    .picked .text { display: grid; gap: 4px; min-width: 0; }
+    .picked .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picked .meta { font-size: var(--t-xs); color: var(--muted); }
+    .picked .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .hint { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); font-size: var(--t-xs); color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; pointer-events: none; white-space: nowrap; }
+    .empty-state { position: fixed; inset: var(--bar) 0 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="top"></div>
+  <canvas id="c"></canvas>
+  <div class="sheet" id="filters" hidden>
+    <h2>Show</h2>
+    <label class="switch">Boards named in a board <input type="checkbox" id="mentions" checked /></label>
+    <label class="switch">Tags <input type="checkbox" id="tags" checked /></label>
+    <label class="switch">Archived boards <input type="checkbox" id="archived" /></label>
+    <span class="count" id="count"></span>
+    <h2>Lines</h2>
+    <div class="legend">
+      <span><svg width="36" height="10"><line x1="1" y1="5" x2="33" y2="5" stroke="var(--edge)" stroke-width="1.6"/><path d="M27 1 L33 5 L27 9" fill="none" stroke="var(--edge)" stroke-width="1.6"/></svg>Shows it on a card</span>
+      <span><svg width="36" height="10"><line x1="1" y1="5" x2="33" y2="5" stroke="var(--mention)" stroke-width="1.4" stroke-dasharray="7 4"/><path d="M27 1 L33 5 L27 9" fill="none" stroke="var(--mention)" stroke-width="1.4"/></svg>Names it (its link)</span>
+      <span><svg width="36" height="10"><line x1="1" y1="5" x2="35" y2="5" stroke="var(--tag)" stroke-width="1.2" stroke-dasharray="3 4"/></svg>Has the tag</span>
+    </div>
+  </div>
+  <div class="picked" id="picked" hidden></div>
+  <div class="hint" id="hint">Tap a board to see what it links to</div>
+  <div class="empty-state" id="empty" hidden>No boards yet.</div>
+  <script type="module">
+    // The boards as a graph, like a notes app's graph view: each board is its
+    // card from the board list (picture, title, when, tags); an arrow runs to
+    // each board it shows on a card (boards in boards), a dashed one to each
+    // board it names (its link in a note, a text, a link card); its tags are
+    // chips joining the boards that carry them. Laid out by a small force
+    // simulation (cards push apart and never overlap, links pull together).
+    // Tap (click) a card to pick it: what it links to stays lit and its card
+    // shows at the bottom, to open; a double tap opens it. Drag a card to move
+    // it, drag the background (one finger) to move about, pinch or the wheel
+    // to zoom. Far out, the cards keep their names readable.
+    import { $, el, bar, chip, icon, thumbnailUrl, when, agentsText, pickedTag, setPickedTag, tagBar } from '/app.js'
+    if (!matchMedia('(pointer: coarse)').matches) $('hint').textContent = 'Click a board to see what it links to · double-click to open'
+    else $('hint').textContent = 'Tap a board to see what it links to · tap twice to open'
+    const search = el('input', { className: 'field closed', id: 'q', type: 'search', placeholder: 'Find a board or tag', ariaLabel: 'Find a board or tag', autocomplete: 'off' })
+    const btn = (name, label, id) => { const b = el('button', { className: 'btn icon', type: 'button', title: label, ariaLabel: label, id }); b.append(icon(name)); return b }
+    $('top').replaceWith(bar('Graph', search, btn('search', 'Find', 'search-toggle'), btn('fit', 'Show all', 'fit'), btn('filter', 'What to show', 'filter')), el('div', { id: 'tagbar' }))
+    let tag = pickedTag() // only the boards with this tag (and the lines between them)
+    const canvas = $('c'), ctx = canvas.getContext('2d')
+    const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
+    // a card as on the board list: the picture 16:10, then title, when, tags
+    const CARD = { w: 184, pic: 115, body: 72 }
+    let nodes = [], links = [], byId = new Map()
+    let view = { x: 0, y: 0, k: 1 }, hover = null, picked = null, heat = 1
+    const place = new Map() // where each node was, so a refresh keeps the picture
+    const pictures = new Map()
+    const picture = (b) => {
+      const url = thumbnailUrl(b)
+      if (!url) return null
+      let img = pictures.get(url)
+      if (!img) { img = new Image(); img.src = url; pictures.set(url, img) }
+      return img.complete && img.naturalWidth ? img : null
+    }
+    const font = (px, weight = 400) => `${weight} ${px}px system-ui, -apple-system, sans-serif`
+    const textW = (t, f) => { ctx.font = f; return ctx.measureText(t).width }
+
+    async function load() {
+      const g = await fetch('/api/graph').then((r) => r.json())
+      const showTags = $('tags').checked, showArchived = $('archived').checked, showMentions = $('mentions').checked
+      const shown = g.boards.filter((b) => showArchived || !b.archivedAt)
+      $('tagbar').replaceWith(Object.assign(tagBar(shown, tag, (t) => { tag = t; setPickedTag(t); place.clear(); pick(null); load() }), { id: 'tagbar' }))
+      document.body.classList.toggle('tagged', !$('tagbar').hidden)
+      const boards = shown.filter((b) => !tag || (b.tags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase()))
+      const ids = new Set(boards.map((b) => b.id))
+      const tagNodes = new Map()
+      nodes = boards.map((b) => ({ id: b.id, kind: 'board', label: b.title, board: b, w: CARD.w, h: CARD.pic + CARD.body }))
+      links = g.links.filter((l) => ids.has(l.from) && ids.has(l.to) && (l.kind !== 'mention' || showMentions)).map((l) => ({ a: l.from, b: l.to, kind: l.kind === 'mention' ? 'mention' : 'card' }))
+      if (showTags) for (const b of boards) for (const t of b.tags ?? []) {
+        const key = 'tag:' + t.toLowerCase()
+        if (!tagNodes.has(key)) tagNodes.set(key, { id: key, kind: 'tag', label: t, w: textW(t, font(13, 500)) + 22, h: 26 })
+        links.push({ a: b.id, b: key, kind: 'tag' })
+      }
+      nodes.push(...tagNodes.values())
+      byId = new Map(nodes.map((n) => [n.id, n]))
+      if (picked && !byId.has(picked.id)) pick(null)
+      nodes.forEach((n, i) => {
+        const was = place.get(n.id), a = i * 2.4, r = 120 + 60 * Math.sqrt(i)
+        Object.assign(n, { x: was?.x ?? Math.cos(a) * r, y: was?.y ?? Math.sin(a) * r, vx: 0, vy: 0 })
+      })
+      for (const l of links) { l.na = byId.get(l.a); l.nb = byId.get(l.b) }
+      const cards = links.filter((l) => l.kind === 'card').length, named = links.filter((l) => l.kind === 'mention').length
+      $('count').textContent = `${boards.length} boards · ${cards} on cards${showMentions ? ` · ${named} named` : ''}${showTags ? ` · ${tagNodes.size} tags` : ''}`
+      $('empty').hidden = nodes.length > 0
+      heat = 1
+      if (!place.size) { for (let i = 0; i < 400; i++) step(); fit() } // settled, and all in view, before it is first shown
+    }
+
+    // ---- the simulation: cards push apart (and never overlap), linked ones pull together, all drawn to the middle
+    const GAP = 56
+    function step() {
+      const alpha = heat
+      for (let i = 0; i < nodes.length; i++) {
+        const p = nodes[i]
+        for (let j = i + 1; j < nodes.length; j++) {
+          const q = nodes[j]
+          let dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy
+          if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1 }
+          const d = Math.sqrt(d2), f = (30000 * alpha) / d2
+          p.vx -= (dx / d) * f; p.vy -= (dy / d) * f; q.vx += (dx / d) * f; q.vy += (dy / d) * f
+        }
+      }
+      for (const l of links) {
+        const { na: p, nb: q } = l, dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1
+        const rest = l.kind === 'tag' ? 170 : 340, f = (d - rest) * (l.kind === 'mention' ? 0.03 : 0.06) * alpha
+        p.vx += (dx / d) * f; p.vy += (dy / d) * f; q.vx -= (dx / d) * f; q.vy -= (dy / d) * f
+      }
+      for (const n of nodes) {
+        n.vx -= n.x * 0.002 * alpha; n.vy -= n.y * 0.002 * alpha
+        if (n === held) { n.vx = n.vy = 0; continue }
+        n.vx *= 0.6; n.vy *= 0.6
+        n.x += n.vx; n.y += n.vy
+      }
+      separate()
+      for (const n of nodes) place.set(n.id, { x: n.x, y: n.y })
+      heat = Math.max(0.02, heat * 0.985)
+    }
+    // nothing on top of anything: boxes still overlapping (with room for the lines between) are pushed apart
+    function separate() {
+      for (let pass = 0; pass < 3; pass++) for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const p = nodes[i], q = nodes[j], dx = q.x - p.x, dy = q.y - p.y
+        const ox = (p.w + q.w) / 2 + GAP - Math.abs(dx), oy = (p.h + q.h) / 2 + GAP - Math.abs(dy)
+        if (ox <= 0 || oy <= 0) continue
+        const mp = p === held ? 0 : q === held ? 1 : 0.5 // what is held stays put
+        if (ox < oy) { const s = Math.sign(dx) || 1; p.x -= s * ox * mp; q.x += s * ox * (1 - mp) }
+        else { const s = Math.sign(dy) || 1; p.y -= s * oy * mp; q.y += s * oy * (1 - mp) }
+      }
+    }
+    // the view that shows all of it (or what is given), clear of the bar and of the picked card
+    function fit(only = nodes) {
+      if (!only.length) return
+      const x0 = Math.min(...only.map((n) => n.x - n.w / 2)), x1 = Math.max(...only.map((n) => n.x + n.w / 2))
+      const y0 = Math.min(...only.map((n) => n.y - n.h / 2)), y1 = Math.max(...only.map((n) => n.y + n.h / 2))
+      const below = $('picked').hidden ? 56 : 120 // the hint, or the picked card, at the bottom
+      const W = canvas.clientWidth - 32, H = canvas.clientHeight - 24 - below
+      view.k = Math.min(1.2, Math.max(0.12, Math.min(W / (x1 - x0), H / (y1 - y0 + 24))))
+      view.x = -(x0 + x1) / 2; view.y = -(y0 + y1) / 2 - (below - 12) / 2 / view.k // centred in what the bottom leaves
+    }
+
+    // ---- drawing
+    const toScreen = (x, y) => [canvas.clientWidth / 2 + (x + view.x) * view.k, canvas.clientHeight / 2 + (y + view.y) * view.k]
+    const toWorld = (sx, sy) => [(sx - canvas.clientWidth / 2) / view.k - view.x, (sy - canvas.clientHeight / 2) / view.k - view.y]
+    const query = () => search.value.trim().toLowerCase()
+    function edgeOf(n, tx, ty) { // where the line from a node's middle towards (tx, ty) leaves its box
+      const dx = tx - n.x, dy = ty - n.y
+      const t = Math.min(Math.abs((n.w / 2) / (dx || 1e-9)), Math.abs((n.h / 2) / (dy || 1e-9)), 1)
+      return [n.x + dx * t, n.y + dy * t]
+    }
+    const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y, w, h, r) }
+    function fitText(t, max) {
+      if (ctx.measureText(t).width <= max) return t
+      while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1)
+      return t + '…'
+    }
+    // a chip as the page draws it (.chip): pale green, the tag in green
+    function drawChip(c, t, x, y, h, size) {
+      ctx.font = font(size, 500)
+      const w = ctx.measureText(t).width + h * 0.8
+      rr(x, y, w, h, h / 2); ctx.fillStyle = c.tagSoft; ctx.fill()
+      ctx.fillStyle = c.tag; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(t, x + h * 0.4, y + h / 2 + 0.5)
+      return w
+    }
+    function draw() {
+      const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr) }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, h)
+      const c = { fg: css('--fg'), muted: css('--muted'), line: css('--line'), edge: css('--edge'), accent: css('--accent'), tag: css('--tag'), tagSoft: css('--tag-soft'), mention: css('--mention'), surface: css('--surface'), bg: css('--bg') }
+      const q = query(), focus = picked ?? hover
+      const near = new Set(focus ? [focus.id, ...links.filter((l) => l.a === focus.id || l.b === focus.id).flatMap((l) => [l.a, l.b])] : [])
+      const found = (n) => !q || n.label.toLowerCase().includes(q) || (n.board?.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      const lit = (n) => (focus ? near.has(n.id) : found(n))
+      // links, under the cards, from box edge to box edge
+      for (const l of links) {
+        const [ax, ay] = edgeOf(l.na, l.nb.x, l.nb.y), [bx, by] = edgeOf(l.nb, l.na.x, l.na.y)
+        const [x1, y1] = toScreen(ax, ay), [x2, y2] = toScreen(bx, by)
+        const on = focus ? l.a === focus.id || l.b === focus.id : found(l.na) || found(l.nb)
+        ctx.globalAlpha = on ? 1 : 0.12
+        ctx.strokeStyle = l.kind === 'tag' ? c.tag : l.kind === 'mention' ? c.mention : focus && on ? c.accent : c.edge
+        ctx.lineWidth = l.kind === 'tag' ? 1.2 : focus && on ? 2.2 : 1.6
+        ctx.setLineDash(l.kind === 'tag' ? [3, 4] : l.kind === 'mention' ? [7, 4] : [])
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+        if (l.kind !== 'tag') { // its head at the board it shows or names
+          const a = Math.atan2(y2 - y1, x2 - x1), s = 9
+          ctx.setLineDash([]); ctx.beginPath()
+          ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(a - 0.45), y2 - s * Math.sin(a - 0.45))
+          ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(a + 0.45), y2 - s * Math.sin(a + 0.45)); ctx.stroke()
+        }
+      }
+      ctx.setLineDash([])
+      const far = CARD.w * view.k < 130 // too small for the card's words: its picture, and its name in a readable size under it
+      for (const n of nodes) {
+        const [cx, cy] = toScreen(n.x, n.y), nw = n.w * view.k, nh = n.h * view.k, x = cx - nw / 2, y = cy - nh / 2
+        ctx.globalAlpha = lit(n) ? 1 : 0.22
+        if (n.kind === 'tag') {
+          const hh = Math.max(20, 26 * view.k), size = Math.max(11, 13 * view.k)
+          ctx.font = font(size, 500)
+          const tw = ctx.measureText(n.label).width + hh * 0.8
+          drawChip(c, n.label, cx - tw / 2, cy - hh / 2, hh, size)
+          if (n === picked) { rr(cx - tw / 2 - 2, cy - hh / 2 - 2, tw + 4, hh + 4, hh / 2 + 2); ctx.strokeStyle = c.accent; ctx.lineWidth = 2; ctx.stroke() }
+          continue
+        }
+        const b = n.board, r = Math.max(4, 12 * view.k), ph = CARD.pic * view.k
+        if (b.archivedAt) ctx.globalAlpha *= 0.5
+        const bh = far ? ph : nh // far out, only its picture: the name goes under it
+        ctx.save()
+        rr(x, y, nw, bh, r); ctx.fillStyle = c.surface; ctx.fill(); ctx.clip()
+        ctx.fillStyle = c.line; ctx.fillRect(x, y, nw, ph)
+        const img = picture(b)
+        if (img) { const s = Math.min(nw / img.naturalWidth, ph / img.naturalHeight), iw = img.naturalWidth * s, ih = img.naturalHeight * s; ctx.drawImage(img, x + (nw - iw) / 2, y + (ph - ih) / 2, iw, ih) }
+        else if (!far) { ctx.fillStyle = c.muted; ctx.font = font(11 * view.k); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Open it to see it here', cx, y + ph / 2) }
+        ctx.restore()
+        rr(x, y, nw, bh, r)
+        const on = n === picked || (n === hover && !picked)
+        ctx.strokeStyle = on ? c.accent : c.line; ctx.lineWidth = on ? 2.5 : 1; ctx.stroke()
+        if (!far) { // the card's words, as on the list, scaled with it
+          const k = view.k, pad = 12 * k, inner = nw - pad * 2
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+          ctx.font = font(15 * k, 600); ctx.fillStyle = c.fg
+          ctx.fillText(fitText(b.title, inner), x + pad, y + ph + 24 * k)
+          ctx.font = font(12 * k); ctx.fillStyle = c.muted
+          ctx.fillText(fitText([b.archivedAt ? 'archived' : when(b), agentsText(b)].filter(Boolean).join(' · '), inner), x + pad, y + ph + 42 * k)
+          let tx = x + pad
+          for (const t of b.tags ?? []) { if (tx > x + nw - pad - 20 * k) break; tx += drawChip(c, t, tx, y + ph + 50 * k, 18 * k, 11 * k) + 4 * k }
+        } else { // its name, readable whatever the zoom, under the picture
+          ctx.font = font(12, n === picked ? 600 : 500); ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+          const name = fitText(b.title, Math.max(nw + 40, 110))
+          ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.strokeStyle = c.bg; ctx.strokeText(name, cx, y + bh + 5)
+          ctx.fillStyle = n === picked ? c.accent : c.fg; ctx.fillText(name, cx, y + bh + 5)
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+    function frame() {
+      if (heat > 0.021 || held) step()
+      draw()
+      requestAnimationFrame(frame)
+    }
+
+    // ---- picking: what is picked stays lit, and shows at the bottom with what to do
+    function pick(n) {
+      picked = n
+      $('hint').hidden = true
+      const box = $('picked')
+      if (!n) { box.hidden = true; return }
+      const open = el('a', { className: 'btn', href: n.kind === 'tag' ? '/?tag=' + encodeURIComponent(n.label) : '/b/' + n.id }); open.append(n.kind === 'tag' ? 'Boards' : 'Open')
+      if (n.kind === 'tag') {
+        const count = links.filter((l) => l.b === n.id).length
+        box.replaceChildren(el('span', { className: 'chips' }, chip(n.label, { on: true })), el('span', { className: 'text' }, el('span', { className: 'meta', textContent: `${count} board${count === 1 ? '' : 's'} with this tag` })), open)
+      } else {
+        const b = n.board, url = thumbnailUrl(b)
+        const out = links.filter((l) => l.a === n.id && l.kind !== 'tag').length, into = links.filter((l) => l.b === n.id).length
+        box.replaceChildren(
+          url ? el('img', { className: 'pic', src: url, alt: '' }) : el('span', { className: 'pic none', textContent: 'No picture yet' }),
+          el('span', { className: 'text' },
+            el('span', { className: 'title', textContent: b.title }),
+            el('span', { className: 'meta', textContent: [b.archivedAt ? 'archived' : when(b), `links to ${out}`, `linked from ${into}`].join(' · ') }),
+            (b.tags ?? []).length ? el('span', { className: 'chips' }, ...b.tags.map((t) => chip(t, { onclick: () => pick(byId.get('tag:' + t.toLowerCase()) ?? null) }))) : null),
+          open)
+      }
+      box.hidden = false
+    }
+
+    // ---- pointers: one moves a card or the view, two pinch; a tap picks, a double tap opens; the wheel zooms
+    const pointers = new Map()
+    let held = null, gesture = null, lastTap = { id: null, at: 0 }
+    const nodeAt = (sx, sy) => {
+      const [x, y] = toWorld(sx, sy), far = CARD.w * view.k < 130
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const n = nodes[i], pad = n.kind === 'tag' ? 10 / view.k : 0, extra = far && n.kind === 'board' ? 20 / view.k : 0 // its name under it counts
+        if (Math.abs(x - n.x) <= n.w / 2 + pad && y >= n.y - n.h / 2 - pad && y <= n.y + n.h / 2 + pad + extra) return n
+      }
+      return null
+    }
+    const local = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] }
+    const zoomAt = (sx, sy, k) => {
+      const [wx, wy] = toWorld(sx, sy)
+      view.k = Math.min(3, Math.max(0.12, k))
+      const [nx, ny] = toWorld(sx, sy)
+      view.x += nx - wx; view.y += ny - wy
+    }
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId)
+      const [sx, sy] = local(e)
+      pointers.set(e.pointerId, { sx, sy })
+      if (pointers.size === 1) gesture = { node: nodeAt(sx, sy), sx, sy, vx: view.x, vy: view.y, moved: false, at: performance.now() }
+      else if (pointers.size === 2) { // a pinch: from the two fingers' middle and their distance
+        const [a, b] = [...pointers.values()]
+        gesture = { pinch: true, d: Math.hypot(a.sx - b.sx, a.sy - b.sy), k: view.k, mx: (a.sx + b.sx) / 2, my: (a.sy + b.sy) / 2, moved: true }
+        held = null
+      }
+    })
+    canvas.addEventListener('pointermove', (e) => {
+      const [sx, sy] = local(e)
+      if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { sx, sy })
+      if (!gesture) { // a mouse over the graph: what it is over, lit
+        if (e.pointerType === 'mouse') { hover = nodeAt(sx, sy); canvas.style.cursor = hover ? 'pointer' : 'grab' }
+        return
+      }
+      if (gesture.pinch && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()], mx = (a.sx + b.sx) / 2, my = (a.sy + b.sy) / 2
+        zoomAt(gesture.mx, gesture.my, gesture.k * Math.hypot(a.sx - b.sx, a.sy - b.sy) / gesture.d)
+        view.x += (mx - gesture.mx) / view.k; view.y += (my - gesture.my) / view.k
+        gesture.mx = mx; gesture.my = my; gesture.k = view.k; gesture.d = Math.hypot(a.sx - b.sx, a.sy - b.sy)
+        return
+      }
+      if (Math.hypot(sx - gesture.sx, sy - gesture.sy) > 6) gesture.moved = true
+      if (!gesture.moved) return
+      if (gesture.node) { held = gesture.node; const [x, y] = toWorld(sx, sy); held.x = x; held.y = y; heat = Math.max(heat, 0.3) }
+      else { view.x = gesture.vx + (sx - gesture.sx) / view.k; view.y = gesture.vy + (sy - gesture.sy) / view.k }
+    })
+    const end = (e) => {
+      pointers.delete(e.pointerId)
+      const g = gesture
+      if (pointers.size) return // a pinch goes on with the finger left, as a move from here
+      gesture = null; held = null
+      if (!g || g.moved || g.pinch) return
+      // a tap: pick what is under it (nothing: let go); a second tap on it soon after opens it
+      const n = g.node, now = performance.now()
+      if (n && lastTap.id === n.id && now - lastTap.at < 400) { location.href = n.kind === 'tag' ? '/?tag=' + encodeURIComponent(n.label) : '/b/' + n.id; return }
+      lastTap = { id: n?.id ?? null, at: now }
+      pick(n)
+    }
+    canvas.addEventListener('pointerup', end)
+    canvas.addEventListener('pointercancel', end)
+    canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !gesture) hover = null })
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const [sx, sy] = local(e); zoomAt(sx, sy, view.k * Math.exp(-e.deltaY * 0.0015)) }, { passive: false })
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') { pick(null); $('filters').hidden = true } })
+
+    // ---- the bar's controls
+    $('fit').onclick = () => fit()
+    $('filter').onclick = () => { $('filters').hidden = !$('filters').hidden; $('filter').classList.toggle('on', !$('filters').hidden) }
+    $('search-toggle').onclick = () => { search.classList.toggle('closed'); if (!search.classList.contains('closed')) search.focus() }
+    search.addEventListener('keydown', (e) => { // Enter: show what matches
+      if (e.key !== 'Enter') return
+      const q = query(), hit = nodes.filter((n) => q && (n.label.toLowerCase().includes(q) || (n.board?.tags ?? []).some((t) => t.toLowerCase().includes(q))))
+      if (hit.length) { fit(hit); if (hit.length === 1) pick(hit[0]) }
+      search.blur()
+    })
+    for (const id of ['tags', 'archived', 'mentions']) $(id).onchange = load
+    addEventListener('focus', load) // boards may have changed elsewhere
+    load().then(() => requestAnimationFrame(frame))
+  </script>
+</body>
+</html>
