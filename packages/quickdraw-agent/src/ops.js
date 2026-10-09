@@ -99,7 +99,7 @@ export function describeBoard(store) {
   const ends = solid.filter((s) => !isLabel(s))
   const labels = new Map(shapes.filter(isLabel).map((l) => [l.labelOf, l]))
   const arrows = shapes.filter(isLine).map((s) => {
-    const from = shapeAt(ends, s.x, s.y), to = shapeAt(ends, s.x + s.props.dx, s.y + s.props.dy)
+    const from = s.link ? store.get(s.link.from) : shapeAt(ends, s.x, s.y), to = s.link ? store.get(s.link.to) : shapeAt(ends, s.x + s.props.dx, s.y + s.props.dy)
     const label = labels.get(s.id)
     return { id: s.id, type: s.type, ...(from ? { from: from.id } : {}), ...(to ? { to: to.id } : {}), ...(label ? { label: label.props.text, label_id: label.id } : {}) }
   })
@@ -159,7 +159,7 @@ export function boardToMarkdown(store) {
   if (loose.length) out.push(frames.length ? '## Outside frames' : '## Shapes', '', ...loose.map(line), '')
   const links = arrows.filter((a) => a.from && a.to)
   if (links.length) {
-    const name = (id) => (String(byId.get(id)?.text ?? '').split('\n')[0].slice(0, 40) || id)
+    const name = (id) => (String(framesById.get(id)?.title ?? byId.get(id)?.text ?? '').split('\n')[0].slice(0, 40) || id)
     out.push('## Connections', '', ...links.map((a) => `- ${name(a.from)} → ${name(a.to)}${a.label ? ` ("${a.label.replace(/\s*\n\s*/g, ' / ')}", arrow ${a.id})` : ''}`), '')
   }
   if (!frames.length && !items.length) out.push('(empty board)', '')
@@ -532,6 +532,17 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       put({ id, type: opts.line ? 'line' : 'arrow', x: g.x, y: g.y, ...link, props: { dx: g.dx, dy: g.dy, bend: checkBend(opts.bend) ?? 0, color: checkColor(opts.color) ?? 'black', size: 'm', dash: checkDash(opts.dash) ?? 'solid' } })
       if (opts.label) setLabel(id, opts.label, opts)
       return id
+    },
+    // an arrow joining two things already on the board (frames, notes, cards, shapes) by id, with a word
+    // by its middle; it keeps `link`, so it follows them when they move. Not for drawing: that is an SVG
+    link(from, to, opts = {}) {
+      for (const [what, id] of [['from', from], ['to', to]]) {
+        const s = typeof id === 'string' ? store.get(id) : null
+        if (!s || s.typeName !== 'shape') throw new Error(`link ${what}: no shape ${JSON.stringify(id)} on the board (a link joins two ids)`)
+        if (isLine(s)) throw new Error(`link ${what}: ${id} is an arrow; a link joins frames, notes, cards or shapes`)
+      }
+      if (from === to) throw new Error('link joins two different things')
+      return ops.arrow(from, to, opts)
     },
     // text / label / markdown / frame title, and color; a text's size (textSize),
     // a shape's line style and fill, an arrow's line style, bend and label
@@ -935,6 +946,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'span': out = ops.span(r(s.id), { ...spanOf(s.span), auto: s.auto }); break
         case 'columns': out = ops.columns(r(s.id), s.cols); break
         case 'arrow': out = ops.arrow(r(s.from), r(s.to), { color: s.color, line: s.line, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize, fromAt: at(pointOf(s.from_at, 'from_at')), toAt: at(pointOf(s.to_at, 'to_at')) }); break
+        case 'link': out = ops.link(r(s.from), r(s.to), { color: s.color, dash: s.dash, bend: s.bend, label: s.label, textSize: s.text_size ?? s.textSize }); break
         case 'update': out = ops.update(r(s.id), { text: s.text, color: s.color, w: s.w, h: s.h, textSize: s.text_size ?? s.textSize, fontSize: s.font_size ?? s.fontSize, dash: s.dash, fill: s.fill, bend: s.bend, label: s.label }); break
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
@@ -974,7 +986,7 @@ const UNIT_RULES = {
   frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
   image: (s) => (s.w == null ? 'give its width, w' : null),
   embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
-  pen: () => null, update: () => null, move: () => null, delete: () => null,
+  pen: () => null, link: () => null, update: () => null, move: () => null, delete: () => null,
 }
 const needsAt = (s) => PLACES.has(s.do) && !(s.do === 'frame' && s.around?.length) && !(s.do === 'frame' && s.in) // a frame around shapes, or a bento cell: placed by what it holds
 
@@ -996,7 +1008,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
     if (strict) {
       const rule = UNIT_RULES[s.do]
-      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit puts frame, image, embed, pen (and update, move, delete); ${AS_SVG}`)
+      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit puts frame, image, embed, pen (and link, update, move, delete); ${AS_SVG}`)
       const why = (s.text_size ?? s.textSize) != null ? 'sizes are numbers here: font_size in px, not text_size' : s.in != null ? 'give in to the unit, not to an item' : rule(s)
       if (why) throw new Error(`${name_(i, s)}: ${why}`)
     }

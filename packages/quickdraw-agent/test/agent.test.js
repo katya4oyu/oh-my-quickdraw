@@ -78,6 +78,37 @@ describe('operations', () => {
   })
 })
 
+describe('link', () => {
+  it('joins two frames with a word, follows them, and is read as a connection', () => {
+    const store = new Store()
+    bindFrames(store)
+    const { result: [f1, f2] } = applySteps(store, 'Claude', [
+      { do: 'frame', title: 'Plan', at: [0, 0], w: 400, h: 300 },
+      { do: 'frame', title: 'Build', at: [700, 0], w: 400, h: 300 },
+    ])
+    const { result: [ln] } = applySteps(store, 'Claude', [{ do: 'link', from: f1, to: f2, label: 'then' }])
+    expect(store.get(ln).link).toMatchObject({ from: f1, to: f2 })
+    expect(describeBoard(store).arrows[0]).toMatchObject({ id: ln, from: f1, to: f2, label: 'then' })
+    expect(boardToMarkdown(store)).toContain('"then"')
+    runOp(store, 'Claude', (ops) => ops.move(f2, { x: 700, y: 900 }))
+    expect(store.get(ln).props.dy).toBeGreaterThan(300) // it points down to Build now
+  })
+
+  it('needs two different things that are there, and not an arrow', () => {
+    const store = new Store()
+    const { result: [a, b] } = applySteps(store, 'Claude', [{ do: 'note', text: 'a' }, { do: 'note', text: 'b' }])
+    expect(() => runOp(store, 'Claude', (ops) => ops.link(a, 'shape:nope'))).toThrow(/no shape/)
+    expect(() => runOp(store, 'Claude', (ops) => ops.link(a, a))).toThrow(/different/)
+    const { result: [ln] } = applySteps(store, 'Claude', [{ do: 'link', from: a, to: b }])
+    expect(() => runOp(store, 'Claude', (ops) => ops.link(ln, b))).toThrow(/is an arrow/)
+  })
+
+  it('is a tool, and the arrow step still points to omq draw', () => {
+    expect(BOARD_TOOLS.find((t) => t.name === 'link_shapes')).toBeTruthy()
+    expect(() => applySteps(new Store(), 'C', { items: [{ do: 'arrow', from: 'a', to: 'b' }] }, { drawing: 'units' })).toThrow()
+  })
+})
+
 describe('tools', () => {
   const tool = (name) => BOARD_TOOLS.find((t) => t.name === name)
 
