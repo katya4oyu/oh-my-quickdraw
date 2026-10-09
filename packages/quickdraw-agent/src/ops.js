@@ -729,6 +729,10 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       })
       const gone = [...kept.values()].flat()
       if (gone.length) store.remove(gone) // what the new SVG no longer draws so
+      if (replace) { // what was drawn again went on top: all of it back in the SVG's order (a fill under what follows it)
+        const zs = ids.map((id) => store.get(id).z).sort((p, q) => p - q)
+        ids.forEach((id, i) => { if (store.get(id).z !== zs[i]) store.update(id, { z: zs[i] }) })
+      }
       focus = o
       return [frame, ...ids]
     },

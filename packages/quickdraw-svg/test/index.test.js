@@ -87,3 +87,29 @@ describe('fills', () => {
     expect(d.dropped).toEqual({ 'data-fill "paint" (tint, hatch or scribble)': 1 })
   })
 })
+
+describe('a fill in a pen colour', () => {
+  it('is that colour (the board draws its pale fill), not the pale nearest to it', () => {
+    const fills = ['#4263eb', '#4dabf7', '#e03131', '#099268', '#f1ac4b', '#e0f0fe'].map((c) =>
+      readSvg(`<svg viewBox="0 0 100 100"><rect x="10" y="10" width="50" height="50" fill="${c}" data-fill="tint" stroke="#1d1d1d"/></svg>`).parts.find((p) => p.kind === 'fill').color)
+    expect(fills).toEqual(['blue', 'light-blue', 'red', 'green', 'yellow', 'light-blue'])
+  })
+})
+
+describe('an arc in a path', () => {
+  it('is drawn round, through its bulge, not straight', () => {
+    // a half circle of radius 50 from (0, 50) to (100, 50), bulging up (sweep 1)
+    const d = readSvg('<svg viewBox="0 0 100 100"><path d="M0 50 A50 50 0 0 1 100 50" fill="none" stroke="#1d1d1d"/></svg>')
+    expect(d.dropped).toEqual({})
+    const pts = d.parts[0].points
+    expect(pts.at(-1)).toEqual([100, 50])
+    for (const [x, y] of pts) expect(Math.hypot(x - 50, y - 50)).toBeCloseTo(50, 0)
+    expect(Math.min(...pts.map((p) => p[1]))).toBeLessThan(2) // its top
+  })
+  it('with the other sweep, bulges the other way; a radius too small grows to reach', () => {
+    const down = readSvg('<svg viewBox="0 0 100 100"><path d="M0 50 A50 50 0 0 0 100 50" fill="none" stroke="#000"/></svg>').parts[0].points
+    expect(Math.max(...down.map((p) => p[1]))).toBeGreaterThan(98)
+    const small = readSvg('<svg viewBox="0 0 100 100"><path d="M0 50 A10 10 0 0 1 100 50" fill="none" stroke="#000"/></svg>').parts[0].points
+    expect(Math.min(...small.map((p) => p[1]))).toBeLessThan(2)
+  })
+})
