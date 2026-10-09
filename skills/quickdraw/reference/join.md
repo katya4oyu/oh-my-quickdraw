@@ -6,7 +6,7 @@ Asked to join a board (to be there, and do what people ask), `join` it. You are 
 omq join --board ID --name "Claude · my-repo"   # once; stays until leave (or 30 idle minutes: --idle)
 omq wait --timeout 100                 # waits for what is for you, and prints it (again when nothing came)
 omq area 800 500 --title "Plan"        # before you draw: where it goes (else where you first draw)
-omq note "…" / svg d.svg / …           # the usual commands: they go in the request's thread (svg answers at once and draws on)
+omq note "…" / draw d.svg / …          # the usual commands: they go in the request's thread (draw answers at once and draws on)
 omq say "I put the plan on the left"   # a message in the thread (--progress: a step, as you go)
 omq finish "Plan with 3 frames"        # the request is done: say what you did, in a line
 omq leave                              # when the person says you are done (--board ID: that board only)

@@ -47,7 +47,7 @@ it('stops a drawing still going on: the rest never goes on, and undo takes back 
   expect(await stopDrawing(op)).toBe(false) // nothing going on any more
 })
 
-it('omq svg draws a file on a board, and --show gives the SVG back', async () => {
+it('omq draw draws a file on a board, and --show gives the SVG back', async () => {
   const { mkdtempSync, writeFileSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
@@ -56,11 +56,11 @@ it('omq svg draws a file on a board, and --show gives the SVG back', async () =>
   writeFileSync(join(dir, 'two.svg'), svg)
   process.env.QUICKDRAW_LOG = join(dir, 'log.jsonl')
   const out: string[] = []
-  await main(['svg', join(dir, 'two.svg'), '--file', join(dir, 'board.json'), '--at', '100,50'], (s) => out.push(s))
+  await main(['draw', join(dir, 'two.svg'), '--file', join(dir, 'board.json'), '--at', '100,50'], (s) => out.push(s))
   const r = JSON.parse(out[0])
   expect(r).toMatchObject({ at: '100,50', size: '400x200', units: 2, strokes: 2, words: 2 })
   const shown: string[] = []
-  await main(['svg', '--show', r.frame, '--file', join(dir, 'board.json')], (s) => shown.push(s))
+  await main(['draw', '--show', r.frame, '--file', join(dir, 'board.json')], (s) => shown.push(s))
   expect(shown[0]).toBe(svg)
   const undone: string[] = []
   await main(['undo', '--file', join(dir, 'board.json')], (s) => undone.push(s))

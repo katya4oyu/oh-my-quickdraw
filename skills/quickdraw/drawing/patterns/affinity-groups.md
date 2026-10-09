@@ -20,4 +20,4 @@ Many loose items sorted into groups, each with a heading that says what the grou
 
 Put each group where it goes in the row (`at`, clear of the last group's frame), and the row is made as the groups are.
 
-A frame's title is the group's meaning ("Onboarding is slow"), not its category ("Onboarding"). Relations between groups: draw them as an SVG over the frames (arrows between them), with `omq svg --at`.
+A frame's title is the group's meaning ("Onboarding is slow"), not its category ("Onboarding"). Relations between groups: draw them as an SVG over the frames (arrows between them), with `omq draw --at`.

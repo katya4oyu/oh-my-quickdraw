@@ -20,7 +20,7 @@ omq area 2400 1400 --title "Meeting · 2026-10-06"
 └─────────────────────────────────────────────────────────────────────┴──────────────────┘
 ```
 
-- Title band: a small SVG — the theme (34 px), the date and the people under it (14 px). A working title until the theme is clear; then change the SVG and draw it again (`omq svg title.svg --replace FRAME_ID`).
+- Title band: a small SVG — the theme (34 px), the date and the people under it (14 px). A working title until the theme is clear; then change the SVG and draw it again (`omq draw title.svg --replace FRAME_ID`).
 - Flow: the conversation in order. A bento grid with a column per topic works well (`omq bento --cols 4`), or frames in a row.
 - The right column: three frames — **Decided** (green), **Open** (red), **Actions** (blue, "who: what, by when"). These are what people look for after the meeting; collect them here as they happen, wherever they were said.
 

@@ -422,8 +422,8 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     const writes = !READING.has(cmd) && !STREAMING.has(cmd)
     const people = writes && request ? j.agent.peopleSince(request).trim() : ''
     j.agent.activity(writes ? 'drawing' : 'reading')
-    // a drawing still going on is read, looked at or checked once it is on the board (undo stops it; svg queues behind it)
-    if (cmd !== 'undo' && cmd !== 'svg') await j.agent.drawn()
+    // a drawing still going on is read, looked at or checked once it is on the board (undo stops it; draw queues behind it)
+    if (cmd !== 'undo' && cmd !== 'draw') await j.agent.drawn()
     const rest = argv.filter((a, i) => a !== '--board' && argv[i - 1] !== '--board' && !a.startsWith('--board=')) // it is on that board already
     try {
       await runCommand({

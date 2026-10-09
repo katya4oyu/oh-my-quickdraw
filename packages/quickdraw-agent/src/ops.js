@@ -147,7 +147,7 @@ export function boardToMarkdown(store) {
       const gone = src ? Object.entries(svgElements(src)).filter(([el]) => !left.has(el)) : []
       const quiet = members.filter((m) => m.svg && (m.type === 'draw' || m.type === FILL) && !m.edited_by)
       members = members.filter((m) => !quiet.includes(m))
-      out.push(`The SVG it was drawn from is what it shows: \`omq svg --show ${f.id}\` prints it. Its ${quiet.length} strokes as drawn are not listed; what follows is its words, and what people changed or added since (their own marks: look at them).`, '')
+      out.push(`The SVG it was drawn from is what it shows: \`omq draw --show ${f.id}\` prints it. Its ${quiet.length} strokes as drawn are not listed; what follows is its words, and what people changed or added since (their own marks: look at them).`, '')
       if (gone.length) out.push(`- gone since drawn: ${gone.map(([el, what]) => `${el} (${what})`).join(', ')}`)
     }
     const children = f.members.map((id) => framesById.get(id)).filter(Boolean)
@@ -965,8 +965,8 @@ function pointOf(v, what) {
 const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
 const ADDS = new Set([...PLACES, 'arrow'])
 // in a unit drawn by an agent, each item has one way to be written: every size a number, every word a text
-// shapes, words and arrows are drawn one way: as an SVG (ops.svg: omq svg, the draw_svg tool)
-const AS_SVG = 'shapes, words and arrows are drawn as an SVG: write one, and draw it with omq svg FILE (the draw_svg tool)'
+// shapes, words and arrows are drawn one way: as an SVG (ops.svg: omq draw, the draw_svg tool)
+const AS_SVG = 'shapes, words and arrows are drawn as an SVG: write one, and draw it with omq draw FILE (the draw_svg tool)'
 const UNIT_RULES = {
   shape: () => AS_SVG,
   text: () => AS_SVG,

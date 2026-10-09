@@ -71,14 +71,14 @@ omq board-card BOARD_ID [--live]                  # another board in this one: a
                                                         # read lists the boards on cards: title, frames, how much is in them
 ```
 
-## Drawing: write an SVG, `omq svg` draws it by hand
+## Drawing: write an SVG, `omq draw` draws it by hand
 
-Shapes, words and arrows go on the board only this way. Write the drawing as one SVG file: you choose every position and size as a number. `omq svg` draws it on the board as a person would at a whiteboard: each outline with the pen, the cursor on its tip, the words where you put them, in the order you wrote them. Nothing is moved, resized or wrapped for you.
+Shapes, words and arrows go on the board only this way. Write the drawing as one SVG file: you choose every position and size as a number. `omq draw` draws it on the board as a person would at a whiteboard: each outline with the pen, the cursor on its tip, the words where you put them, in the order you wrote them. Nothing is moved, resized or wrapped for you.
 
 ```sh
-omq svg drawing.svg [--at X,Y]            # a new drawing; without --at in free space (your area when joined)
-omq svg drawing.svg --replace FRAME_ID    # that drawing again, from the changed SVG: only what changed is redrawn
-omq svg --show FRAME_ID > drawing.svg     # the SVG a drawing was drawn from (to change it)
+omq draw drawing.svg [--at X,Y]            # a new drawing; without --at in free space (your area when joined)
+omq draw drawing.svg --replace FRAME_ID    # that drawing again, from the changed SVG: only what changed is redrawn
+omq draw --show FRAME_ID > drawing.svg     # the SVG a drawing was drawn from (to change it)
 ```
 
 Write the SVG so it draws well:
@@ -112,7 +112,7 @@ It prints the drawing's `frame` (its id), `at`, `size`, `units`, `strokes`, `wor
 
 One SVG is one drawing (one frame). A drawing that grows over time (a meeting, a long piece of material): a small SVG per part, each `--at` beside the last; or redraw the drawing with `--replace` as it grows: only what is new is drawn.
 
-To change a drawing: `omq svg --show FRAME_ID > d.svg`, edit it, `omq svg d.svg --replace FRAME_ID`. What people drew in it stays.
+To change a drawing: `omq draw --show FRAME_ID > d.svg`, edit it, `omq draw d.svg --replace FRAME_ID`. What people drew in it stays.
 
 `apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 
@@ -157,7 +157,7 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 - Read, then write; re-read after bigger changes to check the result.
 - Draw first, then check: once a piece of work is done, `omq lint` (or `lint --frame ID`, `lint --ids ID,…` for just what you made) lists what reads badly — shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. `omq lint --fix` fixes what needs no judgement itself, as one operation (`undo` reverts it), on what agents made only: shapes or frames on top of each other, what hangs over a frame's edge. Fix the rest (an arrow across a shape) with `move`, `arrange` or `fit`, and lint again. Leave what people made where it is.
 - Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
-- Write a drawing's units of thought as `<g>`s in reading order, and read `hits` after each `omq svg`: fix them with `--replace` before going on.
+- Write a drawing's units of thought as `<g>`s in reading order, and read `hits` after each `omq draw`: fix them with `--replace` before going on.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).
 - **Comments** (live boards): a frame may have a thread — what was meant or asked about that drawing, and people's answers; `read` ends with them. Before you change a drawing, read its thread and follow what was agreed. When you cannot decide on your own what a drawing should say or stress (what to leave out, what to make stand out, what to do when text does not fit), ask in its thread — `omq comment FRAME_ID "…"`, saying what you did meanwhile — and go on; people answer there. `omq comments [--frame ID]` lists the threads.
