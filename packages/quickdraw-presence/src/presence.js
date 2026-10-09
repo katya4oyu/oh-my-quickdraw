@@ -64,6 +64,9 @@ const STYLE = `
 .qdp-row{position:absolute;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:2}
 .qdp-row[hidden],.qdp-row [hidden]{display:none!important}
 .qdp-people{display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--qd-pop-bg);border:1px solid var(--qd-border);box-shadow:var(--qd-bar-shadow);pointer-events:auto}
+.qdp-title{all:unset;box-sizing:border-box;max-width:min(40vw,320px);padding:0 10px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--qd-text, inherit);font:600 13px/28px system-ui,-apple-system,sans-serif;border-right:1px solid var(--qd-border);margin-right:3px;cursor:default}
+.qdp-title.can{cursor:pointer}
+.qdp-title.can:hover{text-decoration:underline}
 .qdp-av{all:unset;box-sizing:border-box;position:relative;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;cursor:pointer;
   color:#fff;font:700 11px system-ui,-apple-system,sans-serif;border:2px solid var(--qd-pop-bg)}
 .qdp-av.me::after{content:'';position:absolute;inset:-2px;border-radius:50%;border:2px dashed var(--qd-border)}
@@ -133,6 +136,10 @@ export function createPresence({ editor, container = editor.container, host, def
     status: String(saved.status ?? '').slice(0, 60),
   }
   const at = { x: null, y: null } // your cursor on the page
+  // what is shown before the people: the board's title, so you know which board this is
+  const title = el('button', 'qdp-title')
+  title.type = 'button'
+  title.hidden = true
 
   const layer = el('div', 'qdp-layer')
   const frame = el('div', 'qdp-frame')
@@ -337,7 +344,7 @@ export function createPresence({ editor, container = editor.container, host, def
     return b
   }
   function renderRow() {
-    people.replaceChildren(avatar(me, { isMe: true }), ...[...peers.values()].map((p) => avatar(p)))
+    people.replaceChildren(title, avatar(me, { isMe: true }), ...[...peers.values()].map((p) => avatar(p)))
   }
 
   // ---- you: name, colour, status ------------------------------------------------
@@ -395,6 +402,14 @@ export function createPresence({ editor, container = editor.container, host, def
       send()
     },
     setMe,
+    /** the board's title, before the people (onclick: what clicking it does, as renaming it); '' hides it */
+    setTitle(text, onclick) {
+      title.textContent = String(text ?? '')
+      title.title = String(text ?? '')
+      title.hidden = !text
+      title.classList.toggle('can', !!onclick)
+      title.onclick = onclick ?? null
+    },
     /** follow someone by id (null stops) */
     follow,
     following: () => following,

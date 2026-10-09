@@ -307,7 +307,8 @@
     // this board: /b/<id>; its relay is /ws/<id> (/protocol.js), which also persists it
     const boardId = location.pathname.split('/').pop()
     let boardTitle = ''
-    const showTitle = (b) => { if (b) { boardTitle = b.title; document.title = `${b.title} — Quickdraw` } }
+    // the title: on the tab, and before the people on the board (clicked: renamed)
+    const showTitle = (b) => { if (b) { boardTitle = b.title; document.title = `${b.title} — Quickdraw`; presence.setTitle(b.title, renameBoard) } }
     fetch('/api/boards/' + boardId).then((r) => r.ok && r.json()).then(showTitle)
     async function copySkillInstall() {
       const copied = await copyText(SKILL_INSTALL)

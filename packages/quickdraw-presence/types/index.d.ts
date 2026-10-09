@@ -42,6 +42,8 @@ export type Peer = Presence & { id: string | number, status: string, agent: bool
 export interface PresenceHandle {
   me(): Me
   setMe(patch: Partial<Me>): void
+  /** the board's title, before the people (onclick: what clicking it does, as renaming it); '' hides it */
+  setTitle(text: string, onclick?: () => void): void
   /** follow someone by id; null stops */
   follow(id: string | number | null): void
   following(): string | number | null
