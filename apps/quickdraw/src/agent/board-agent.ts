@@ -13,9 +13,8 @@
 // it puts up a ticket of its own (quickdraw-tickets, `doing`, with the request
 // and its work area), closed when the request is done. Agents keep out of each
 // other's work: a change that reaches into another agent's work area is refused.
-import { pageBounds, Store, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
-import { bindFrames, frameTitle } from 'quickdraw-frames'
-import { bindLayouts, settled } from 'quickdraw-layouts'
+import { pageBounds, type BoardRecord, type Diff, type Store as StoreType } from '@quickdrawjs/core'
+import { frameTitle } from 'quickdraw-frames'
 import { applySteps, BOARD_TOOLS, freeSpot, runOp, textOf, type AgentEvent, type AgentRequest } from 'quickdraw-agent'
 import { isColumn, isTicket, kanbanColumn, setTicketStatus, workInProgress } from 'quickdraw-tickets'
 import { snapshotFeedback, snapshots } from 'quickdraw-screenshare'
@@ -28,6 +27,8 @@ import { resolve as resolvePath } from 'node:path'
 import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
+import { copyOf, putLive } from '../board/live.ts'
+export { putLive } // (tests)
 import { teamOf, teamText } from '../board/team.ts'
 import { commentsText } from 'quickdraw-comments'
 import { linkedBoardsText } from '../board/linked.ts'
@@ -112,8 +113,14 @@ export interface BoardAgent {
    * tried on a copy, then put on the board a piece at a time with the cursor
    * on each. With a request, it goes in the request's thread (to undo) and in
    * its work area; with null, it is only put on the board.
+   *
+   * `background`: it is answered once made, and put on the board while the
+   * agent goes on (an SVG drawn by hand takes a while); the next operation
+   * waits for it to be on the board first.
    */
-  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect, prefer?: { x: number, y: number } }) => T, opts?: { prefer?: { x: number, y: number } }): Promise<T>
+  operate<T extends { op: string, diff: Diff }>(requestId: string | null, make: (store: StoreType, where: { area?: Rect, prefer?: { x: number, y: number } }) => T, opts?: { prefer?: { x: number, y: number }, background?: boolean }): Promise<T>
+  /** resolves once what it is drawing in the background is on the board */
+  drawn(): Promise<void>
   /** what people did in a request's work area since the agent's last step, as a sentence ('' if nothing) */
   peopleSince(requestId: string): string
   /** puts its cursor at a page point and keeps it there (not hidden when it goes idle) */
@@ -136,46 +143,6 @@ const union = (a: Rect | undefined, b: Rect): Rect => {
 }
 const firstLine = (text: string, max = 200) => { const l = text.trim().split('\n')[0].trim(); return l.length > max ? l.slice(0, max - 1) + '…' : l }
 const isShape = (r: BoardRecord) => r.typeName === 'shape' && !(r as { isFrameTitle?: boolean }).isFrameTitle
-
-// the board as it is, to try an operation on
-function copyOf(store: StoreType): StoreType {
-  const copy = new Store()
-  copy.loadSnapshot({ document: { store: Object.fromEntries(store.all().map((r) => [r.id, structuredClone(r)])) } })
-  bindFrames(copy)
-  bindLayouts(copy)
-  return copy
-}
-
-/**
- * Puts what an operation did on `done` (a copy it ran on) onto `store` a record
- * at a time, pointing at each; `pace` spreads it over about that long. The
- * records are taken as they ended up on the copy: a diff's added records are
- * as they were added, before listeners (frame membership) touched them.
- */
-export async function putLive(store: StoreType, diff: Diff, done: StoreType, point: (x: number, y: number) => void, pace = 2500) {
-  const final = (id: string) => done.get(id) as BoardRecord
-  // frames first (a member put before its frame would be let go of), arrows
-  // last (after what they connect); otherwise in the order they were made
-  const rank = (r: BoardRecord) => ((r as { isFrame?: boolean }).isFrame ? 0 : (r as { type?: string }).type === 'arrow' ? 2 : 1)
-  const added = Object.keys(diff.added).map(final).filter(Boolean).sort((a, b) => rank(a) - rank(b))
-  // moved or changed in the same order: a frame first, which brings its members (and title) along;
-  // a member moved before its frame would land outside it and be let go of, and the title moved twice
-  const updated = Object.entries(diff.updated).map(([id, [from]]) => [id, [from, final(id)]] as [string, [BoardRecord, BoardRecord]])
-    .filter(([, [, to]]) => to).sort(([, [, a]], [, [, b]]) => rank(a) - rank(b))
-  const shown = added.filter(isShape).length + updated.filter(([, [, to]]) => isShape(to)).length
-  const gap = shown ? Math.min(250, Math.max(40, pace / shown)) : 0
-  const one = async (d: Partial<Diff>, rec: BoardRecord) => {
-    // laid out on the copy already: a bento grid must not read the pieces as drags
-    settled(store, () => store.applyDiff({ added: {}, updated: {}, removed: {}, ...d }, 'user'))
-    if (!isShape(rec)) return
-    const b = pageBounds(rec as never)
-    point(b.x + b.w / 2, b.y + b.h / 2)
-    await sleep(gap)
-  }
-  for (const rec of added) await one({ added: { [rec.id]: rec } }, rec)
-  for (const [id, pair] of updated) await one({ updated: { [id]: pair } }, pair[1])
-  if (Object.keys(diff.removed).length) settled(store, () => store.applyDiff({ added: {}, updated: {}, removed: diff.removed }, 'user'))
-}
 
 // Images: the board tools take an image as data; the agent names a file instead
 const point = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false }
@@ -498,7 +465,8 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       return (typeof result === 'string' ? result : JSON.stringify(result)) + [linked, team, said].filter(Boolean).map((t) => '\n\n' + t).join('')
     }
     const area = work.get(requestId)?.area
-    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never)
+    // an SVG is drawn by hand, which takes a while: the agent is answered at once and goes on
+    return put(requestId, (store) => tool.run(store as never, (args ?? {}) as never, { name: me.name, area, prefer: area ? undefined : viewOf(requestId) }) as never, { background: name === 'draw_svg' })
   }
 
   // ---- a request's work area: where it draws, which people see, move and draw in ----
@@ -681,13 +649,15 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
         images,
       }
     },
-    async operate(requestId, make, { prefer } = {}) {
+    async operate(requestId, make, { prefer, background } = {}) {
       const area = requestId ? work.get(requestId)?.area : undefined
-      return (await putOp(requestId, (store) => make(store, area ? { area } : { prefer: prefer ?? viewOf(requestId) }))).r
+      return (await putOp(requestId, (store) => make(store, area ? { area } : { prefer: prefer ?? viewOf(requestId) }), { background })).r
     },
     peopleSince,
+    drawn: async () => { await drawing },
     point(x, y) { holdCursor(); pinned = true; board.cursor(x, y) },
     close: async () => {
+      await drawing // what it was still drawing is finished first
       clearTimeout(hideTimer)
       for (const requestId of tickets.keys()) closeTicket(requestId, 'failed', `${me.name} left the board before it was done.`)
       await renderer?.close()
@@ -697,11 +667,13 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   }
 
   // an operation made on a copy (checked, all or nothing), then put on the board a piece at a time
-  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect, placed?: unknown[] }) {
-    const { r, grew } = await putOp(requestId, make)
-    return JSON.stringify({ op: r.op, ids: r.ids, ...(r.placed ? { placed: r.placed } : {}), ...(grew ? { area: grew } : {}) })
+  let drawing: Promise<unknown> = Promise.resolve() // one put on in the background, still going on
+  async function put(requestId: string, make: (store: StoreType) => { op: string, diff: Diff, ids: string[], area?: Rect, placed?: unknown[], drawing?: unknown }, { background = false } = {}) {
+    const { r, grew } = await putOp(requestId, make, { background })
+    return JSON.stringify({ op: r.op, ids: r.ids, ...(r.placed ? { placed: r.placed } : {}), ...(r.drawing ? { drawing: r.drawing } : {}), ...(grew ? { area: grew } : {}) })
   }
-  async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T) {
+  async function putOp<T extends { op: string, diff: Diff, area?: Rect }>(requestId: string | null, make: (store: StoreType) => T, { background = false } = {}) {
+    await drawing // what is still being drawn goes on first: this is made on the board as it will be
     let copy = copyOf(board.store)
     let r = make(copy)
     // a work area marked out already, and no ticket yet: its ticket at the top of it, then the operation again around it
@@ -748,7 +720,9 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     if (requestId) noteArea(requestId)
     const ids = (r as { ids?: string[] }).ids ?? [...new Set([(r as { result?: unknown }).result].flat(Infinity).filter((v): v is string => typeof v === 'string'))]
     if (requestId) emit(requestId, { type: 'op', op: r.op, diff: r.diff, ids }) // first, so the panel can take the view there
-    await putLive(board.store, r.diff, copy, board.cursor)
+    const put = putLive(board.store, r.diff, copy, (x, y) => { holdCursor(); board.cursor(x, y) }, undefined, { op: r.op })
+    if (background) drawing = put.catch((e) => process.stderr.write(`drawing ${r.op} stopped: ${(e as Error).message}\n`))
+    else await put
     announceMentions(relay, r.diff) // a note to another agent ("@Claude …") asks it
     if (w) w.seen = snapshot(w.area) // its own work is not news
     return { r, grew: grew && !fresh ? w!.area : undefined }

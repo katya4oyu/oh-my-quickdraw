@@ -23,7 +23,8 @@
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
         "quickdraw-gif": "/_/quickdraw-gif/src/index.js",
-        "quickdraw-boards": "/_/quickdraw-boards/src/index.js"
+        "quickdraw-boards": "/_/quickdraw-boards/src/index.js",
+        "quickdraw-svg": "/_/quickdraw-svg/src/index.js"
       }
     }
   </script>
@@ -44,9 +45,10 @@
     import { registerMemberCard } from 'quickdraw-members'
     import { bindGifs } from 'quickdraw-gif'
     import { registerBoardCard, knowBoards } from 'quickdraw-boards'
+    import { registerSvgFill } from 'quickdraw-svg'
     import { UPDATE, SV, pack } from '/protocol.js'
 
-    registerMarkdown(); registerEmbed(); registerTicket(); registerMemberCard(); registerBoardCard()
+    registerMarkdown(); registerEmbed(); registerTicket(); registerMemberCard(); registerBoardCard(); registerSvgFill()
     const boardId = location.pathname.split('/')[2]
     const board = createQuickdraw({ container: document.getElementById('board'), readonly: true, watermark: false })
     const ydoc = new Y.Doc()

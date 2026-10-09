@@ -422,13 +422,15 @@ export async function startSession({ url, name, cwd, idle = 30, remote = false, 
     const writes = !READING.has(cmd) && !STREAMING.has(cmd)
     const people = writes && request ? j.agent.peopleSince(request).trim() : ''
     j.agent.activity(writes ? 'drawing' : 'reading')
+    // a drawing still going on is read, looked at or checked once it is on the board (undo stops it; svg queues behind it)
+    if (cmd !== 'undo' && cmd !== 'svg') await j.agent.drawn()
     const rest = argv.filter((a, i) => a !== '--board' && argv[i - 1] !== '--board' && !a.startsWith('--board=')) // it is on that board already
     try {
       await runCommand({
         board: j.board, url: j.url, boardKey: j.url, session: true,
         // what has no place goes where people look: the request's view (BoardAgent's), else by the people, else where it last worked
-        operate: async (make) => {
-          const done = await j.agent.operate(request, make, { prefer: (request ? undefined : j.crowd() ?? j.lastSpot) ?? undefined })
+        operate: async (make, { background } = {}) => {
+          const done = await j.agent.operate(request, make, { prefer: (request ? undefined : j.crowd() ?? j.lastSpot) ?? undefined, background })
           j.saw(done.diff)
           if (done.focus) j.lastSpot = done.focus
           const did = request && j.didText(done.diff)

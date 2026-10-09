@@ -11,6 +11,7 @@ import { createEmbed, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
 import { createBoardCard, validateBoardCard, TYPE as BOARDCARD } from 'quickdraw-boards'
 import { createLayout, addCell, setSpan, setColumns, isLayout, isCell } from 'quickdraw-layouts'
 import { createTicket, isColumn, registerTicket, kanbanColumn, placeInColumn, setTicketStatus, TYPE as TICKET } from 'quickdraw-tickets'
+import { readSvg, svgElements, registerSvgFill, FILL } from 'quickdraw-svg'
 import { estimateWidth } from './measure.js'
 import { labelFit } from './lint.js'
 import { hitsOf } from './hits.js'
@@ -19,6 +20,7 @@ const GAP = 40
 const PAD = 24 // inside a frame's edges
 const MIN_FIT = 0.3 // smaller than this and notes stop being readable
 const round = (n) => Math.round(n)
+const round1 = (n) => Math.round(n * 10) / 10
 const emptyDiff = () => ({ added: {}, removed: {}, updated: {} })
 const isTitle = (s) => s.isFrameTitle === true || s.id === s.frameId + '-title'
 const isLine = (s) => s.type === 'arrow' || s.type === 'line'
@@ -38,6 +40,7 @@ export function textOf(store, s) {
     case BOARDCARD: return `${s.props.title} (board ${s.props.board}${s.props.live ? ', live' : ''})` // a board in this board (quickdraw-boards)
     case 'image': return '(image)'
     case 'draw': case 'highlight': return '(drawing)'
+    case FILL: return '(fill)' // a fill an SVG asked for (quickdraw-svg)
     default: return ''
   }
 }
@@ -75,6 +78,7 @@ export function describeBoard(store) {
     ...(isColumn(f) ? { kanban: { id: f.kanban.id, status: f.kanban.status } } : {}), // a kanban's column (quickdraw-tickets)
     ...(f.frameId && isFrame(store.get(f.frameId)) ? { frame: f.frameId } : {}), // in another frame
     ...(f.titleInside ? { title_inside: true } : {}),
+    ...(f.svg?.asset ? { svg: f.svg.asset } : {}), // drawn from an SVG (ops.svg), kept as this asset
     members: shapes.filter((s) => s.frameId === f.id && !isTitle(s) && !isLine(s)).map((s) => s.id), // arrows: see `arrows`
   })).sort(byPosition)
   // bento grids (quickdraw-layouts): their cells are frames, in order
@@ -86,6 +90,7 @@ export function describeBoard(store) {
     id: s.id, type: s.type === 'geo' ? s.props.geo : s.type, text: stills.has(s.id) ? '(screenshot)' : textOf(store, s), ...box(s),
     ...(s.props.color ? { color: s.props.color } : {}),
     ...(s.frameId ? { frame: s.frameId } : {}),
+    ...(s.svg?.el ? { svg: s.svg.el } : {}), // the SVG element it was drawn from
     // who made it (an agent, or a person whose page marked it), and who changed it last if not them
     ...((s.made?.by ?? s.agent?.name) ? { by: s.made?.by ?? s.agent.name } : {}),
     ...(s.edited?.by && s.edited.by !== (s.made?.by ?? s.agent?.name) ? { edited_by: s.edited.by } : {}),
@@ -116,6 +121,7 @@ export function boardToMarkdown(store) {
       return `- [ticket, ${t.status}${who}${where}] ${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'}${t.result ? ` — ${t.result.replace(/\s*\n\s*/g, ' / ')}` : ''} (id ${it.id})`
     }
     if (it.type === MARKDOWN) return `- ${tag}(id ${it.id})\n` + text.split('\n').map((l) => '  > ' + l).join('\n')
+    if (it.svg && (it.type === 'draw' || it.type === FILL)) return `- ${tag}${it.type === FILL ? 'fill' : 'stroke'} of ${it.svg} in the SVG (id ${it.id})`
     return `- ${tag}${text.replace(/\s*\n\s*/g, ' / ') || '(empty)'} (id ${it.id})`
   }
   const out = ['# Board', '']
@@ -132,8 +138,18 @@ export function boardToMarkdown(store) {
       : f.cell ? `bento cell ${f.cell.c}×${f.cell.r}${f.cell.auto ? ', rows follow its contents' : ''} in ${f.cell.layout}`
       : `frame${f.aspect ? `, ${ratio(f.aspect)}` : ''}`
     const inside = f.frame ? `, in ${titles.get(f.frame)}` : ''
-    out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${kind}${inside}; id ${f.id})`, '')
-    const members = f.members.map((id) => byId.get(id)).filter(Boolean)
+    out.push(`${'#'.repeat(Math.min(6, depth))} ${f.title || 'Frame'} (${f.svg ? 'drawn from an SVG' : kind}${inside}; id ${f.id})`, '')
+    let members = f.members.map((id) => byId.get(id)).filter(Boolean)
+    if (f.svg) {
+      // its strokes as drawn say nothing the SVG does not: the SVG is read instead, with what people changed since
+      const src = store.asset?.(f.svg)?.src
+      const left = new Set(members.map((m) => m.svg).filter(Boolean))
+      const gone = src ? Object.entries(svgElements(src)).filter(([el]) => !left.has(el)) : []
+      const quiet = members.filter((m) => m.svg && (m.type === 'draw' || m.type === FILL) && !m.edited_by)
+      members = members.filter((m) => !quiet.includes(m))
+      out.push(`The SVG it was drawn from is what it shows: \`omq svg --show ${f.id}\` prints it. Its ${quiet.length} strokes as drawn are not listed; what follows is its words, and what people changed or added since (their own marks: look at them).`, '')
+      if (gone.length) out.push(`- gone since drawn: ${gone.map(([el, what]) => `${el} (${what})`).join(', ')}`)
+    }
     const children = f.members.map((id) => framesById.get(id)).filter(Boolean)
     out.push(...(members.length ? members.map(line) : children.length ? [] : ['- (empty)']), ...(members.length || !children.length ? [''] : []))
     for (const c of children) section(c, depth + 1)
@@ -624,7 +640,7 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
     // Draws with the pen, as a person marks something: around a shape (circle),
     // under it (underline), or through page points. A hand-drawn stroke (a
     // 'draw' shape), red unless said: it stays until someone deletes it.
-    pen({ kind = 'circle', id, points, color, size = 'm' } = {}) {
+    pen({ kind = 'circle', id, points, color, size = 'm', dash = 'draw' } = {}) {
       let path
       if (kind === 'points') {
         if (!Array.isArray(points) || points.length < 2) throw new Error('the pen needs two points or more: [[x, y], …]')
@@ -648,9 +664,62 @@ function operations(store, name, op, { area: startArea, prefer } = {}) {
       const id2 = newId()
       put({ id: id2, type: 'draw', x: round(x0), y: round(y0), props: {
         pts: path.flatMap(([x, y]) => [Math.round((x - x0) * 10) / 10, Math.round((y - y0) * 10) / 10, 0.5]),
-        color: checkColor(color) ?? 'red', size, dash: 'draw', done: true,
+        color: checkColor(color) ?? 'red', size, dash: checkDash(dash) ?? 'draw', done: true,
       } })
       return id2
+    },
+    // Draws an SVG as a person would on a whiteboard (quickdraw-svg reads it):
+    // a frame its size (titled by its <title>), its outlines as pen strokes and
+    // its words as texts, where the SVG has them, in the order it was written.
+    // The SVG itself is kept on the board (an asset) as the source of the
+    // drawing: the frame and every stroke and word carry `svg: { asset, el,
+    // unit, sig }` (el: the element it came from; sig: how it was drawn).
+    // `write` (chars or lines) is how the words go on when drawn live.
+    // `replace`: a drawing's frame, drawn again from this SVG: what is drawn
+    // the same stays as it is (moved by people, too), only what changed goes
+    // and comes; what people added in it stays. Returns the frame and what
+    // was drawn.
+    svg(source, { at, inFrame, write = 'chars', replace } = {}) {
+      if (!['chars', 'lines'].includes(write)) throw new Error(`unknown write "${write}" (chars or lines)`)
+      const d = readSvg(source)
+      if (d.parts.some((p) => p.kind === 'fill')) registerSvgFill()
+      if (!d.parts.length) throw new Error('nothing to draw in this SVG')
+      let frame, asset, kept = new Map()
+      if (replace) {
+        const f = need(replace)
+        asset = f.svg?.asset
+        if (!asset || !store.asset(asset)) throw new Error(`${replace} is not a drawing from an SVG (omq read shows which frames are)`)
+        frame = f.id
+        if (f.props.w !== d.w || f.props.h !== d.h) store.update(frame, { props: { w: d.w, h: d.h } })
+        if (d.title && d.title !== frameTitle(store, frame)) renameFrame(store, frame, d.title)
+        // what it drew before, by how it was drawn
+        for (const s of store.shapes()) if (s.svg?.asset === asset && s.id !== frame && s.svg.sig) kept.set(s.svg.sig, [...(kept.get(s.svg.sig) ?? []), s.id])
+      } else {
+        asset = newId('asset')
+        frame = ops.frame(d.title || 'SVG', { at, w: d.w, h: d.h, inFrame })
+        store.update(frame, { svg: { asset } })
+      }
+      store.put({ id: asset, typeName: 'asset', type: 'svg', src: String(source), w: d.w, h: d.h, title: d.title, write, units: d.units, dropped: d.dropped })
+      const f = store.get(frame), o = { x: f.x, y: f.y }
+      const ids = d.parts.map((p) => {
+        const same = kept.get(p.sig)
+        if (same?.length) return same.shift() // drawn the same: it stays
+        if (p.kind === 'fill') { // under its outline: a shape of its own (quickdraw-svg's fill)
+          const xs = p.points.map((q) => q[0]), ys = p.points.map((q) => q[1]), x0 = Math.min(...xs), y0 = Math.min(...ys)
+          const id = add(FILL, { pts: p.points.flatMap(([x, y]) => [round1(x - x0), round1(y - y0)]), w: Math.max(...xs) - x0, h: Math.max(...ys) - y0, color: p.color, style: p.style }, 0, 0, { at: { x: o.x + x0, y: o.y + y0 } })
+          store.update(id, { svg: { asset, el: p.el, unit: p.unit, sig: p.sig } })
+          return id
+        }
+        const id = p.kind === 'stroke'
+          ? ops.pen({ kind: 'points', points: p.points.map(([x, y]) => [o.x + x, o.y + y]), color: p.color, size: p.size, dash: p.dash })
+          : ops.text(p.text, { at: { x: o.x + p.at[0], y: o.y + p.at[1] }, fontSize: Math.min(160, Math.max(8, p.fontSize)), w: p.w, align: p.align, color: p.color })
+        store.update(id, { svg: { asset, el: p.el, unit: p.unit, sig: p.sig } })
+        return id
+      })
+      const gone = [...kept.values()].flat()
+      if (gone.length) store.remove(gone) // what the new SVG no longer draws so
+      focus = o
+      return [frame, ...ids]
     },
     // Lays frames out close together, in reading order, in rows from `at` (by
     // default where the first of them is) no wider than `width`: a board that
@@ -837,6 +906,7 @@ export function applySteps(store, name, steps, { area, prefer, drawing } = {}) {
   if (steps && !Array.isArray(steps) && typeof steps === 'object' && 'items' in steps) return applyUnit(store, name, steps, { area, prefer }, strict)
   if (!Array.isArray(steps)) throw new Error('steps must be an array, or a unit: { origin: [x, y], items: [steps] }')
   if (strict) steps.forEach((s, i) => {
+    if (['shape', 'text', 'arrow'].includes(s?.do)) throw new Error(`step ${i + 1} ${s.do}: ${AS_SVG}`)
     if (ADDS.has(s?.do) && !(s.do === 'frame' && s.around?.length)) throw new Error(`step ${i + 1} ${s.do}: things are added in a unit, { origin: [x, y], items: [...] }, each at its at; a list of steps only changes what is there`)
   })
   return runOp(store, name, (ops) => runSteps(ops, steps, {}, (p) => pointOf(p, 'at')), { area, prefer }) // at: { x, y } or [x, y]
@@ -869,6 +939,7 @@ function runSteps(ops, steps, refs = {}, at = (p) => p, label = null) {
         case 'move': { const to = s.x != null || s.y != null ? at({ x: s.x ?? 0, y: s.y ?? 0 }) : null; out = ops.move(r(s.id), { ...s, ...(to ? { x: s.x != null ? to.x : undefined, y: s.y != null ? to.y : undefined } : {}) }); break }
         case 'arrange': out = ops.arrange(s.ids.map(r), { ...s, at: at(s.at) }); break
         case 'fit': out = ops.fit(r(s.frame ?? s.id), { ids: (s.ids ?? []).map(r) }); break
+        case 'svg': out = ops.svg(s.svg ?? s.source, { at: at(s.at), inFrame: r(s.in), write: s.write, replace: r(s.replace) }); break
         case 'pen': out = ops.pen({ kind: s.kind ?? (s.points ? 'points' : 'circle'), id: r(s.id), points: s.points?.map((p) => { const q = at(Array.isArray(p) ? { x: p[0], y: p[1] } : p); return [q.x, q.y] }), color: s.color, size: s.size }); break
         case 'tidy': out = ops.tidy({ ids: s.ids?.map(r), at: at(s.at), gap: s.gap, width: s.width }); break
         case 'delete': out = ops.delete((s.ids ?? [s.id]).map(r)); break
@@ -894,10 +965,12 @@ function pointOf(v, what) {
 const PLACES = new Set(['note', 'text', 'shape', 'markdown', 'image', 'embed', 'board', 'ticket', 'frame', 'layout'])
 const ADDS = new Set([...PLACES, 'arrow'])
 // in a unit drawn by an agent, each item has one way to be written: every size a number, every word a text
+// shapes, words and arrows are drawn one way: as an SVG (ops.svg: omq svg, the draw_svg tool)
+const AS_SVG = 'shapes, words and arrows are drawn as an SVG: write one, and draw it with omq svg FILE (the draw_svg tool)'
 const UNIT_RULES = {
-  shape: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : s.text != null || s.label != null ? 'a shape holds no words: put them as a text item over it (at, font_size, w, align: middle)' : null),
-  text: (s) => (s.font_size == null && s.fontSize == null ? 'give its font_size in px' : null),
-  arrow: (s) => (s.label != null ? 'an arrow takes no label: put the word as a text item by it (at, font_size)' : s.from_at == null || s.to_at == null ? 'give where its ends are, from_at and to_at [x, y] (from the origin), at the edges of the shapes it joins' : null),
+  shape: () => AS_SVG,
+  text: () => AS_SVG,
+  arrow: () => AS_SVG,
   frame: (s) => (s.around?.length || (s.w != null && s.h != null) ? null : 'give its size, w and h (or around: the shapes it encloses)'),
   image: (s) => (s.w == null ? 'give its width, w' : null),
   embed: (s) => (s.w == null || s.h == null ? 'give its size, w and h' : null),
@@ -923,7 +996,7 @@ function applyUnit(store, name, unit, where, strict = false) {
     if (!s || typeof s !== 'object') throw new Error(`${name_(i, {})}: an item is a step, { do: …, at: [x, y], … }`)
     if (strict) {
       const rule = UNIT_RULES[s.do]
-      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit draws with shape, text, arrow, frame, image, embed, pen (and update, move, delete)`)
+      if (!rule) throw new Error(`${name_(i, s)}: not in a unit — a unit puts frame, image, embed, pen (and update, move, delete); ${AS_SVG}`)
       const why = (s.text_size ?? s.textSize) != null ? 'sizes are numbers here: font_size in px, not text_size' : s.in != null ? 'give in to the unit, not to an item' : rule(s)
       if (why) throw new Error(`${name_(i, s)}: ${why}`)
     }

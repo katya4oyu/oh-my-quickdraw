@@ -1,26 +1,25 @@
 # Pyramid
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
+One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
 Levels, the base widest: foundations → goals, many → few.
 
-```json
-{"unit": "the base", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "light-blue", "fill": "solid", "w": 600, "h": 70, "at": [0, 160]},
-  {"do": "text", "text": "Projects", "font_size": 16, "color": "light-blue", "w": 600, "align": "middle", "at": [0, 184]}
-] }
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 330">
+  <title>What we build on</title>
+  <g id="base">
+    <path d="M10 320 L610 320 L530 220 L90 220 Z" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+    <text x="310" y="276" font-size="16" fill="#1d1d1d" text-anchor="middle">Reliable sync</text>
+  </g>
+  <g id="middle">
+    <path d="M90 220 L530 220 L450 120 L170 120 Z" fill="none" stroke="#1d1d1d" stroke-width="3"/>
+    <text x="310" y="176" font-size="16" fill="#1d1d1d" text-anchor="middle">Agents that draw</text>
+  </g>
+  <g id="top">
+    <path d="M170 120 L450 120 L310 10 Z" fill="none" stroke="#099268" stroke-width="5"/>
+    <text x="310" y="96" font-size="16" fill="#099268" text-anchor="middle">Shared thinking</text>
+  </g>
+</svg>
 ```
 
-```json
-{"unit": "what it serves", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "blue", "fill": "solid", "w": 400, "h": 70, "at": [100, 80]},
-  {"do": "text", "text": "Strategy", "font_size": 16, "color": "blue", "w": 400, "align": "middle", "at": [100, 104]}
-] }
-```
-
-```json
-{"unit": "the top", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "violet", "fill": "solid", "w": 200, "h": 70, "at": [200, 0]},
-  {"do": "text", "text": "Vision", "font_size": 16, "color": "violet", "w": 200, "align": "middle", "at": [200, 24]}
-] }
-```
+Draw from the base up when it is built up; from the top down when it breaks a goal down.

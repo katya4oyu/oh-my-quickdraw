@@ -1,0 +1,30 @@
+{
+  "name": "quickdraw-svg",
+  "private": true,
+  "version": "0.1.0",
+  "description": "An SVG as a whiteboard drawing: its structure read into pen strokes and words, in the order it was written, each saying which element it came from.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "types",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@quickdrawjs/core": "*"
+  }
+}

@@ -1,6 +1,6 @@
 ---
 name: quickdraw
-description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (shapes and arrows), summarize a meeting or material visually (graphic recording), tidy it up, act on the feedback people wrote on snapshots of a shared screen, take and close the tickets people leave for agents (or wait for the next one), join a board to take requests from the people on it, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames, snapshots, tickets or kanban, or asks to put something on the board, to work through its tickets, or to join a board and take requests there.
+description: Read and edit a Quickdraw whiteboard — summarize or answer questions about a board, put sticky notes, text, Markdown cards, frames, images, videos, web pages and small HTML prototypes on it, draw diagrams (written as an SVG, drawn on the board by hand), summarize a meeting or material visually (graphic recording), tidy it up, act on the feedback people wrote on snapshots of a shared screen, take and close the tickets people leave for agents (or wait for the next one), join a board to take requests from the people on it, and export it. Use when the user mentions their Quickdraw board, whiteboard, sticky notes, frames, snapshots, tickets or kanban, or asks to put something on the board, to work through its tickets, or to join a board and take requests there.
 ---
 
 # Quickdraw board
@@ -54,11 +54,11 @@ The commands below put things on the board; deciding **what** to draw and **how 
 - making sense of notes people scattered (grouping, affinity): `drawing/tidy.md`
 - thinking something through with the person, on the board: `drawing/thinking-partner.md`
 
-`drawing/patterns.md` has the diagram patterns (flow, timeline, tree, 2x2, Venn, mind map…) with `apply` skeletons.
+`drawing/patterns.md` has the diagram patterns (flow, timeline, tree, 2x2, Venn, mind map…) with SVG skeletons.
 
 ## Notes, cards and frames
 
-Shapes, words and arrows go on the board only with `apply` (next section). These commands put the rest; each is one operation. Without `--at X,Y` (the top-left corner in board coordinates; `read --format json` gives positions and sizes), they go in free space: near what the person who asked was looking at, or by the people on the board when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
+Shapes, words and arrows go on the board only as an SVG (next section). These commands put the rest; each is one operation. Without `--at X,Y` (the top-left corner in board coordinates; `read --format json` gives positions and sizes), they go in free space: near what the person who asked was looking at, or by the people on the board when you have joined it; else to the right of the board. `--in FRAME_ID` puts them in a frame's free space.
 
 ```sh
 omq note "Idea" [--color yellow|green|blue|…] [--in FRAME_ID]   # a sticky note: one idea people will move
@@ -71,42 +71,50 @@ omq board-card BOARD_ID [--live]                  # another board in this one: a
                                                         # read lists the boards on cards: title, frames, how much is in them
 ```
 
-## Drawing: `apply`, one unit of thought at a time
+## Drawing: write an SVG, `omq svg` draws it by hand
 
-Shapes, words and arrows go on the board only this way, as an SVG is written: you choose every position and every size as a number, and the board shows exactly that. Nothing is moved, resized, wrapped or placed for you.
-
-Draw as a person draws at a whiteboard: one **unit of thought** per `apply` — a question; then its options and the arrows to them; then what was chosen — so the people watching see the drawing grow, piece by piece. Never a whole drawing, or a frame full of it, in one `apply`.
-
-A unit has an `origin` and `items`. The origin is a board point you pick in free space (with `"in": FRAME_ID`, a point in that frame, from its top-left). Every `at` in the unit is `[x, y]` from the origin. Keep one origin for a whole drawing, and its units' `at`s are the drawing's own coordinates.
-
-```json
-{ "unit": "the question and its options", "origin": [1200, 0], "items": [
-  { "do": "shape", "shape": "diamond", "color": "red", "w": 240, "h": 160, "at": [0, 60], "ref": "q" },
-  { "do": "text", "text": "Which first?", "font_size": 16, "color": "red", "w": 240, "align": "middle", "at": [0, 129] },
-  { "do": "shape", "shape": "rectangle", "color": "green", "w": 240, "h": 80, "at": [360, 0], "ref": "a" },
-  { "do": "text", "text": "Sample data first", "font_size": 16, "color": "green", "w": 240, "align": "middle", "at": [360, 18] },
-  { "do": "text", "text": "2 weeks · fewer tickets", "font_size": 12, "color": "grey", "w": 240, "align": "middle", "at": [360, 46] },
-  { "do": "arrow", "from": "@q", "to": "@a", "from_at": [246, 140], "to_at": [354, 40] }
-] }
-```
+Shapes, words and arrows go on the board only this way. Write the drawing as one SVG file: you choose every position and size as a number. `omq svg` draws it on the board as a person would at a whiteboard: each outline with the pen, the cursor on its tip, the words where you put them, in the order you wrote them. Nothing is moved, resized or wrapped for you.
 
 ```sh
-omq apply unit.json      # or: … apply - < unit.json
+omq svg drawing.svg [--at X,Y]            # a new drawing; without --at in free space (your area when joined)
+omq svg drawing.svg --replace FRAME_ID    # that drawing again, from the changed SVG: only what changed is redrawn
+omq svg --show FRAME_ID > drawing.svg     # the SVG a drawing was drawn from (to change it)
 ```
 
-Each item has one way to be written:
+Write the SVG so it draws well:
 
-- `shape` — `shape` (rectangle ellipse triangle diamond hexagon star cloud), `w`, `h`, `color`, `fill` (none semi solid pattern), `dash` (draw solid dashed dotted). A box: it holds no words.
-- `text` — `text`, `font_size` in px, `color`; `w` to wrap at that width, with `align` (start middle end) in it. Every word on the board is a text. Sizes: a title 34, a heading 22, a box's name 16, a detail, a caption or the word on an arrow 12–13. A line is 1.32 × `font_size` tall; a Latin letter about 0.55 × `font_size` wide, a CJK character about 1 ×. A box's name: at the box's x, `w` its width, `align: "middle"`, its top (box height − lines × line height) / 2 down; a detail under it, smaller and grey.
-- `arrow` — `from`, `to` (the shapes it joins), `from_at`, `to_at` (where its two ends are, `[x, y]` from the origin: at the edges of those shapes, a few px off them), `bend` (how far the middle bows out; 0 straight), `dash`, `line` (no arrowhead), `color`. A diamond's corners and an ellipse's ends are at the middles of its box's sides: run arrows to and from there. It is drawn from end to end exactly; when a shape moves later, its end stays at the same spot on it. The word on it is a `text` by its middle. Plan the ends so arrows do not cross each other or run over other shapes.
-- `frame` — `title`, `w`, `h` (or `around`: the shapes it encloses, then it needs no `at`), `aspect`.
-- `pen` (`points` from the origin), `update`, `move` (`x`/`y` from the origin, or `dx`/`dy`), `delete` (`ids`).
+- `viewBox="0 0 W H"` in px (up to about 1400 wide); its `<title>` is the drawing's frame title.
+- **In reading order, a unit of thought per top-level `<g>`** — a question; then its options and the arrows to them; then what was chosen. It is drawn in that order, so people see the thinking grow.
+- Shapes: `rect` (`rx` rounds it), `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`. Their outline is drawn: give `stroke` and `fill="none"` (a fill is not drawn; a shape with only a fill gets its outline in that colour). `stroke-width`: 1.5 thin, 3 normal, 5 bold.
+- An arrow: a `line` or `path` with `marker-end` (any marker; the board draws the head). Its ends a few px off the shapes it joins; plan them so arrows do not cross each other or run over shapes.
+- Words: `<text x y font-size fill>` — `y` is the baseline; `text-anchor="middle"` centres it on `x`. One line per `text` (or `<tspan x="…" dy="…">` per line). Sizes: a title 34, a heading 22, a box's name 16, a detail or the word on an arrow 12–13. The board's letters are hand-drawn and wide: a Latin letter about 0.56 × `font-size`, a CJK character 1 ×; leave room.
+- Colours: the board's — black `#1d1d1d`, grey `#9fa8b2`, blue `#4263eb`, light-blue `#4dabf7`, green `#099268`, light-green `#4cb05e`, red `#e03131`, light-red `#f87777`, orange `#e16919`, yellow `#f1ac4b`, violet `#ae3ec9`, light-violet `#e085f4` (any other colour goes to the nearest).
+- Not drawn: fills, gradients, shadows and filters, faint things (`opacity` under .5), images, rotation. A whiteboard has outlines: fill only where it helps (the one thing that matters most, an area to set apart) with `data-fill="tint"` (or `hatch`, `scribble`) on the shape, its `fill` the colour.
 
-`ref` names what an item adds, and `"@ref"` points at it — in the same unit or any later one (the last thing you named so on this board): give the things of a drawing distinct refs. If any item breaks a rule or fails, nothing of the unit is applied, and the error says which item and why.
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200">
+  <title>Which first?</title>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z"/></marker></defs>
+  <g id="question">
+    <path d="M10 100 L130 30 L250 100 L130 170 Z" fill="none" stroke="#e03131" stroke-width="3"/>
+    <text x="130" y="106" font-size="16" fill="#e03131" text-anchor="middle">Which first?</text>
+  </g>
+  <g id="option">
+    <rect x="370" y="60" width="250" height="80" rx="8" fill="none" stroke="#099268" stroke-width="3"/>
+    <text x="495" y="94" font-size="16" fill="#099268" text-anchor="middle">Sample data first</text>
+    <text x="495" y="118" font-size="12" fill="#9fa8b2" text-anchor="middle">2 weeks · fewer tickets</text>
+    <line x1="256" y1="100" x2="362" y2="100" stroke="#1d1d1d" stroke-width="3" marker-end="url(#a)"/>
+  </g>
+</svg>
+```
 
-It prints `placed`, one item per line, as it ended up: `id`, `at` (from the origin) and `size`; a text's `font_size` and how many `lines` it took; with `in`: whether it lies `inside` the frame; an arrow: its two `ends`; and `hits`, what it runs into as drawn — `crosses arrow @x` (arrows crossing), `over text "…" @y` / `on arrow @x` (a line through words), `over rectangle @z` / `under arrow @x` (a line over a shape it does not join), `overlaps …` (shapes or texts on top of each other, a text across a box's edge). Nothing is changed to fit: when there are `hits`, a text took more lines than you planned, or something is not inside its frame, put it right in the next unit (`update`, `move`, or delete and draw it again), or draw the next unit around it.
+It prints the drawing's `frame` (its id), `at`, `size`, `units`, `strokes`, `words`, what could not be drawn (`dropped`), and `hits`: what reads badly as drawn — `words "…" run past the edge of rect3 by 18 px` (the board's letters are wider than a browser's), `words "…" on words "…"`, `a line (path2) through words "…"`. Fix the SVG and draw it again with `--replace FRAME_ID`. Joined (`omq join`), it answers at once and draws while you go on: write the next drawing meanwhile (the next change waits until this one is on the board).
 
-A plain list of steps, with no origin, only changes what is there: `[{ "do": "update", "id": "…", "color": "green" }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
+One SVG is one drawing (one frame). A drawing that grows over time (a meeting, a long piece of material): a small SVG per part, each `--at` beside the last; or redraw the drawing with `--replace` as it grows: only what is new is drawn.
+
+To change a drawing: `omq svg --show FRAME_ID > d.svg`, edit it, `omq svg d.svg --replace FRAME_ID`. What people drew in it stays.
+
+`apply` changes what is there, as one operation: a plain list of steps, `[{ "do": "move", "id": "…", "dx": 40 }, …]` — `update`, `move`, `arrange`, `fit`, `tidy`, `status`, `delete`, and `frame` with `around`.
 
 ## Change and tidy
 
@@ -149,7 +157,7 @@ PNG needs Chrome (or Chromium, Edge, Brave) installed; it runs headless and out 
 - Read, then write; re-read after bigger changes to check the result.
 - Draw first, then check: once a piece of work is done, `omq lint` (or `lint --frame ID`, `lint --ids ID,…` for just what you made) lists what reads badly — shapes on top of each other, arrows across shapes they do not connect, what sticks out of a frame or lies across its edge, frames on top of each other. `omq lint --fix` fixes what needs no judgement itself, as one operation (`undo` reverts it), on what agents made only: shapes or frames on top of each other, what hangs over a frame's edge. Fix the rest (an arrow across a shape) with `move`, `arrange` or `fit`, and lint again. Leave what people made where it is.
 - Look once a drawing is done, not after every step: `omq look --frame ID` (a small picture, cheap to read); the full-size `export` is for people.
-- Draw a unit of thought per `apply`, and read its `placed` before the next: where things ended up, how many lines each text took.
+- Write a drawing's units of thought as `<g>`s in reading order, and read `hits` after each `omq svg`: fix them with `--replace` before going on.
 - Keep notes short (a line or two); put longer text in a Markdown card.
 - Put related things in a frame, and say in your reply what you added and where (frame titles, ids).
 - **Comments** (live boards): a frame may have a thread — what was meant or asked about that drawing, and people's answers; `read` ends with them. Before you change a drawing, read its thread and follow what was agreed. When you cannot decide on your own what a drawing should say or stress (what to leave out, what to make stand out, what to do when text does not fit), ask in its thread — `omq comment FRAME_ID "…"`, saying what you did meanwhile — and go on; people answer there. `omq comments [--frame ID]` lists the threads.

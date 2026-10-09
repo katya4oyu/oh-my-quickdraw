@@ -1,23 +1,31 @@
 # 2x2 matrix
 
-Draw it a unit at a time (`../visual-thinking.md`, Place): each block below is one `apply`, all with the drawing's `origin`; `"@q"` points at what an earlier unit named `q`.
+One SVG, drawn with `omq svg` (`../visual-thinking.md`, Place): each `<g>` is a unit of thought, drawn in the order written. Replace the words, widen the boxes for longer ones, and fix what `hits` reports with `--replace`.
 
 Two axes, four quadrants: sort items by two qualities at once.
 
-```json
-{"unit": "the axes", "origin": [0, 0], "items": [
-  {"do": "shape", "shape": "rectangle", "color": "green", "w": 320, "h": 200, "at": [0, 0]},
-  {"do": "text", "text": "Quick wins", "font_size": 16, "color": "green", "w": 320, "align": "middle", "at": [0, 12]},
-  {"do": "shape", "shape": "rectangle", "color": "blue", "w": 320, "h": 200, "at": [340, 0]},
-  {"do": "text", "text": "Big bets", "font_size": 16, "color": "blue", "w": 320, "align": "middle", "at": [340, 12]},
-  {"do": "shape", "shape": "rectangle", "color": "grey", "w": 320, "h": 200, "at": [0, 220]},
-  {"do": "text", "text": "Fill-ins", "font_size": 16, "color": "grey", "w": 320, "align": "middle", "at": [0, 232]},
-  {"do": "shape", "shape": "rectangle", "color": "red", "w": 320, "h": 200, "at": [340, 220]},
-  {"do": "text", "text": "Money pits", "font_size": 16, "color": "red", "w": 320, "align": "middle", "at": [340, 232]},
-  {"do": "text", "text": "← low effort · high effort →", "font_size": 13, "at": [200, 440]},
-  {"do": "text", "text": "high impact ↑", "font_size": 16, "at": [-200, 80]},
-  {"do": "text", "text": "low impact ↓", "font_size": 16, "at": [-200, 300]}
-] }
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 500">
+  <title>Effort and impact</title>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z"/></marker></defs>
+  <g id="axes">
+    <rect x="170" y="10" width="330" height="210" fill="none" stroke="#099268" stroke-width="3"/>
+    <text x="335" y="40" font-size="16" fill="#099268" text-anchor="middle">Quick wins</text>
+    <rect x="520" y="10" width="330" height="210" fill="none" stroke="#4263eb" stroke-width="3"/>
+    <text x="685" y="40" font-size="16" fill="#4263eb" text-anchor="middle">Big bets</text>
+    <rect x="170" y="240" width="330" height="210" fill="none" stroke="#9fa8b2" stroke-width="3"/>
+    <text x="335" y="270" font-size="16" fill="#9fa8b2" text-anchor="middle">Fill-ins</text>
+    <rect x="520" y="240" width="330" height="210" fill="none" stroke="#e03131" stroke-width="3"/>
+    <text x="685" y="270" font-size="16" fill="#e03131" text-anchor="middle">Money pits</text>
+    <text x="510" y="484" font-size="13" fill="#1d1d1d" text-anchor="middle">low effort ← → high effort</text>
+    <text x="10" y="120" font-size="16" fill="#1d1d1d">high impact</text>
+    <text x="10" y="350" font-size="16" fill="#1d1d1d">low impact</text>
+  </g>
+  <g id="first-items">
+    <text x="190" y="80" font-size="14" fill="#1d1d1d">Sample data</text>
+    <text x="540" y="80" font-size="14" fill="#1d1d1d">New billing</text>
+  </g>
+</svg>
 ```
 
-The quadrant's name is a text at its top. Then a unit per item or two as you sort them: short texts (13–16 px) inside the quadrant, below its name. Many items: make the quadrants bigger in the first unit.
+The quadrant's name at its top. Then a `<g>` per item or two as you sort them: short texts (13–16 px) inside the quadrant, below its name. Many items: make the quadrants bigger.

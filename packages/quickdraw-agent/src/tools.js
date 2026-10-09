@@ -3,6 +3,7 @@
 // is one operation (one undo), made with applySteps, so it behaves exactly as
 // the same step in a list of steps.
 import { COLOR_IDS, GEO_IDS, SIZE_IDS, DASH_IDS, FILL_IDS } from '@quickdrawjs/core'
+import { readSvg } from 'quickdraw-svg'
 import { applySteps, boardToMarkdown, describeBoard } from './ops.js'
 import { fixLayout, fixText, lintBoard, lintText } from './lint.js'
 
@@ -94,18 +95,35 @@ export const BOARD_TOOLS = [
     kind: { type: 'string', enum: ['circle', 'underline', 'points'] }, id: str('the shape to circle or underline'),
     points: { type: 'array', items: { type: 'array', items: num }, description: 'page points [[x, y], …], for kind points' }, color,
   }),
+  {
+    name: 'draw_svg',
+    description: 'Draws an SVG you write on the board as a person would at a whiteboard: its outlines with the pen and its words as texts, where the SVG has them, in the order it is written (its <g> groups, or a box and what is in it, are drawn together), in a frame its size titled by its <title>. '
+      + 'People watch it drawn a stroke at a time; you are answered at once and may go on (the next change waits until it is drawn). Fills, gradients and shadows are not drawn: a whiteboard has outlines and words (a shape with data-fill="tint", or hatch or scribble, is filled: only where it helps). '
+      + 'It answers `hits`, what reads badly once drawn (words past their box: the board\'s hand-drawn letters are wider; words on words; a line through words): fix the SVG and draw it again with `replace`. '
+      + 'The SVG is kept with the drawing: read_board gives it back with what people changed since. `write`: chars (words written a character at a time, for people watching) or lines.',
+    inputSchema: object({
+      svg: str('a self-contained SVG (viewBox in px, text with font-size, no images or external fonts)'),
+      x: { type: 'number', description: 'left edge on the board (with y); without them it goes in your work area or free space' }, y: num,
+      write: { type: 'string', enum: ['chars', 'lines'] },
+      replace: str('a drawing\'s frame id: draw it again from this SVG, changed; only what changed is redrawn, what people added stays'),
+    }, ['svg']),
+    run(store, { svg, x, y, write, replace } = {}, { name: who = 'Agent', area, prefer } = {}) {
+      const at = x != null && y != null ? [x, y] : undefined
+      const { op, diff, result: [[frame, ...parts]], focus, area: grown } = applySteps(store, who, [{ do: 'svg', svg, at, write, replace }], { area, prefer })
+      const d = readSvg(svg), strokes = d.parts.filter((p) => p.kind === 'stroke').length
+      const f = store.get(frame)
+      return { op, diff, focus, ids: [frame], drawing: { frame, at: [Math.round(f.x), Math.round(f.y)], size: [d.w, d.h], units: d.units.length, strokes, words: parts.length - strokes, ...(Object.keys(d.dropped).length ? { dropped: d.dropped } : {}), ...(d.hits.length ? { hits: d.hits } : {}) }, ...(grown ? { area: grown } : {}) }
+    },
+  },
   step('tidy_frames', 'tidy', 'Gathers frames close together in reading order, in rows (about `width` wide) from `at` or where the first one is: for a board that has spread out, or when asked to tidy up. Each frame brings what is in it and its title; a kanban\'s columns stay together; what is in no frame stays put. By default all the frames.', {
     ids: ids('frames to lay out (default: all)'), at: point, gap: num, width: { type: 'number', description: 'how wide a row may get (default 2400)' },
   }),
   step('delete_shapes', 'delete', 'Deletes shapes an agent added. What people made is refused: ask them instead.', { ids: ids('shapes to delete') }, ['ids']),
   {
     name: 'apply_steps',
-    description: 'Draws on the board: the one way to add shapes, words and arrows. One unit of thought per call (a question; then its options and the arrows to them; then what was chosen), so people see the drawing grow. '
-      + '`items` are steps { do: shape|text|arrow|frame|image|embed|pen|update|move|delete, …the fields of that step }, each with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left); it goes exactly there, nothing is moved or looked for. '
-      + 'Every size is a number: a shape gives w and h and holds no words; words are text items with font_size in px (a box\'s name: at the box\'s x, w its width, align middle; a detail under it, smaller); an arrow joins two shapes (from, to) with its ends where you write them, from_at and to_at [x, y] from the origin at the shapes\' edges (a straight line, or bowed by bend), and takes no label (put the word as a text by it). '
-      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one. '
-      + 'It gives back `placed`: each item\'s id, at, size, a text\'s px and lines, whether it lies inside the frame, and `hits`: what it runs into as drawn (an arrow crossing another, a line through words or over a shape it does not join, things on top of each other). Nothing is changed: put hits right in the next call. '
-      + '`steps` instead of `items` (no origin): changes to what is there only — update, move, arrange, fit, tidy, status, delete, frame around shapes.',
+    description: 'Changes what is there, as one step: `steps` [{ do: update|move|arrange|fit|tidy|status|delete|frame (around shapes), …the fields of that step }]. Shapes, words and arrows are drawn as an SVG with draw_svg, not here. '
+      + 'Or a unit that puts frames, images, embeds and pen strokes exactly where written: `items` with `at` [x, y] from `origin` (in `in`: from that frame\'s top-left), every size a number; it gives back `placed` (each item\'s id, at, size, whether it lies inside the frame). '
+      + 'ref "a" names what an item adds; "@a" points at it, in this call or a later one.',
     inputSchema: object({
       unit: str('what this unit of thought is, in a few words'),
       origin: { type: 'array', items: num, minItems: 2, maxItems: 2, description: '[x, y]: the board point (with in: the point in that frame) every at in items is from' },

@@ -53,7 +53,14 @@ export interface Operations {
   fit(frameId: string, opts?: { ids?: string[] }): string[]
   delete(ids: string[]): string[]
   /** A hand-drawn pen stroke: around a shape, under it, or through page points; red unless said. */
-  pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string }): string
+  pen(what: { kind?: 'circle' | 'underline' | 'points', id?: string, points?: ([number, number] | Point)[], color?: ColorId, size?: string, dash?: Dash }): string
+  /**
+   * Draws an SVG as on a whiteboard (quickdraw-svg): a frame its size, its outlines as pen strokes, its words as texts, where it has them.
+   * The SVG is kept as an asset; the frame and every part carry `svg: { asset, el, unit }`. Returns [frame, …parts].
+   * `write`: how its words go on when drawn live, a character or a line at a time.
+   * `replace`: a drawing's frame, drawn again from this SVG: what is drawn the same stays, only what changed goes and comes.
+   */
+  svg(source: string, opts?: { at?: Point, inFrame?: string, write?: 'chars' | 'lines', replace?: string }): string[]
   /** Gathers frames (default: all) close together in reading order, in rows about `width` wide from `at`; a frame brings its contents, a kanban's columns go together. */
   tidy(opts?: { ids?: string[], at?: Point, gap?: number, width?: number }): string[]
 }
