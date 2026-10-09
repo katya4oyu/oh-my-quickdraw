@@ -7,8 +7,10 @@
 // bindGroups(store): moving one member moves the others (unless they moved in
 // the same change); a copy of a group's members is a group of its own. It works
 // on any store, so agents and the CLI get it too.
-// bindGroupSelection(editor): selecting a member selects the group; Cmd/Ctrl+G
-// groups the selection, Shift+Cmd/Ctrl+G ungroups it.
+// bindGroupSelection(editor): selecting a member selects the group, shown by a
+// dashed outline and a tag with its name ("Group" when it has none) round each
+// group selected whole; Cmd/Ctrl+G groups the selection, Shift+Cmd/Ctrl+G ungroups it.
+import { pageBounds } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
 
 const shapeOf = (rec) => rec?.typeName === 'shape'
@@ -107,7 +109,51 @@ export function bindGroups(store) {
   })
 }
 
-/** What the page does with groups: selecting a member selects the group (shift-click on one takes the group off the selection); Cmd/Ctrl+G groups the selection, with Shift ungroups. Returns an unbind. */
+const PAD = 10 // the outline, this far outside the selection box (screen px)
+
+// a dashed outline and a name tag round each group the selection holds whole, over the board
+function groupMarks(editor) {
+  const { store } = editor
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !editor.pageToScreen) return { update() {}, remove() {} }
+  const layer = document.createElement('div')
+  layer.className = 'qd-group-marks'
+  layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden'
+  editor.container.append(layer)
+  let frame = 0
+  const draw = () => {
+    frame = 0
+    layer.replaceChildren()
+    const sel = editor.selection
+    if (sel.size < 2 || editor.tool !== 'select' || editor.editing) return // as the selection box: only with select, not while typing
+    const color = editor.theme?.selection ?? '#2f80ec'
+    const seen = new Set()
+    for (const id of sel) {
+      const gid = store.get(id)?.groupId
+      if (!gid || seen.has(gid)) continue
+      seen.add(gid)
+      const members = groupMembers(store, gid)
+      if (members.length < 2 || members.some((m) => !sel.has(m.id))) continue
+      let b = null
+      for (const m of members) {
+        const r = pageBounds(m)
+        b = b ? { x: Math.min(b.x, r.x), y: Math.min(b.y, r.y), r: Math.max(b.r, r.x + r.w), b: Math.max(b.b, r.y + r.h) } : { x: r.x, y: r.y, r: r.x + r.w, b: r.y + r.h }
+      }
+      const p = editor.pageToScreen(b.x, b.y), q = editor.pageToScreen(b.r, b.b)
+      const left = p.x - PAD, top = p.y - PAD, width = q.x - p.x + PAD * 2, height = q.y - p.y + PAD * 2
+      const box = document.createElement('div')
+      box.style.cssText = `position:absolute;box-sizing:border-box;border-radius:10px;border:1.5px dashed ${color};left:${left}px;top:${top}px;width:${width}px;height:${height}px`
+      const tag = document.createElement('div')
+      tag.textContent = members.find((m) => m.groupName)?.groupName ?? 'Group'
+      tag.style.cssText = `position:absolute;left:${left}px;top:${top - 22}px;max-width:${Math.max(60, Math.min(240, width))}px;height:18px;padding:0 7px;border-radius:9px;box-sizing:border-box;`
+        + `font:600 11px/18px system-ui,-apple-system,sans-serif;letter-spacing:.02em;color:#fff;background:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`
+      layer.append(box, tag)
+    }
+  }
+  const update = () => { if (!frame) frame = requestAnimationFrame(draw) }
+  return { update, remove() { cancelAnimationFrame(frame); layer.remove() } }
+}
+
+/** What the page does with groups: selecting a member selects the group, outlined with its name (shift-click on one takes the group off the selection); Cmd/Ctrl+G groups the selection, with Shift ungroups. Returns an unbind. */
 export function bindGroupSelection(editor) {
   const { store } = editor
   let last = new Set(editor.selection), expanding = false, shift = false
@@ -133,7 +179,9 @@ export function bindGroupSelection(editor) {
     }
     last = new Set(editor.selection)
   }
-  const off = editor.on('selection', widen)
+  const marks = groupMarks(editor)
+  const off = editor.on('selection', () => { widen(); marks.update() })
+  const offs = ['camera', 'change', 'theme', 'tool', 'edit'].map((ev) => editor.on(ev, marks.update))
   const key = (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.key?.toLowerCase() !== 'g' || e.altKey) return
     if (/^(input|textarea)$/i.test(e.target?.tagName ?? '') || e.target?.isContentEditable) return
@@ -148,7 +196,8 @@ export function bindGroupSelection(editor) {
       }
     } catch (err) { console.warn('group failed', err) }
     last = new Set(editor.selection)
+    marks.update()
   }
   document.addEventListener('keydown', key)
-  return () => { off(); c.removeEventListener('pointerdown', down, true); document.removeEventListener('keydown', key) }
+  return () => { off(); offs.forEach((f) => f()); marks.remove(); c.removeEventListener('pointerdown', down, true); document.removeEventListener('keydown', key) }
 }
