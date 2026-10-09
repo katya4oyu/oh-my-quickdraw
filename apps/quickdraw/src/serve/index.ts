@@ -83,6 +83,7 @@ export function createQuickdrawServer({ dbPath = ':memory:', compactEvery = 500,
   function locate(pathname: string): string | null {
     if (pathname === '/') return join(web, 'index.html')
     if (pathname === '/graph') return join(web, 'graph.html')
+    if (pathname === '/app.css' || pathname === '/app.js') return join(web, pathname.slice(1)) // what the board list and the graph share
     if (pathname === '/protocol.js') return protocol
     if (pathname === '/versions.js') return join(web, 'versions.js')
     const b = pathname.match(/^\/b\/([^/]+)(\/view)?$/)
