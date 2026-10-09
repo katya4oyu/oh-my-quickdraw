@@ -8,8 +8,8 @@
 // the same change); a copy of a group's members is a group of its own. It works
 // on any store, so agents and the CLI get it too.
 // bindGroupSelection(editor): selecting a member selects the group, shown by a
-// dashed outline and a tag with its name ("Group" when it has none) round each
-// group selected whole; Cmd/Ctrl+G groups the selection, Shift+Cmd/Ctrl+G ungroups it.
+// dashed outline round each group selected whole (shapes shift-selected together
+// have none); Cmd/Ctrl+G groups the selection, Shift+Cmd/Ctrl+G ungroups it.
 import { pageBounds } from '@quickdrawjs/core'
 import { isFrame } from 'quickdraw-frames'
 
@@ -111,7 +111,7 @@ export function bindGroups(store) {
 
 const PAD = 10 // the outline, this far outside the selection box (screen px)
 
-// a dashed outline and a name tag round each group the selection holds whole, over the board
+// a dashed outline round each group the selection holds whole, over the board
 function groupMarks(editor) {
   const { store } = editor
   if (typeof document === 'undefined' || typeof document.createElement !== 'function' || !editor.pageToScreen) return { update() {}, remove() {} }
@@ -142,37 +142,14 @@ function groupMarks(editor) {
       const left = p.x - PAD, top = p.y - PAD, width = q.x - p.x + PAD * 2, height = q.y - p.y + PAD * 2
       const box = document.createElement('div')
       box.style.cssText = `position:absolute;box-sizing:border-box;border-radius:10px;border:1.5px dashed ${color};left:${left}px;top:${top}px;width:${width}px;height:${height}px`
-      const tag = document.createElement('div')
-      tag.textContent = members.find((m) => m.groupName)?.groupName ?? 'Group'
-      tag.style.cssText = `position:absolute;max-width:${Math.max(60, Math.min(240, width))}px;height:18px;padding:0 7px;border-radius:9px;box-sizing:border-box;`
-        + `font:600 11px/18px system-ui,-apple-system,sans-serif;letter-spacing:.02em;color:#fff;background:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`
-      layer.append(box, tag)
-      place(tag, left, top - 22, left + width)
+      layer.append(box)
     }
-  }
-  // the tag where it is seen: inside the board's view, and past the page's own buttons over it
-  const place = (tag, x, y, right) => {
-    const view = editor.container.getBoundingClientRect(), M = 8
-    const w = tag.offsetWidth, h = 18
-    y = Math.min(Math.max(y, M), view.height - h - M)
-    x = Math.min(Math.max(x, M), Math.max(M, Math.min(right, view.width) - w))
-    const ui = (px, py) => {
-      const top = document.elementsFromPoint?.(view.left + px, view.top + py)?.[0]
-      return top && top !== editor.container && !(top instanceof HTMLCanvasElement) && !layer.contains(top) ? top : null
-    }
-    for (let i = 0; i < 4; i++) {
-      const over = ui(x + 2, y + h / 2) ?? ui(x + w - 2, y + h / 2)
-      if (!over) break
-      x = over.getBoundingClientRect().right - view.left + 6
-    }
-    tag.style.left = x + 'px'
-    tag.style.top = y + 'px'
   }
   const update = () => { if (!frame) frame = requestAnimationFrame(draw) }
   return { update, remove() { cancelAnimationFrame(frame); layer.remove() } }
 }
 
-/** What the page does with groups: selecting a member selects the group, outlined with its name (shift-click on one takes the group off the selection); Cmd/Ctrl+G groups the selection, with Shift ungroups. Returns an unbind. */
+/** What the page does with groups: selecting a member selects the group, outlined with a dashed line (shift-click on one takes the group off the selection); Cmd/Ctrl+G groups the selection, with Shift ungroups. Returns an unbind. */
 export function bindGroupSelection(editor) {
   const { store } = editor
   let last = new Set(editor.selection), expanding = false, shift = false

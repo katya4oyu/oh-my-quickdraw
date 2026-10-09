@@ -20,7 +20,7 @@ groups(store)                        // [{ id, name?, members: [shape ids] }]
 ## Rules
 
 - `bindGroups` (any store): a member that moved, with the same size and turn, moves the others by as much, unless they moved in the same change (a joint drag, an undo) — one undo step with it. Resizing a member does not move the rest.
-- `bindGroupSelection` (a page): selecting a member selects the group, and each group selected whole shows a dashed outline just outside the selection box with a tag naming it ("Group" when it has no name; a long name is cut with …; the tag stays inside the board's view and moves past the page's own buttons over it) — only with the select tool, as the selection box. Selecting a member selects the group, so dragging, resizing, deleting and copying act on all of it; shift-click on a selected member takes the whole group off the selection. Cmd/Ctrl+G groups the selection (two shapes or more), Shift+Cmd/Ctrl+G ungroups it.
+- `bindGroupSelection` (a page): selecting a member selects the group, and each group selected whole shows a dashed outline just outside the selection box (shapes shift-selected together show none) — only with the select tool, as the selection box. Selecting a member selects the group, so dragging, resizing, deleting and copying act on all of it; shift-click on a selected member takes the whole group off the selection. Cmd/Ctrl+G groups the selection (two shapes or more), Shift+Cmd/Ctrl+G ungroups it.
 - A drawing from an SVG (`quickdraw-agent`'s `omq draw`) makes a group of each top-level `<g>` (`group:<frame id>:<its id>`); drawing it again keeps them.
 
 Not done: changing one member of a group without the others (no "enter the group" yet): ungroup first.
