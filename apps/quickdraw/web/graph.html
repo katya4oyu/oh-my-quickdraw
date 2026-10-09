@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Graph — Quickdraw</title>
   <style>
-    :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0; --edge: #9a9aa0; --accent: #1971c2; --tag: #2f9e44; --card: #ffffff; --panel: #fffffff0; color-scheme: light dark; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #333336; --edge: #6e6e73; --accent: #4dabf7; --tag: #69db7c; --card: #2c2c2e; --panel: #2c2c2ef0; } }
+    :root { --bg: #fafaf8; --fg: #1d1d1f; --muted: #6e6e73; --line: #e3e3e0; --edge: #9a9aa0; --accent: #1971c2; --tag: #2f9e44; --mention: #ae3ec9; --card: #ffffff; --panel: #fffffff0; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f2; --muted: #9a9aa0; --line: #333336; --edge: #6e6e73; --accent: #4dabf7; --tag: #69db7c; --mention: #e599f7; --card: #2c2c2e; --panel: #2c2c2ef0; } }
     [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
     canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
@@ -17,6 +17,9 @@
     input[type=search] { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
     label { display: flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; }
     .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .legend { display: grid; gap: 4px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+    .legend span { display: flex; align-items: center; gap: 8px; }
+    .legend svg { flex: none; }
     .empty { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
   </style>
 </head>
@@ -25,16 +28,23 @@
   <div class="panel">
     <header><h1>Graph</h1><a href="/">Boards</a></header>
     <input type="search" id="q" placeholder="Find a board or tag" aria-label="Find a board or tag" autocomplete="off" />
+    <label><input type="checkbox" id="mentions" checked /> Boards named in a board</label>
     <label><input type="checkbox" id="tags" checked /> Tags</label>
     <label><input type="checkbox" id="archived" /> Archived boards</label>
     <span class="count" id="count"></span>
+    <div class="legend">
+      <span><svg width="34" height="10"><line x1="1" y1="5" x2="31" y2="5" stroke="var(--edge)" stroke-width="1.6"/><path d="M25 1 L31 5 L25 9" fill="none" stroke="var(--edge)" stroke-width="1.6"/></svg>shows it on a card</span>
+      <span><svg width="34" height="10"><line x1="1" y1="5" x2="31" y2="5" stroke="var(--mention)" stroke-width="1.4" stroke-dasharray="7 4"/><path d="M25 1 L31 5 L25 9" fill="none" stroke="var(--mention)" stroke-width="1.4"/></svg>names it (its link)</span>
+      <span><svg width="34" height="10"><line x1="1" y1="5" x2="33" y2="5" stroke="var(--tag)" stroke-width="1" stroke-dasharray="3 4"/></svg>has the tag</span>
+    </div>
   </div>
   <div class="empty" id="empty" hidden>No boards yet.</div>
   <script type="module">
     // The boards as a graph, like a notes app's graph view: each board is its
     // card from the board list (its picture, title and tags), an arrow runs
-    // from a board to each board it shows on a card (boards in boards), and
-    // its tags are small labels joining the boards that carry them. Laid out
+    // from a board to each board it shows on a card (boards in boards), a
+    // dashed one to each board it names (its link in a note, a text, a link
+    // card), and its tags are small labels joining the boards that carry them. Laid out
     // by a small force simulation (cards push apart and never overlap, links
     // pull together); drag a card, drag the background to move about, the
     // wheel to zoom. Hover a card for its neighbours; click it to open the
@@ -59,12 +69,12 @@
 
     async function load() {
       const g = await fetch('/api/graph').then((r) => r.json())
-      const showTags = $('tags').checked, showArchived = $('archived').checked
+      const showTags = $('tags').checked, showArchived = $('archived').checked, showMentions = $('mentions').checked
       const boards = g.boards.filter((b) => showArchived || !b.archivedAt)
       const ids = new Set(boards.map((b) => b.id))
       const tagNodes = new Map()
       nodes = boards.map((b) => ({ id: b.id, kind: 'board', label: b.title, board: b, w: CARD.w, h: CARD.thumb + CARD.info }))
-      links = g.links.filter((l) => ids.has(l.from) && ids.has(l.to)).map((l) => ({ a: l.from, b: l.to, kind: 'card' }))
+      links = g.links.filter((l) => ids.has(l.from) && ids.has(l.to) && (l.kind !== 'mention' || showMentions)).map((l) => ({ a: l.from, b: l.to, kind: l.kind === 'mention' ? 'mention' : 'card' }))
       if (showTags) for (const b of boards) for (const t of b.tags ?? []) {
         const key = 'tag:' + t.toLowerCase()
         if (!tagNodes.has(key)) tagNodes.set(key, { id: key, kind: 'tag', label: t, w: textW('#' + t, '12px system-ui, sans-serif') + 18, h: 24 })
@@ -77,8 +87,8 @@
         Object.assign(n, { x: was?.x ?? Math.cos(a) * r, y: was?.y ?? Math.sin(a) * r, vx: 0, vy: 0 })
       })
       for (const l of links) { l.na = byId.get(l.a); l.nb = byId.get(l.b) }
-      const cardLinks = links.filter((l) => l.kind === 'card').length
-      $('count').textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${cardLinks} board${cardLinks === 1 ? '' : 's'} in boards${showTags ? ` · ${tagNodes.size} tag${tagNodes.size === 1 ? '' : 's'}` : ''}`
+      const cardLinks = links.filter((l) => l.kind === 'card').length, named = links.filter((l) => l.kind === 'mention').length
+      $('count').textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${cardLinks} on cards${showMentions ? ` · ${named} named` : ''}${showTags ? ` · ${tagNodes.size} tag${tagNodes.size === 1 ? '' : 's'}` : ''}`
       $('empty').hidden = nodes.length > 0
       heat = 1
       if (!place.size) { for (let i = 0; i < 400; i++) step(); fit() } // settled, and all in view, before it is first shown
@@ -105,7 +115,7 @@
       }
       for (const l of links) {
         const { na: p, nb: q } = l, dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1
-        const rest = l.kind === 'tag' ? 170 : 340, f = (d - rest) * 0.06 * alpha
+        const rest = l.kind === 'tag' ? 170 : 340, f = (d - rest) * (l.kind === 'mention' ? 0.03 : 0.06) * alpha
         p.vx += (dx / d) * f; p.vy += (dy / d) * f; q.vx -= (dx / d) * f; q.vy -= (dy / d) * f
       }
       for (const n of nodes) {
@@ -162,7 +172,7 @@
       if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
-      const c = { fg: css('--fg'), muted: css('--muted'), line: css('--line'), edge: css('--edge'), accent: css('--accent'), tag: css('--tag'), card: css('--card') }
+      const c = { fg: css('--fg'), muted: css('--muted'), line: css('--line'), edge: css('--edge'), accent: css('--accent'), tag: css('--tag'), mention: css('--mention'), card: css('--card') }
       const q = query()
       const near = new Set(hover ? [hover.id, ...links.filter((l) => l.a === hover.id || l.b === hover.id).flatMap((l) => [l.a, l.b])] : [])
       const found = (n) => !q || n.label.toLowerCase().includes(q) || (n.board?.tags ?? []).some((t) => t.toLowerCase().includes(q))
@@ -173,11 +183,11 @@
         const [x1, y1] = toScreen(ax, ay), [x2, y2] = toScreen(bx, by)
         const on = hover ? l.a === hover.id || l.b === hover.id : found(l.na) || found(l.nb)
         ctx.globalAlpha = on ? 1 : 0.15
-        ctx.strokeStyle = l.kind === 'tag' ? c.tag : on && hover ? c.accent : c.edge
-        ctx.lineWidth = l.kind === 'tag' ? 1 : 1.6
-        ctx.setLineDash(l.kind === 'tag' ? [3, 4] : [])
+        ctx.strokeStyle = l.kind === 'tag' ? c.tag : l.kind === 'mention' ? c.mention : on && hover ? c.accent : c.edge
+        ctx.lineWidth = l.kind === 'tag' ? 1 : l.kind === 'mention' ? 1.4 : 1.6
+        ctx.setLineDash(l.kind === 'tag' ? [3, 4] : l.kind === 'mention' ? [7, 4] : [])
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
-        if (l.kind === 'card') { // its head at the card it shows
+        if (l.kind !== 'tag') { // its head at the board it shows or names
           const a = Math.atan2(y2 - y1, x2 - x1), s = Math.max(5, 10 * view.k)
           ctx.setLineDash([]); ctx.beginPath()
           ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(a - 0.45), y2 - s * Math.sin(a - 0.45))
@@ -266,6 +276,7 @@
     }, { passive: false })
 
     $('tags').onchange = load
+    $('mentions').onchange = load
     $('archived').onchange = load
     addEventListener('focus', load) // boards may have changed elsewhere
     load().then(() => requestAnimationFrame(frame))

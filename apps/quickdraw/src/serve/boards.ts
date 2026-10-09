@@ -14,7 +14,9 @@ import * as Y from 'yjs'
 
 export interface BoardInfo { id: string, title: string, createdAt: string, archivedAt?: string, thumbnailAt?: string, tags?: string[] }
 /** the boards and how they hang together: a board's cards for other boards (links), and its tags */
-export interface BoardGraph { boards: BoardInfo[], links: { from: string, to: string }[] }
+/** a link from a board to another: it shows it on a card (quickdraw-boards), or names it (its page URL, …/b/ID, in a note, a text, a link card, Markdown) */
+export interface BoardLink { from: string, to: string, kind: 'card' | 'mention' }
+export interface BoardGraph { boards: BoardInfo[], links: BoardLink[] }
 export interface Thumbnail { data: Uint8Array, type: string, at: string }
 export interface VersionInfo { id: number, name: string, at: string, auto: boolean }
 type Rec = { id: string } & Record<string, unknown>
@@ -32,8 +34,8 @@ export interface Boards {
   archive(id: string, archived: boolean): BoardInfo
   /** its tags, as given (trimmed, without #, each once whatever its case; up to 20 of 40 characters) */
   setTags(id: string, tags: string[]): BoardInfo
-  /** the boards a board's cards show (quickdraw-boards), read from what it holds now */
-  links(id: string): string[]
+  /** the boards a board shows on cards (quickdraw-boards) and names by their page URL, read from what it holds now */
+  links(id: string): { to: string, kind: 'card' | 'mention' }[]
   /** every board (archived ones too) and the links between them */
   graph(): BoardGraph
   state(id: string): Uint8Array
@@ -122,7 +124,7 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
     return Object.fromEntries(Object.entries({ ...b, tags: tags.length ? tags : null }).filter(([, v]) => v != null)) as unknown as BoardInfo
   }
   // the links of a board as of its last update, kept until it changes
-  const linked = new Map<string, { seq: number | null, to: string[] }>()
+  const linked = new Map<string, { seq: number | null, to: { to: string, kind: 'card' | 'mention' }[] }>()
   const need = (id: string) => {
     const b = boards.get(id)
     if (!b) throw new Error('no such board')
@@ -190,16 +192,20 @@ export function openBoards(dbPath: string, compactEvery: number): Boards {
       const seq = (lastSeqQ.get(id) as { seq: number | null }).seq
       const hit = linked.get(id)
       if (hit && hit.seq === seq) return hit.to
-      const to = new Set<string>()
-      if (seq != null) for (const r of Object.values(recordsOf(state(id)))) if (r.type === 'boardcard' && typeof (r.props as { board?: unknown })?.board === 'string') to.add((r.props as { board: string }).board)
-      to.delete(id)
-      linked.set(id, { seq, to: [...to] })
-      return [...to]
+      const cards = new Set<string>(), named = new Set<string>()
+      if (seq != null) for (const r of Object.values(recordsOf(state(id)))) {
+        if (r.type === 'boardcard' && typeof (r.props as { board?: unknown })?.board === 'string') { cards.add((r.props as { board: string }).board); continue }
+        // a board named by its page URL anywhere in what a shape holds (a note, a text, a link card, Markdown)
+        if (r.typeName === 'shape') for (const m of JSON.stringify(r.props ?? {}).matchAll(/\/b\/([a-z0-9]{4,32})(?![a-z0-9])/g)) named.add(m[1])
+      }
+      const to = [...[...cards].map((b) => ({ to: b, kind: 'card' as const })), ...[...named].filter((b) => !cards.has(b)).map((b) => ({ to: b, kind: 'mention' as const }))].filter((l) => l.to !== id)
+      linked.set(id, { seq, to })
+      return to
     },
     graph() {
       const all = [...boards.list(), ...boards.list({ archived: true })]
       const ids = new Set(all.map((b) => b.id))
-      return { boards: all, links: all.flatMap((b) => boards.links(b.id).filter((to) => ids.has(to)).map((to) => ({ from: b.id, to }))) }
+      return { boards: all, links: all.flatMap((b) => boards.links(b.id).filter((l) => ids.has(l.to)).map((l) => ({ from: b.id, ...l }))) }
     },
     saveVersion(id, name, auto = false) {
       need(id)

@@ -37,7 +37,8 @@ Boards
                                           --archived: the archived ones)
   new [TITLE]                             a new board; prints its id and page URL
   graph [--archived]                      how the boards hang together: each one's tags, the boards its
-                                          cards show and the boards that show it (the app's /graph page)
+                                          cards show and that show it, the boards it names by URL and that
+                                          name it (the app's /graph page)
   tag [TAG,…] [--remove]                  the board's tags (to group and find boards: a project, "try");
                                           adds these (--remove: takes them off); alone, says them
   archive [--back]                        archives the board: off the list, kept (--back: brings it back);
@@ -333,8 +334,10 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     const title = new Map(g.boards.map((b) => [b.id, b.title]))
     return out(jsonLines(g.boards.filter((b) => o.archived || !b.archivedAt).map((b) => ({
       id: b.id, title: b.title, ...(b.tags ? { tags: b.tags } : {}), ...(b.archivedAt ? { archived: true } : {}),
-      shows: g.links.filter((l) => l.from === b.id).map((l) => `${title.get(l.to)} (${l.to})`),
-      shown_on: g.links.filter((l) => l.to === b.id).map((l) => `${title.get(l.from)} (${l.from})`),
+      shows: g.links.filter((l) => l.from === b.id && l.kind === 'card').map((l) => `${title.get(l.to)} (${l.to})`),
+      shown_on: g.links.filter((l) => l.to === b.id && l.kind === 'card').map((l) => `${title.get(l.from)} (${l.from})`),
+      names: g.links.filter((l) => l.from === b.id && l.kind === 'mention').map((l) => `${title.get(l.to)} (${l.to})`),
+      named_on: g.links.filter((l) => l.to === b.id && l.kind === 'mention').map((l) => `${title.get(l.from)} (${l.from})`),
     }))))
   }
   // a board's tags, and archiving it: the board list's, on the server (the board itself is not opened)
