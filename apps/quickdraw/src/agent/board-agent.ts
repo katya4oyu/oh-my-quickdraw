@@ -28,6 +28,7 @@ import { imageSteps } from './images.ts'
 import { announceMentions } from '../board/mentions.ts'
 import { pointWith } from '../board/laser.ts'
 import { copyOf, putLive } from '../board/live.ts'
+import { boardInfo, changeBoard } from '../commands/boards.ts'
 export { putLive } // (tests)
 import { teamOf, teamText } from '../board/team.ts'
 import { commentsText } from 'quickdraw-comments'
@@ -189,6 +190,16 @@ const SET_ROLE = {
     role: { type: 'string', description: 'a few words; empty to take the role off' },
     about: { type: 'string', description: 'a line on what it does in that role' },
     name: { type: 'string', description: 'another agent\'s name (as read_board\'s team says it), when it is not yours' },
+  } },
+}
+
+const TAG_BOARD = {
+  name: 'tag_board',
+  description: 'Adds tags to this board, or takes them off (`remove`): words that group boards and find them again — a project, a theme, "try" for a board tried out — shown on the board list and joining boards on its graph. '
+    + 'Tag it when people ask, or when the request says what the board is for. Answers the board\'s tags.',
+  inputSchema: { type: 'object', additionalProperties: false, required: ['tags'], properties: {
+    tags: { type: 'array', items: { type: 'string' }, description: 'a word or two each' },
+    remove: { type: 'boolean', description: 'take these off instead' },
   } },
 }
 
@@ -416,6 +427,15 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
       const set = board.members.set(a.name || me.name, { role, ...(a.about !== undefined ? { about: a.about } : role ? {} : { about: '' }) }, me.name)
       return JSON.stringify(set ? { member: set } : { removed: a.name || me.name })
     }
+    if (name === 'tag_board') {
+      const a = (args ?? {}) as { tags?: string[], remove?: boolean }
+      if (!board.url) throw new Error('tags need a live board')
+      const id = board.url.match(/\/ws\/([^/?#]+)/)![1], server = board.url.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
+      const given = (a.tags ?? []).map(String)
+      const now = (await boardInfo(server, id)).tags ?? []
+      const tags = a.remove ? now.filter((t) => !given.some((g) => g.toLowerCase() === t.toLowerCase())) : [...now, ...given]
+      return JSON.stringify({ tags: (await changeBoard(server, id, { tags })).tags ?? [] })
+    }
     if (name === 'add_comment') {
       const a = (args ?? {}) as { frame?: string, text?: string }
       if (!board.comments) throw new Error('comments need a live board')
@@ -544,7 +564,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
   const agent: BoardAgent = {
     onRequest() {},
     onReply() {},
-    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, LOOK_AT_SCREEN, SNAPSHOT_SCREEN, POINT_AT, SET_ROLE, ADD_COMMENT],
+    tools: [CLAIM_AREA, ...BOARD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })), ADD_IMAGE, LOOK_AT, LOOK_AT_SCREEN, SNAPSHOT_SCREEN, POINT_AT, SET_ROLE, TAG_BOARD, ADD_COMMENT],
     generated(requestId, file, { transparent = false } = {}) {
       const list = images.get(requestId) ?? []
       list.push({ file, transparent })
@@ -553,7 +573,7 @@ export function joinBoard(board: Board, me: Participant, { imageRoots = [process
     },
     async runTool(requestId, name, args) {
       // by its cursor: reading or drawing, then back to thinking
-      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : name === 'set_role' || name === 'add_comment' ? 'editing' : 'drawing')
+      agent.activity(name === 'read_board' || name === 'check_board' ? 'reading' : name === 'set_role' || name === 'add_comment' || name === 'tag_board' ? 'editing' : 'drawing')
       try { return await runBoardTool(requestId, name, args) } finally { agent.activity('thinking') }
     },
     lookAt(request) {

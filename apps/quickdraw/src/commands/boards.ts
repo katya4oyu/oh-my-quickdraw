@@ -3,7 +3,7 @@
 // this machine's `omq serve`), by its page URL (https://host/b/<id>, as
 // the browser shows it), or by its relay URL (ws://host/ws/<id>).
 import { createInterface } from 'node:readline/promises'
-import type { BoardInfo } from '../serve/boards.ts'
+import type { BoardGraph, BoardInfo } from '../serve/boards.ts'
 
 export const DEFAULT_SERVER = 'http://localhost:8795'
 const ID = /^[a-z0-9]{4,32}$/
@@ -21,7 +21,16 @@ async function call<T>(server: string, path: string, init?: RequestInit): Promis
   return body
 }
 
-export const listBoards = (server: string) => call<BoardInfo[]>(server, '/api/boards')
+export const listBoards = (server: string, { tag, archived = false }: { tag?: string, archived?: boolean } = {}) =>
+  call<BoardInfo[]>(server, '/api/boards' + (tag || archived ? '?' + new URLSearchParams({ ...(tag ? { tag } : {}), ...(archived ? { archived: '1' } : {}) }) : ''))
+
+/** Changes a board's title, tags or whether it is archived (what the board list does). */
+export const changeBoard = (server: string, id: string, change: { title?: string, tags?: string[], archived?: boolean }) =>
+  call<BoardInfo>(server, '/api/boards/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) })
+export const boardInfo = (server: string, id: string) => call<BoardInfo>(server, '/api/boards/' + id)
+
+/** Every board (archived ones too), their tags, and which boards their cards show. */
+export const boardGraph = (server: string) => call<BoardGraph>(server, '/api/graph')
 
 export const createBoard = (server: string, title?: string) =>
   call<BoardInfo>(server, '/api/boards', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })

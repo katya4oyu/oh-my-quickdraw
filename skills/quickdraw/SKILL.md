@@ -21,6 +21,9 @@ quickdraw <command> … --file board.json           # a file (created if missing
 - The person gives a URL or a title: use that board (match the title in `omq boards`).
 - Nothing given and one board: commands use it without `--board`. Several: the command fails and lists them — ask which one, unless the request makes it clear.
 - Make a board (`omq new "Title"`, prints its id and URL) only when asked for a new one; tell the person its URL.
+- Boards have **tags** that group them (a project, a theme, `try` for one tried out): `omq boards --tag T` lists those; `omq tag T,… [--remove]` tags the board (alone: says its tags). Tag a board when asked, or when you made it for something that has a tag already.
+- A board done with or tried out is **archived**, never deleted: `omq archive` (off the list, kept; `--back` brings it back), when the person says so.
+- `omq graph`: how the boards hang together — each one's tags, the boards its cards show and the boards that show it (people see it as the app's Graph page).
 - `--server URL` (or `$QUICKDRAW_SERVER`) when the boards are served elsewhere than this machine's `omq serve` (http://localhost:8795); `$QUICKDRAW_BOARD` sets the board once.
 - If it cannot connect, the boards are not running: ask the person to start `omq serve` (do not start it yourself).
 

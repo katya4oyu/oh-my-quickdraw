@@ -734,6 +734,16 @@ describe('managing boards', () => {
     expect(g.boards.find((b: { id: string }) => b.id === other.id).archivedAt).toBeTruthy()
     expect(g.links).toEqual([{ from: id, to: other.id }])
     expect((await send(base, 'PATCH', `/api/boards/${id}`, { tags: [] })).body.tags).toBeUndefined()
+    // the same from the command line
+    const { main } = await import('../src/commands/index.ts')
+    const run = async (...argv: string[]) => { const out: string[] = []; await main([...argv, '--server', base], (s) => out.push(s)); return JSON.parse(out.join('\n')) }
+    expect((await run('tag', 'try,ux', '--board', id)).tags).toEqual(['try', 'ux'])
+    expect((await run('tag', 'TRY', '--remove', '--board', id)).tags).toEqual(['ux'])
+    expect((await run('boards', '--tag', 'ux')).map((b: { id: string }) => b.id)).toEqual([id])
+    expect((await run('archive', '--board', id)).archivedAt).toBeTruthy()
+    expect((await run('archive', '--back', '--board', id)).archivedAt).toBeUndefined()
+    const lines = await run('graph', '--archived')
+    expect(lines.find((b: { id: string }) => b.id === id).shows).toEqual([`Research (${other.id})`])
     a.close()
   })
 

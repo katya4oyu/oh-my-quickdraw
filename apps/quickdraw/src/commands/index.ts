@@ -15,7 +15,7 @@ import { linkedBoardsText } from '../board/linked.ts'
 import { isPath, listPets, setPet } from '../board/avatar.ts'
 import { pageBounds } from '@quickdrawjs/core'
 import { findSession, joinSession, SESSION_COMMANDS, viaSession } from '../session/client.ts'
-import { createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
+import { boardGraph, boardInfo, changeBoard, createBoard, listBoards, resolveBoard, serverOf } from './boards.ts'
 import { imageSteps } from '../agent/images.ts'
 import { cannotTake, nextTicket, waitFor, watchTickets } from './tickets.ts'
 const { describeTicket, listTickets } = await import('quickdraw-tickets')
@@ -33,8 +33,15 @@ The skill (so agents on this machine know this command)
   skill status | uninstall [--project]    where it is installed and whether it is up to date; or removes it
 
 Boards
-  boards                                  the boards on the server, oldest first
+  boards [--tag T] [--archived]           the boards on the server, oldest first (--tag: with that tag;
+                                          --archived: the archived ones)
   new [TITLE]                             a new board; prints its id and page URL
+  graph [--archived]                      how the boards hang together: each one's tags, the boards its
+                                          cards show and the boards that show it (the app's /graph page)
+  tag [TAG,…] [--remove]                  the board's tags (to group and find boards: a project, "try");
+                                          adds these (--remove: takes them off); alone, says them
+  archive [--back]                        archives the board: off the list, kept (--back: brings it back);
+                                          for a board done with or tried out, instead of deleting it
 
 Reading
   read [--format md|json]                 the board as a Markdown outline (default) or data
@@ -262,13 +269,13 @@ const OPTIONS = {
   span: { type: 'string' }, auto: { type: 'boolean' },
   status: { type: 'string' }, body: { type: 'string' }, result: { type: 'string' }, mine: { type: 'boolean' }, take: { type: 'boolean' }, timeout: { type: 'string' },
   role: { type: 'string' }, about: { type: 'string' }, of: { type: 'string' }, clear: { type: 'boolean' }, avatar: { type: 'string' }, list: { type: 'boolean' },
-  show: { type: 'string' }, write: { type: 'string' }, replace: { type: 'string' },
+  show: { type: 'string' }, write: { type: 'string' }, replace: { type: 'string' }, tag: { type: 'string' }, archived: { type: 'boolean' }, remove: { type: 'boolean' }, back: { type: 'boolean' },
   'title-inside': { type: 'boolean' }, 'text-size': { type: 'string' }, 'font-size': { type: 'string' }, dash: { type: 'string' }, fill: { type: 'string' }, bend: { type: 'string' }, label: { type: 'string' }, live: { type: 'boolean' }, watch: { type: 'boolean' }, unwatch: { type: 'boolean' },
 } as const
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS, allowPositionals: true }>>['values']
 
-export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
+export const BOARD_COMMANDS = ['skill', 'boards', 'new', 'graph', 'tag', 'archive', 'read', 'lint', 'look', 'export', 'log', 'undo', 'note', 'text', 'shape', 'markdown', 'embed', 'image', 'frame', 'bento', 'span', 'columns', 'arrow', 'update', 'move', 'arrange', 'fit', 'tidy', 'pen', 'point', 'delete', 'apply', 'draw', 'tickets', 'ticket', 'take', 'done', 'fail', 'wait', 'watch', 'join', 'leave', 'next', 'say', 'finish', 'area', 'who', 'changes', 'members', 'role', 'avatar', 'comments', 'comment', 'board-card', 'screen', 'snap']
 
 const TICKET_COMMANDS = new Set(['ticket', 'take', 'done', 'fail', 'wait'])
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -320,7 +327,26 @@ export async function main(argv: string[], out = (s: string) => { process.stdout
     if (sub === 'uninstall') return out(JSON.stringify(uninstallSkill(opts), null, 2))
     throw new Error(`unknown "skill ${sub}" (install, status, uninstall)`)
   }
-  if (cmd === 'boards') return out(JSON.stringify(await listBoards(server), null, 2))
+  if (cmd === 'boards') return out(jsonLines(await listBoards(server, { tag: o.tag, archived: o.archived })))
+  if (cmd === 'graph') { // the boards, their tags, and which boards their cards show: one line a board
+    const g = await boardGraph(server)
+    const title = new Map(g.boards.map((b) => [b.id, b.title]))
+    return out(jsonLines(g.boards.filter((b) => o.archived || !b.archivedAt).map((b) => ({
+      id: b.id, title: b.title, ...(b.tags ? { tags: b.tags } : {}), ...(b.archivedAt ? { archived: true } : {}),
+      shows: g.links.filter((l) => l.from === b.id).map((l) => `${title.get(l.to)} (${l.to})`),
+      shown_on: g.links.filter((l) => l.to === b.id).map((l) => `${title.get(l.from)} (${l.from})`),
+    }))))
+  }
+  // a board's tags, and archiving it: the board list's, on the server (the board itself is not opened)
+  if (cmd === 'tag' || cmd === 'archive') {
+    const relay = await resolveBoard(o.board ?? process.env.QUICKDRAW_BOARD, server)
+    const id = relay.match(/\/ws\/([^/?#]+)/)![1], at = relay.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
+    if (cmd === 'archive') return out(JSON.stringify(await changeBoard(at, id, { archived: !o.back })))
+    const given = args.join(',').split(',').map((t) => t.trim()).filter(Boolean)
+    const now = (await boardInfo(at, id)).tags ?? []
+    const tags = o.remove ? now.filter((t) => !given.some((g) => g.toLowerCase() === t.toLowerCase())) : given.length ? [...now, ...given] : now
+    return out(JSON.stringify(given.length ? await changeBoard(at, id, { tags }) : { id, tags }))
+  }
   if (cmd === 'avatar' && o.list) return out(JSON.stringify(await listPets(), null, 2)) // on this computer: no board needed
   if (cmd === 'new') {
     const b = await createBoard(server, args.join(' ') || undefined)
