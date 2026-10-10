@@ -40,6 +40,17 @@ const closest = (c, table) => {
   return best
 }
 
+// a fill's colour: the board's colour nearest to it, as a line (a fill written in a pen's colour)
+// or as a fill (one written pale already); the board draws that colour's own fill
+const fillColor = (c) => {
+  const v = rgb(c)
+  if (!v) return 'black'
+  const dist = (hex) => { const w = rgb(hex); return (v[0] - w[0]) ** 2 + (v[1] - w[1]) ** 2 + (v[2] - w[2]) ** 2 }
+  let best = 'black', d = Infinity
+  for (const name of Object.keys(PEN)) { const e = Math.min(dist(PEN[name]), dist(PALE[name])); if (e < d) { d = e; best = name } }
+  return best
+}
+
 // ---- a small XML reader, enough for SVG as programs write it
 export function parseXml(src) {
   src = String(src).replace(/<!--[\s\S]*?-->/g, '').replace(/<\?[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[^>]*>/gi, '')
@@ -80,6 +91,34 @@ function rectLine(x, y, w, h, rx, ry) {
 }
 const ellipseLine = (cx, cy, rx, ry) => arc(cx, cy, rx, ry, -Math.PI / 2, 1.5 * Math.PI, 8)
 // a path's subpaths: M L H V C S Q T A Z, absolute and relative
+// the points along an elliptical arc from p to q (SVG's endpoint form, as the
+// SVG spec turns it into a centre and angles), q last; straight when a radius is 0
+function arcPoints([x1, y1], [x2, y2], rx, ry, rot, large, sweep) {
+  rx = Math.abs(rx); ry = Math.abs(ry)
+  if (!rx || !ry || (x1 === x2 && y1 === y2)) return [...edge([x1, y1], [x2, y2]).slice(1), [x2, y2]]
+  const phi = (rot * Math.PI) / 180, cos = Math.cos(phi), sin = Math.sin(phi)
+  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2
+  const x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy
+  const big = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+  if (big > 1) { rx *= Math.sqrt(big); ry *= Math.sqrt(big) } // too small to reach: as small as reaches
+  const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p
+  const k = (Number(large) === Number(sweep) ? -1 : 1) * Math.sqrt(Math.max(0, num / (rx * rx * y1p * y1p + ry * ry * x1p * x1p)))
+  const cxp = (k * rx * y1p) / ry, cyp = (-k * ry * x1p) / rx
+  const cx = cos * cxp - sin * cyp + (x1 + x2) / 2, cy = sin * cxp + cos * cyp + (y1 + y2) / 2
+  const ang = (ux, uy, vx, vy) => { const a = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy); return a }
+  const t1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+  let dt = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry)
+  if (!Number(sweep) && dt > 0) dt -= 2 * Math.PI
+  else if (Number(sweep) && dt < 0) dt += 2 * Math.PI
+  const steps = Math.max(4, Math.ceil(Math.abs(dt) / (Math.PI / 18))) // a point every 10°
+  const pts = []
+  for (let s = 1; s < steps; s++) {
+    const t = t1 + (dt * s) / steps, ex = rx * Math.cos(t), ey = ry * Math.sin(t)
+    pts.push([cos * ex - sin * ey + cx, sin * ex + cos * ey + cy])
+  }
+  return [...pts, [x2, y2]]
+}
+
 function pathLines(d, dropped) {
   const toks = String(d).match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi) ?? []
   const out = []
@@ -103,11 +142,9 @@ function pathLines(d, dropped) {
       const q = C === 'Q' ? [ox + n(), oy + n()] : lastQ ? [2 * x - lastQ[0], 2 * y - lastQ[1]] : [x, y]
       const p3 = [ox + n(), oy + n()]
       cubic([x + (2 / 3) * (q[0] - x), y + (2 / 3) * (q[1] - y)], [p3[0] + (2 / 3) * (q[0] - p3[0]), p3[1] + (2 / 3) * (q[1] - p3[1])], p3); lastQ = q; lastC = null; x = p3[0]; y = p3[1]
-    } else if (C === 'A') { // an elliptical arc: drawn through its end (its bulge is not worked out)
-      n(); n(); n(); n(); n()
-      const nx = ox + n(), ny = oy + n()
-      dropped('arc in a path (drawn straight)')
-      to([...edge([x, y], [nx, ny]).slice(1), [nx, ny]]); x = nx; y = ny; lastC = lastQ = null
+    } else if (C === 'A') { // an elliptical arc
+      const rx = n(), ry = n(), rot = n(), large = n(), sweep = n(), nx = ox + n(), ny = oy + n()
+      to(arcPoints([x, y], [nx, ny], rx, ry, rot, large, sweep)); x = nx; y = ny; lastC = lastQ = null
     } else { dropped(`path command ${cmd}`); break }
   }
   return out.filter((p) => p.pts.length > 1)
@@ -257,9 +294,9 @@ export function readSvg(source) {
         for (const l of r.lines) {
           // its fill, under it, only where the SVG asks for one: data-fill="tint|hatch|scribble" (a shape of its own: fill.js)
           if (r.fillStyle && fill !== 'none' && new Set(l.pts.map((q) => q.join())).size > 2)
-            parts.push({ kind: 'fill', el: r.el, tag: r.tag, unit, points: l.pts.map(([x, y]) => [r1(x), r1(y)]), color: closest(fill, PALE), style: r.fillStyle })
+            parts.push({ kind: 'fill', el: r.el, tag: r.tag, unit, points: l.pts.map(([x, y]) => [r1(x), r1(y)]), color: fillColor(fill), style: r.fillStyle })
           if (hasStroke) stroke(r.el, unit, l.pts, ink(cs.stroke), size, dashOf(cs))
-          else if (outlineOnly && (l.closed || r.tag !== 'path')) stroke(r.el, unit, l.pts, dark ? 'grey' : closest(fill, PALE), 's')
+          else if (outlineOnly && (l.closed || r.tag !== 'path')) stroke(r.el, unit, l.pts, dark ? 'grey' : fillColor(fill), 's')
           else if (outlineOnly) stroke(r.el, unit, l.pts, ink(fill), 's') // a filled shape drawn as a path: its outline
           if (!l.closed && hasStroke) {
             const len = 10 + 3 * num(cs['stroke-width'], 1)

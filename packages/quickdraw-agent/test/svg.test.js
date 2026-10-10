@@ -48,6 +48,17 @@ describe('group and ungroup', () => {
   })
 })
 
+describe('an SVG drawn again', () => {
+  it('keeps the SVG\'s order: a fill drawn again stays under what follows it', () => {
+    const store = board()
+    const art = (body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200"><title>Cat</title><path d="${body}" fill="#f1ac4b" data-fill="tint" stroke="#e16919"/><path d="M60 60 Q70 80 60 100" fill="none" stroke="#e16919"/></svg>`
+    const { result: [[frame]] } = applySteps(store, 'C', [{ do: 'svg', svg: art('M20 120 C20 40 180 40 180 120 Z'), at: [0, 0] }])
+    applySteps(store, 'C', [{ do: 'svg', svg: art('M30 120 C30 40 180 40 180 120 Z'), replace: frame }])
+    const drawn = store.shapes().filter((s) => s.svg?.el && s.id !== frame).sort((a, b) => a.z - b.z).map((s) => `${s.type === 'draw' ? 'line' : 'fill'} ${s.svg.el}`)
+    expect(drawn).toEqual(['fill path1', 'line path1', 'line path2']) // the stripe on top, as written
+  })
+})
+
 describe('an SVG drawn on the board', () => {
   it('is a frame its size with its strokes and words where the SVG has them, each saying its element', () => {
     const store = board()
