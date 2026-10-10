@@ -36,6 +36,7 @@
         "quickdraw-svg": "/_/quickdraw-svg/src/index.js",
         "quickdraw-embed": "/_/quickdraw-embed/src/index.js",
         "quickdraw-frames": "/_/quickdraw-frames/src/index.js",
+        "quickdraw-groups": "/_/quickdraw-groups/src/index.js",
         "quickdraw-layouts": "/_/quickdraw-layouts/src/index.js",
         "quickdraw-tickets": "/_/quickdraw-tickets/src/index.js",
         "quickdraw-members": "/_/quickdraw-members/src/index.js",
@@ -63,6 +64,7 @@
     import { bindMarkdownEditing, markdownTools, validateMarkdown, TYPE as MARKDOWN } from 'quickdraw-markdown'
     import { bindEmbeds, embedTools, validateEmbed, TYPE as EMBED } from 'quickdraw-embed'
     import { bindFrames, frameTools } from 'quickdraw-frames'
+    import { bindGroups, bindGroupSelection } from 'quickdraw-groups'
     import { bindLayouts, layoutTools } from 'quickdraw-layouts'
     import { bindKanban, bindTicketEditing, createTicketBoard, ticketTools, validateTicket, TYPE as TICKET } from 'quickdraw-tickets'
     import { bindGifs } from 'quickdraw-gif'
@@ -86,6 +88,8 @@
 
     bindYjs(board.editor.store, ydoc)
     bindFrames(board.editor.store)
+    bindGroups(board.editor.store) // moving one of a group moves the rest
+    bindGroupSelection(board.editor) // a click selects the whole group; Cmd/Ctrl+G groups, with Shift ungroups
     bindLayouts(board.editor.store) // bento grids pack their cells again as they change
     bindKanban(board.editor.store) // a ticket dragged into a kanban column takes its status
     bindArrows(board.editor) // an arrow drawn between two shapes follows them as they move

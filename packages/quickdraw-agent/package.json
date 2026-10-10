@@ -24,6 +24,7 @@
     "quickdraw-boards": "*",
     "quickdraw-embed": "*",
     "quickdraw-frames": "*",
+    "quickdraw-groups": "*",
     "quickdraw-layouts": "*",
     "quickdraw-markdown": "*",
     "quickdraw-svg": "*",

@@ -26,6 +26,7 @@
     "quickdraw-embed": "*",
     "quickdraw-export": "*",
     "quickdraw-frames": "*",
+    "quickdraw-groups": "*",
     "quickdraw-gif": "*",
     "quickdraw-import": "*",
     "quickdraw-layouts": "*",
